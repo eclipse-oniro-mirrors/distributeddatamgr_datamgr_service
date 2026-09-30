@@ -30,6 +30,8 @@ public:
     bool EnableSilentProxy(uint32_t callerTokenId, const std::string &originUriStr, bool enable);
     bool IsSilentProxyEnable(uint32_t callerTokenId, int32_t currentUserId,
         const std::string &calledBundleName, const std::string &originUriStr);
+    bool GetAccessStatistics(uint32_t callerTokenId, int32_t currentUserId, const std::string &calledBundleName,
+        const std::string &originUriStr, AccessStatisticsConfig &config);
 
 private:
     ConcurrentMap<uint32_t, std::map<std::string, bool>> enableSilentUris_;

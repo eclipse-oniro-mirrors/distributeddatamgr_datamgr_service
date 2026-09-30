@@ -52,6 +52,14 @@ struct AllowList final : public DistributedData::Serializable {
     bool Unmarshal(const json &node) override;
 };
 
+struct AccessStatisticsConfig final : public DistributedData::Serializable {
+    static constexpr int32_t DEFAULT_REPORT_INTERVAL_HOURS = 24;
+    bool enable = false;
+    int32_t reportInterval = DEFAULT_REPORT_INTERVAL_HOURS;
+    bool Marshal(json &node) const override;
+    bool Unmarshal(const json &node) override;
+};
+
 struct ProfileInfo : public DistributedData::Serializable {
     std::vector<Config> tableConfig;
     bool isSilentProxyEnable = true;
@@ -66,6 +74,7 @@ struct ProfileInfo : public DistributedData::Serializable {
     bool storeMetaDataFromUri = false;
     bool launchForCleanData = false;
     bool accountIsolation = false;
+    AccessStatisticsConfig accessStatistics;
     bool Marshal(json &node) const override;
     bool Unmarshal(const json &node) override;
 };

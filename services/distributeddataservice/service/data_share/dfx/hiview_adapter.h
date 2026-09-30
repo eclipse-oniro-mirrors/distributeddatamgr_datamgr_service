@@ -45,6 +45,14 @@ struct CallerTotalInfo {
     std::map<std::string, uint64_t> funcCounts;
 };
 
+struct AccessStatInfo {
+    std::string uri;
+    std::string providerBundleName;
+    std::string callerBundleName;
+    uint32_t funcId = 0;
+    uint64_t count = 0;
+};
+
 class HiViewAdapter : public HiViewBaseAdapter {
 public:
     static HiViewAdapter &GetInstance();
@@ -63,6 +71,25 @@ private:
             "OnGetSilentProxyStatus"}
     };
     void GetCallerTotalInfoVec(std::vector<CallerTotalInfo> &callerTotalInfos);
+};
+
+class DataShareAccessReporter : public HiViewBaseAdapter {
+public:
+    static DataShareAccessReporter &GetInstance();
+    void InvokeData() override;
+    void Record(const std::string &uri, const std::string &providerBundleName, const std::string &callerBundleName,
+        uint32_t funcId, int32_t reportIntervalHours);
+    void Init(std::shared_ptr<ExecutorPool> executors);
+
+private:
+    ConcurrentMap<std::string, AccessStatInfo> stats_;
+    std::atomic<int32_t> reportIntervalHours_{ 24 };
+    std::atomic<bool> extendInterval_{ false };
+    void ScheduleNext();
+    void ReportBatch(std::vector<AccessStatInfo> &batch);
+    size_t FlushAll();
+    static std::string MakeKey(const std::string &uri, const std::string &providerBundleName,
+        const std::string &callerBundleName, uint32_t funcId);
 };
 } // namespace DataShare
 } // namespace OHOS

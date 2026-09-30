@@ -143,6 +143,7 @@ int DataProviderConfig::GetFromDataProperties(const ProfileInfo &profileInfo,
     providerInfo_.backup = profileInfo.backup;
     providerInfo_.extensionUri = profileInfo.extUri;
     providerInfo_.accountIsolation = profileInfo.accountIsolation;
+    providerInfo_.accessStatistics = profileInfo.accessStatistics;
     if (profileInfo.tableConfig.empty()) {
         return E_OK;
     }

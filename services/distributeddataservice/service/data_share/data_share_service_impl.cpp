@@ -149,6 +149,10 @@ std::pair<int32_t, int32_t> DataShareServiceImpl::InsertEx(const std::string &ur
             ReportExcuteFault(callingTokenId, providerInfo, errCode, func);
         }
         timeoutReport.Report();
+        if (providerInfo.accessStatistics.enable) {
+            DataShareAccessReporter::GetInstance().Record(uri, providerInfo.bundleName, GetCallerBundleNameForStat(),
+                IDataShareService::DATA_SHARE_SERVICE_CMD_INSERTEX, providerInfo.accessStatistics.reportInterval);
+        }
         return std::make_pair(errCode, ret);
     };
     return ExecuteEx(uri, extUri, IPCSkeleton::GetCallingTokenID(), false, callBack);
@@ -248,6 +252,10 @@ std::pair<int32_t, int32_t> DataShareServiceImpl::UpdateEx(const std::string &ur
             ReportExcuteFault(callingTokenId, providerInfo, errCode, func);
         }
         timeoutReport.Report();
+        if (providerInfo.accessStatistics.enable) {
+            DataShareAccessReporter::GetInstance().Record(uri, providerInfo.bundleName, GetCallerBundleNameForStat(),
+                IDataShareService::DATA_SHARE_SERVICE_CMD_UPDATEEX, providerInfo.accessStatistics.reportInterval);
+        }
         return std::make_pair(errCode, ret);
     };
     return ExecuteEx(uri, extUri, callingTokenId, false, callBack);
@@ -280,6 +288,10 @@ std::pair<int32_t, int32_t> DataShareServiceImpl::DeleteEx(const std::string &ur
             ReportExcuteFault(callingTokenId, providerInfo, errCode, func);
         }
         timeoutReport.Report();
+        if (providerInfo.accessStatistics.enable) {
+            DataShareAccessReporter::GetInstance().Record(uri, providerInfo.bundleName, GetCallerBundleNameForStat(),
+                IDataShareService::DATA_SHARE_SERVICE_CMD_DELETEEX, providerInfo.accessStatistics.reportInterval);
+        }
         return std::make_pair(errCode, ret);
     };
     return ExecuteEx(uri, extUri, callingTokenId, false, callBack);
@@ -313,6 +325,10 @@ std::shared_ptr<DataShareResultSet> DataShareServiceImpl::Query(const std::strin
         }
         resultSet = std::move(result);
         timeoutReport.Report();
+        if (providerInfo.accessStatistics.enable) {
+            DataShareAccessReporter::GetInstance().Record(uri, providerInfo.bundleName, GetCallerBundleNameForStat(),
+                IDataShareService::DATA_SHARE_SERVICE_CMD_QUERY, providerInfo.accessStatistics.reportInterval);
+        }
         return std::make_pair(err, E_OK);
     };
     auto [errVal, status] = ExecuteEx(uri, extUri, callingTokenId, true, callBack);
@@ -375,6 +391,23 @@ bool DataShareServiceImpl::GetCallerBundleName(std::string &bundleName)
     }
     bundleName = tokenInfo.bundleName;
     return true;
+}
+
+std::string DataShareServiceImpl::GetCallerBundleNameForStat()
+{
+    auto tokenId = IPCSkeleton::GetCallingTokenID();
+    auto type = Security::AccessToken::AccessTokenKit::GetTokenTypeFlag(tokenId);
+    if (type == Security::AccessToken::TOKEN_NATIVE || type == Security::AccessToken::TOKEN_SHELL) {
+        return "system";
+    }
+    if (type == Security::AccessToken::TOKEN_HAP) {
+        Security::AccessToken::HapTokenInfo tokenInfo;
+        if (Security::AccessToken::AccessTokenKit::GetHapTokenInfo(tokenId, tokenInfo) ==
+            Security::AccessToken::RET_SUCCESS) {
+            return tokenInfo.bundleName;
+        }
+    }
+    return "unknown";
 }
 
 std::pair<bool, Security::AccessToken::ATokenTypeEnum> DataShareServiceImpl::GetCallerInfo(
@@ -706,6 +739,7 @@ int32_t DataShareServiceImpl::OnBind(const BindInfo &binderInfo)
     DBDelegate::SetExecutorPool(binderInfo.executors);
     HiViewAdapter::GetInstance().SetThreadPool(binderInfo.executors);
     FreqLogManager::GetInstance().SetThreadPool(binderInfo.executors);
+    DataShareAccessReporter::GetInstance().Init(binderInfo.executors);
     SubscribeCommonEvent();
     SubscribeTimeChanged();
     SubscribeChange();
