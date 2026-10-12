@@ -20,6 +20,7 @@
 #include <unistd.h>
 
 #include "data_share_service_impl.h"
+#include "data_share_types_util.h"
 #include "ipc_skeleton.h"
 #include "log_print.h"
 
@@ -32,6 +33,7 @@ constexpr size_t TEST_SIZE = 1;
 constexpr uint8_t TEST_DATA = 1;
 constexpr uint32_t CODE_MAX = IDataShareService::DATA_SHARE_SERVICE_CMD_MAX + 1;
 namespace OHOS::Test {
+using OHOS::DataShare::LogLabel;
 class DataShareServiceStubTest : public testing::Test {
 public:
     static void SetUpTestCase(void){};
@@ -206,5 +208,64 @@ HWTEST_F(DataShareServiceStubTest, OnEnableRdbSubs001, TestSize.Level1)
 
     result = dataShareServiceStub->OnDisableRdbSubs(request, reply);
     EXPECT_EQ(result, IDataShareService::DATA_SHARE_ERROR);
+}
+
+/**
+* @tc.name: OnSubscribeRdbData_RemoteObjNull_ReturnError
+* @tc.desc: test OnSubscribeRdbData when ReadRemoteObject returns nullptr
+* @tc.type: FUNC
+* @tc.require:SQL
+* @tc.author: agent
+*/
+HWTEST_F(DataShareServiceStubTest, OnSubscribeRdbData_RemoteObjNull_ReturnError, TestSize.Level1)
+{
+    ZLOGI("DataShareServiceStubTest::OnSubscribeRdbData_RemoteObjNull_ReturnError start");
+    MessageParcel request;
+    std::vector<std::string> uris;
+    TemplateId templateId;
+    ITypesUtil::Marshal(request, uris, templateId);
+    MessageParcel reply;
+    auto result = dataShareServiceStub->OnSubscribeRdbData(request, reply);
+    EXPECT_EQ(result, IPC_STUB_INVALID_DATA_ERR);
+    ZLOGI("DataShareServiceStubTest::OnSubscribeRdbData_RemoteObjNull_ReturnError end");
+}
+
+/**
+* @tc.name: OnSubscribePublishedData_RemoteObjNull_ReturnError
+* @tc.desc: test OnSubscribePublishedData when ReadRemoteObject returns nullptr
+* @tc.type: FUNC
+* @tc.require:SQL
+* @tc.author: agent
+*/
+HWTEST_F(DataShareServiceStubTest, OnSubscribePublishedData_RemoteObjNull_ReturnError, TestSize.Level1)
+{
+    ZLOGI("DataShareServiceStubTest::OnSubscribePublishedData_RemoteObjNull_ReturnError start");
+    MessageParcel request;
+    std::vector<std::string> uris;
+    int64_t subscriberId = 0;
+    ITypesUtil::Marshal(request, uris, subscriberId);
+    MessageParcel reply;
+    auto result = dataShareServiceStub->OnSubscribePublishedData(request, reply);
+    EXPECT_EQ(result, IPC_STUB_INVALID_DATA_ERR);
+    ZLOGI("DataShareServiceStubTest::OnSubscribePublishedData_RemoteObjNull_ReturnError end");
+}
+
+/**
+* @tc.name: OnSubscribeProxyData_RemoteObjNull_ReturnError
+* @tc.desc: test OnSubscribeProxyData when ReadRemoteObject returns nullptr
+* @tc.type: FUNC
+* @tc.require:SQL
+* @tc.author: agent
+*/
+HWTEST_F(DataShareServiceStubTest, OnSubscribeProxyData_RemoteObjNull_ReturnError, TestSize.Level1)
+{
+    ZLOGI("DataShareServiceStubTest::OnSubscribeProxyData_RemoteObjNull_ReturnError start");
+    MessageParcel request;
+    std::vector<std::string> uris;
+    ITypesUtil::Marshal(request, uris);
+    MessageParcel reply;
+    auto result = dataShareServiceStub->OnSubscribeProxyData(request, reply);
+    EXPECT_EQ(result, IPC_STUB_INVALID_DATA_ERR);
+    ZLOGI("DataShareServiceStubTest::OnSubscribeProxyData_RemoteObjNull_ReturnError end");
 }
 } // namespace OHOS::Test
