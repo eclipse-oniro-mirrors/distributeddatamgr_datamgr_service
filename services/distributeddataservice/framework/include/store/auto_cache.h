@@ -1,5 +1,5 @@
-/*
- * Copyright (c) 2023 Huawei Device Co., Ltd.
+/**
+ * Copyright (c) 2023-2026 Huawei Device Co., Ltd.
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -17,6 +17,7 @@
 #define OHOS_DISTRIBUTED_DATA_SERVICES_FRAMEWORK_STORE_AUTO_CACHE_H
 #include <list>
 #include <memory>
+#include <mutex>
 #include <set>
 #include <shared_mutex>
 
@@ -46,6 +47,7 @@ public:
     using Executor = ExecutorPool;
     using TaskId = ExecutorPool::TaskId;
     using Creator = std::function<std::pair<int32_t, GeneralStore *>(const StoreMetaData &, const StoreOption &)>;
+    using WatcherFactory = std::function<std::shared_ptr<GeneralWatcher>(const StoreMetaData &)>;
     using Filter = std::function<bool(const StoreMetaData &)>;
 
     API_EXPORT static AutoCache &GetInstance();
@@ -53,6 +55,10 @@ public:
     API_EXPORT void Configure(uint32_t garbageInterval);
 
     API_EXPORT int32_t RegCreator(int32_t type, Creator creator);
+
+    // The factory creates a fixed forwarding watcher, never queries subscriptions or opens a store.
+    // A null watcher fails opening; existing delegates retain their original watcher mode.
+    API_EXPORT int32_t RegCreator(int32_t type, Creator creator, WatcherFactory watcherFactory);
 
     API_EXPORT void Bind(std::shared_ptr<Executor> executor);
 
@@ -76,16 +82,22 @@ public:
     API_EXPORT void Disable(uint32_t tokenId, const std::string &path = "", const std::string &storeId = "");
 
 private:
+    struct StoreFactory {
+        Creator creator;
+        WatcherFactory watcherFactory;
+    };
     AutoCache();
     ~AutoCache();
     std::string GenerateKey(const std::string &path, const std::string &storeId) const;
     void GarbageCollect(bool isForce);
     void StartTimer();
     static int32_t CheckStatusBeforeOpen(const StoreMetaData &meta);
+    StoreFactory GetStoreFactory(int32_t type);
+    std::pair<int32_t, GeneralStore *> OpenStore(
+        const StoreMetaData &meta, const StoreFactory &factory, Watchers &watchers, const StoreOption &option);
     struct Delegate : public GeneralWatcher {
-        Delegate(GeneralStore *delegate, const Watchers &watchers,
-                 const StoreMetaData &meta,
-                 uint32_t garbageInterval = DEFAULT_INTERVAL);
+        Delegate(GeneralStore *delegate, const Watchers &watchers, const StoreMetaData &meta,
+            uint32_t garbageInterval = DEFAULT_INTERVAL, bool dynamicWatcher = false);
         ~Delegate();
         operator Store();
         bool operator<(const Time &time) const;
@@ -103,6 +115,7 @@ private:
         Watchers watchers_;
         const StoreMetaData meta_;
         const uint32_t garbageInterval_;
+        const bool dynamicWatcher_;
         std::shared_mutex mutex_;
     };
     static constexpr uint32_t DEFAULT_INTERVAL = 60 * 1000;
@@ -113,7 +126,8 @@ private:
     TaskId taskId_ = Executor::INVALID_TASK_ID;
     ConcurrentStripedMap<uint32_t, std::map<std::string, Delegate>> stores_;
     ConcurrentMap<uint32_t, std::set<std::string>> disables_;
-    Creator creators_[MAX_CREATOR_NUM];
+    std::mutex factoryMutex_;
+    StoreFactory factories_[MAX_CREATOR_NUM];
 };
 } // namespace OHOS::DistributedData
 #endif // OHOS_DISTRIBUTED_DATA_SERVICES_FRAMEWORK_STORE_AUTO_CACHE_H

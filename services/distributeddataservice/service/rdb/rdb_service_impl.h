@@ -1,5 +1,5 @@
-/*
- * Copyright (c) 2022 Huawei Device Co., Ltd.
+/**
+ * Copyright (c) 2022-2026 Huawei Device Co., Ltd.
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -16,6 +16,7 @@
 #ifndef DISTRIBUTEDDATASERVICE_RDB_SERVICE_H
 #define DISTRIBUTEDDATASERVICE_RDB_SERVICE_H
 
+#include <atomic>
 #include <map>
 #include <mutex>
 #include <string>
@@ -162,6 +163,14 @@ private:
     };
     using SyncAgents = std::map<int32_t, SyncAgent>;
 
+    struct SyncAgentRegistry {
+        ConcurrentMap<uint32_t, SyncAgents> agents;
+        std::atomic<bool> active{ false };
+        Watchers GetWatchers(uint32_t tokenId);
+        void Deactivate();
+    };
+    explicit RdbServiceImpl(std::shared_ptr<SyncAgentRegistry> registry);
+
     struct GlobalEvent {
         void AddEvent(const std::string& path, const DistributedData::DataChangeEvent::EventInfo& eventInfo);
         std::optional<DistributedData::DataChangeEvent::EventInfo> StealEvent(const std::string& path);
@@ -190,6 +199,7 @@ private:
         Factory();
         ~Factory();
     private:
+        std::shared_ptr<SyncAgentRegistry> registry_;
         std::shared_ptr<RdbServiceImpl> product_;
         std::shared_ptr<RdbStatic> staticActs_;
     };
@@ -234,8 +244,6 @@ private:
     int32_t SetDeviceDistributedTables(int32_t tableType, StoreMetaData &metaData,
         std::shared_ptr<DistributedData::GeneralStore> store);
     void SetCloudDistributedTables(const RdbSyncerParam &param, StoreMetaData &metaData);
-
-    Watchers GetWatchers(uint32_t tokenId, const std::string &storeName);
 
     DetailAsync GetCallbacks(uint32_t tokenId, const std::string &storeName);
 
@@ -345,7 +353,8 @@ private:
         const std::map<std::string, std::vector<std::string>> &retainDevices);
 
     static Factory factory_;
-    ConcurrentMap<uint32_t, SyncAgents> syncAgents_;
+    std::shared_ptr<SyncAgentRegistry> registry_;
+    ConcurrentMap<uint32_t, SyncAgents> &syncAgents_;
     static std::shared_ptr<RdbFlowControlManager> rdbFlowControlManager_;
     std::shared_ptr<ExecutorPool> executors_;
     std::shared_ptr<GlobalEvent> eventContainer_;

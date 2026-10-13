@@ -1,4 +1,4 @@
-/*
+/**
  * Copyright (c) 2023-2026 Huawei Device Co., Ltd.
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -40,10 +40,16 @@ AutoCache &AutoCache::GetInstance()
 
 int32_t AutoCache::RegCreator(int32_t type, Creator creator)
 {
+    return RegCreator(type, std::move(creator), nullptr);
+}
+
+int32_t AutoCache::RegCreator(int32_t type, Creator creator, WatcherFactory watcherFactory)
+{
     if (type < 0 || type >= MAX_CREATOR_NUM) {
         return E_ERROR;
     }
-    creators_[type] = creator;
+    std::lock_guard<std::mutex> lock(factoryMutex_);
+    factories_[type] = { std::move(creator), std::move(watcherFactory) };
     return E_OK;
 }
 
@@ -104,14 +110,42 @@ int32_t AutoCache::CheckStatusBeforeOpen(const StoreMetaData &meta)
     return E_OK;
 }
 
+AutoCache::StoreFactory AutoCache::GetStoreFactory(int32_t type)
+{
+    if (type < 0 || type >= MAX_CREATOR_NUM) {
+        return {};
+    }
+    std::lock_guard<std::mutex> lock(factoryMutex_);
+    return factories_[type];
+}
+
+std::pair<int32_t, GeneralStore *> AutoCache::OpenStore(
+    const StoreMetaData &meta, const StoreFactory &factory, Watchers &watchers, const StoreOption &option)
+{
+    if (factory.watcherFactory) {
+        auto watcher = factory.watcherFactory(meta);
+        if (watcher == nullptr) {
+            ZLOGE("watcher factory failed. storeName:%{public}s", meta.GetStoreAlias().c_str());
+            return { E_ERROR, nullptr };
+        }
+        watchers = { std::move(watcher) };
+    }
+    auto [ret, store] = factory.creator(meta, option);
+    if (store == nullptr) {
+        ZLOGE("creator failed. storeName:%{public}s", meta.GetStoreAlias().c_str());
+    }
+    return { ret, store };
+}
+
 std::pair<int32_t, AutoCache::Store> AutoCache::GetDBStore(
     const StoreMetaData &meta, const Watchers &watchers, const StoreOption &option)
 {
     Store store;
+    auto factory = GetStoreFactory(meta.storeType);
     auto storeKey = GenerateKey(meta.dataDir, meta.storeId);
-    if (meta.storeType >= MAX_CREATOR_NUM || meta.storeType < 0 || !creators_[meta.storeType] ||
-        disables_.ContainIf(meta.tokenId,
-            [&storeKey](const std::set<std::string> &stores) -> bool { return stores.count(storeKey) != 0; })) {
+    if (!factory.creator || disables_.ContainIf(meta.tokenId, [&storeKey](const std::set<std::string> &stores) -> bool {
+            return stores.count(storeKey) != 0;
+        })) {
         ZLOGW("storeType %{public}d is invalid or store is disabled, user:%{public}s, bundleName:%{public}s, "
               "storeName:%{public}s",
             meta.storeType, meta.user.c_str(), meta.bundleName.c_str(), meta.GetStoreAlias().c_str());
@@ -124,7 +158,7 @@ std::pair<int32_t, AutoCache::Store> AutoCache::GetDBStore(
     bool startTimer = false;
     XCollie xcollie(__FUNCTION__, AUTO_CACHE_XCOLLIE_FLAG, AUTO_CACHE_XCOLLIE_TIMEOUT);
     stores_.Compute(meta.tokenId,
-        [this, &meta, &watchers, &store, &storeKey, &option, &ret, &startTimer](
+        [this, &meta, &watchers, &store, &storeKey, &option, &ret, &startTimer, &factory](
             auto &, std::map<std::string, Delegate> &stores) -> bool {
             auto it = stores.find(storeKey);
             if (it != stores.end()) {
@@ -134,15 +168,16 @@ std::pair<int32_t, AutoCache::Store> AutoCache::GetDBStore(
                 store = it->second;
                 return !stores.empty();
             }
+            Watchers effectiveWatchers = watchers;
             GeneralStore *dbStore = nullptr;
-            std::tie(ret, dbStore) = creators_[meta.storeType](meta, option);
+            std::tie(ret, dbStore) = OpenStore(meta, factory, effectiveWatchers, option);
             if (dbStore == nullptr) {
-                ZLOGE("creator failed. storeName:%{public}s", meta.GetStoreAlias().c_str());
                 return !stores.empty();
             }
             dbStore->SetExecutor(executor_);
             auto result = stores.emplace(std::piecewise_construct, std::forward_as_tuple(storeKey),
-                std::forward_as_tuple(dbStore, watchers, meta, garbageInterval_));
+                std::forward_as_tuple(
+                    dbStore, effectiveWatchers, meta, garbageInterval_, static_cast<bool>(factory.watcherFactory)));
             store = result.first->second;
             startTimer = true;
             return !stores.empty();
@@ -312,9 +347,10 @@ void AutoCache::Configure(uint32_t garbageInterval)
     }
 }
 
-AutoCache::Delegate::Delegate(
-    GeneralStore *delegate, const Watchers &watchers, const StoreMetaData &meta, uint32_t garbageInterval)
-    : store_(delegate), watchers_(watchers), meta_(meta), garbageInterval_(garbageInterval)
+AutoCache::Delegate::Delegate(GeneralStore *delegate, const Watchers &watchers, const StoreMetaData &meta,
+    uint32_t garbageInterval, bool dynamicWatcher)
+    : store_(delegate), watchers_(watchers), meta_(meta), garbageInterval_(garbageInterval),
+      dynamicWatcher_(dynamicWatcher)
 {
     time_ = std::chrono::steady_clock::now() + std::chrono::milliseconds(garbageInterval);
 
@@ -362,6 +398,9 @@ bool AutoCache::Delegate::Close()
 
 void AutoCache::Delegate::SetObservers(const AutoCache::Watchers &watchers)
 {
+    if (dynamicWatcher_) {
+        return;
+    }
     std::unique_lock<decltype(mutex_)> lock(mutex_);
     watchers_ = watchers;
 }

@@ -1,5 +1,5 @@
-/*
- * Copyright (c) 2022-2024 Huawei Device Co., Ltd.
+/**
+ * Copyright (c) 2022-2026 Huawei Device Co., Ltd.
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -15,6 +15,7 @@
 
 #ifndef OHOS_DISTRIBUTED_DATA_SERVICE_KVDB_SERVICE_IMPL_H
 #define OHOS_DISTRIBUTED_DATA_SERVICE_KVDB_SERVICE_IMPL_H
+#include <atomic>
 #include <set>
 #include <vector>
 
@@ -117,12 +118,21 @@ private:
         std::map<std::string, std::set<std::shared_ptr<KVDBWatcher>>> watchers_;
         void ReInit(pid_t pid, const AppId &appId);
     };
+    struct SyncAgentRegistry {
+        ConcurrentMap<uint32_t, SyncAgent> agents;
+        std::atomic<bool> active{ false };
+        DistributedData::AutoCache::Watchers GetWatchers(uint32_t tokenId, const std::string &key);
+        void Deactivate();
+    };
+    explicit KVDBServiceImpl(std::shared_ptr<SyncAgentRegistry> registry);
+
     class Factory {
     public:
         Factory();
         ~Factory();
 
     private:
+        std::shared_ptr<SyncAgentRegistry> registry_;
         std::shared_ptr<KVDBServiceImpl> product_;
     };
 
@@ -154,8 +164,6 @@ private:
     DBResult HandleGenBriefDetails(const DistributedData::GenDetails &details);
     ProgressDetail HandleGenDetails(const DistributedData::GenDetails &details);
     void OnAsyncComplete(uint32_t tokenId, uint64_t seqNum, ProgressDetail &&detail);
-    DistributedData::AutoCache::Watchers GetWatchers(uint32_t tokenId, const std::string &storeId,
-        const std::string &userId);
     using SyncResult = std::pair<std::vector<std::string>, std::map<std::string, DBStatus>>;
     SyncResult ProcessResult(const std::map<std::string, int32_t> &results);
     void SaveLocalMetaData(const Options &options, const StoreMetaData &metaData);
@@ -169,7 +177,7 @@ private:
     Status ConvertDbStatusNative(DBStatus status);
     bool CompareTripleIdentifier(const std::string &accountId, const std::string &identifier,
         const StoreMetaData &storeMeta);
-    std::string GenerateKey(const std::string &userId, const std::string &storeId) const;
+    static std::string GenerateKey(const std::string &userId, const std::string &storeId);
     std::vector<uint8_t> LoadSecretKey(const StoreMetaData &metaData, CryptoManager::SecretKeyType secretKeyType);
     void SaveSecretKeyMeta(const StoreMetaData &metaData, const std::vector<uint8_t> &password);
     void SaveAppIdMetaData(const DistributedData::AppIDMetaData &appIdMeta);
@@ -178,7 +186,8 @@ private:
     void DeleteInner(const AppId &appId, const StoreId &storeId, const StoreMetaData &metaData);
     void SaveLaunchInfo(StoreMetaData &meta);
     static Factory factory_;
-    ConcurrentMap<uint32_t, SyncAgent> syncAgents_;
+    std::shared_ptr<SyncAgentRegistry> registry_;
+    ConcurrentMap<uint32_t, SyncAgent> &syncAgents_;
     std::shared_ptr<ExecutorPool> executors_;
     std::atomic_uint64_t syncId_ = 0;
     static constexpr int32_t OH_OS_TYPE = 10;

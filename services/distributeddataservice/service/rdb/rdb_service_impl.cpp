@@ -1,4 +1,4 @@
-/*
+/**
  * Copyright (c) 2022-2026 Huawei Device Co., Ltd.
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -57,6 +57,7 @@
 #include "rdb_common_utils.h"
 #include "rdb_watcher.h"
 #include "store/general_store.h"
+#include "store/watcher_bridge.h"
 #include "permission_validator.h"
 #include "sync_mgr/sync_mgr.h"
 #include "tokenid_kit.h"
@@ -104,15 +105,16 @@ bool IsPathStartWithRoot(const std::string &path, const std::string &root)
 } // namespace
 __attribute__((used)) RdbServiceImpl::Factory RdbServiceImpl::factory_;
 __attribute__((used)) std::shared_ptr<RdbFlowControlManager> RdbServiceImpl::rdbFlowControlManager_;
-RdbServiceImpl::Factory::Factory()
+RdbServiceImpl::Factory::Factory() : registry_(std::make_shared<SyncAgentRegistry>())
 {
     FeatureSystem::GetInstance().RegisterCreator(RdbServiceImpl::SERVICE_NAME, [this]() {
         if (product_ == nullptr) {
-            product_ = std::make_shared<RdbServiceImpl>();
+            product_ = std::shared_ptr<RdbServiceImpl>(new RdbServiceImpl(registry_));
         }
         return product_;
     });
-    AutoCache::GetInstance().RegCreator(RDB_DEVICE_COLLABORATION,
+    AutoCache::GetInstance().RegCreator(
+        RDB_DEVICE_COLLABORATION,
         [](const StoreMetaData &metaData, const AutoCache::StoreOption &option) -> std::pair<int32_t, GeneralStore *> {
             auto store = new (std::nothrow) RdbGeneralStore(metaData, option.createRequired, option.isEnableBinlog);
             if (store == nullptr) {
@@ -124,6 +126,13 @@ RdbServiceImpl::Factory::Factory()
                 store = nullptr;
             }
             return { ret, store };
+        },
+        [weakRegistry = std::weak_ptr<SyncAgentRegistry>(registry_)](const StoreMetaData &meta) {
+            return std::shared_ptr<GeneralWatcher>(
+                new (std::nothrow) WatcherBridge([weakRegistry, tokenId = meta.tokenId]() -> Watchers {
+                    auto registry = weakRegistry.lock();
+                    return registry == nullptr ? Watchers{} : registry->GetWatchers(tokenId);
+                }));
         });
     staticActs_ = std::make_shared<RdbStatic>();
     FeatureSystem::GetInstance().RegisterStaticActs(RdbServiceImpl::SERVICE_NAME, staticActs_);
@@ -131,10 +140,17 @@ RdbServiceImpl::Factory::Factory()
 
 RdbServiceImpl::Factory::~Factory()
 {
+    registry_->Deactivate();
 }
 
-RdbServiceImpl::RdbServiceImpl() : eventContainer_(std::make_shared<GlobalEvent>())
+RdbServiceImpl::RdbServiceImpl() : RdbServiceImpl(std::make_shared<SyncAgentRegistry>())
 {
+}
+
+RdbServiceImpl::RdbServiceImpl(std::shared_ptr<SyncAgentRegistry> registry)
+    : registry_(std::move(registry)), syncAgents_(registry_->agents), eventContainer_(std::make_shared<GlobalEvent>())
+{
+    registry_->active = true;
     ZLOGI("construct");
     DistributedDB::RelationalStoreManager::SetAutoLaunchRequestCallback(
         [this](const std::string &identifier, DistributedDB::AutoLaunchParam &param) {
@@ -177,7 +193,7 @@ int32_t RdbServiceImpl::ResolveAutoLaunch(const std::string &identifier, Distrib
             param.option.iterateTimes = ITERATE_TIMES;
             param.option.cipher = DistributedDB::CipherType::AES_256_GCM;
         }
-        AutoCache::GetInstance().GetStore(entry, GetWatchers(entry.tokenId, entry.storeId));
+        AutoCache::GetInstance().GetStore(entry, {});
         return true;
     }
     ZLOGE("not find identifier");
@@ -556,10 +572,16 @@ std::string RdbServiceImpl::TransferStringToHex(const std::string &origStr)
     return tmp;
 }
 
-AutoCache::Watchers RdbServiceImpl::GetWatchers(uint32_t tokenId, const std::string &storeName)
+AutoCache::Watchers RdbServiceImpl::SyncAgentRegistry::GetWatchers(uint32_t tokenId)
 {
     AutoCache::Watchers watchers;
-    syncAgents_.ComputeIfPresent(tokenId, [&watchers](auto, SyncAgents &syncAgents) {
+    if (!active) {
+        return watchers;
+    }
+    agents.ComputeIfPresent(tokenId, [this, &watchers](auto, SyncAgents &syncAgents) {
+        if (!active) {
+            return true;
+        }
         std::for_each(syncAgents.begin(), syncAgents.end(), [&watchers](const auto &item) {
             if (item.second.watcher_ != nullptr) {
                 watchers.insert(item.second.watcher_);
@@ -568,6 +590,16 @@ AutoCache::Watchers RdbServiceImpl::GetWatchers(uint32_t tokenId, const std::str
         return true;
     });
     return watchers;
+}
+
+void RdbServiceImpl::SyncAgentRegistry::Deactivate()
+{
+    active = false;
+    std::vector<SyncAgents> retired;
+    agents.EraseIf([&retired](auto, SyncAgents &syncAgents) {
+        retired.emplace_back(std::move(syncAgents));
+        return true;
+    });
 }
 
 RdbServiceImpl::DetailAsync RdbServiceImpl::GetCallbacks(uint32_t tokenId, const std::string &storeName)
@@ -955,23 +987,17 @@ int32_t RdbServiceImpl::Subscribe(const RdbSyncerParam &param, const SubscribeOp
     }
     pid_t pid = IPCSkeleton::GetCallingPid();
     auto tokenId = IPCSkeleton::GetCallingTokenID();
-    bool isCreate = false;
-    syncAgents_.Compute(tokenId, [pid, &param, &isCreate](auto &key, SyncAgents &agents) {
+    syncAgents_.Compute(tokenId, [pid, &param](auto &key, SyncAgents &agents) {
         auto [it, _] = agents.try_emplace(pid, param.bundleName_);
         if (it == agents.end()) {
             return !agents.empty();
         }
         if (it->second.watcher_ == nullptr) {
-            isCreate = true;
             it->second.SetWatcher(std::make_shared<RdbWatcher>());
         }
         it->second.count_++;
         return true;
     });
-    if (isCreate) {
-        AutoCache::GetInstance().SetObserver(tokenId, GetWatchers(tokenId, param.storeName_),
-            GetStoreMetaData(param).dataDir, RemoveSuffix(param.storeName_));
-    }
     return RDB_OK;
 }
 
@@ -982,25 +1008,19 @@ int32_t RdbServiceImpl::UnSubscribe(const RdbSyncerParam &param, const Subscribe
         ZLOGE("mode:%{public}d error", option.mode);
         return RDB_ERROR;
     }
-    bool destroyed = false;
     auto tokenId = IPCSkeleton::GetCallingTokenID();
     auto pid = IPCSkeleton::GetCallingPid();
-    syncAgents_.ComputeIfPresent(tokenId, [pid, &destroyed](auto, SyncAgents &agents) {
+    syncAgents_.ComputeIfPresent(tokenId, [pid](auto, SyncAgents &agents) {
         auto it = agents.find(pid);
         if (it == agents.end()) {
             return !agents.empty();
         }
         it->second.count_--;
         if (it->second.count_ <= 0) {
-            destroyed = true;
             it->second.SetWatcher(nullptr);
         }
         return true;
     });
-    if (destroyed) {
-        AutoCache::GetInstance().SetObserver(tokenId, GetWatchers(tokenId, param.storeName_),
-            GetStoreMetaData(param).dataDir, RemoveSuffix(param.storeName_));
-    }
     return RDB_OK;
 }
 
@@ -1756,8 +1776,7 @@ int32_t RdbServiceImpl::OnBind(const BindInfo &bindInfo)
 
 std::shared_ptr<DistributedData::GeneralStore> RdbServiceImpl::GetStore(const StoreMetaData &storeMetaData)
 {
-    auto watchers = GetWatchers(storeMetaData.tokenId, storeMetaData.storeId);
-    auto store = AutoCache::GetInstance().GetStore(storeMetaData, watchers);
+    auto store = AutoCache::GetInstance().GetStore(storeMetaData, {});
     return store;
 }
 
@@ -2071,6 +2090,7 @@ void RdbServiceImpl::UpdateBundleVerison()
 
 RdbServiceImpl::~RdbServiceImpl()
 {
+    registry_->Deactivate();
     DumpManager::GetInstance().RemoveHandler("FEATURE_INFO", uintptr_t(this));
 }
 
@@ -2622,8 +2642,7 @@ void RdbServiceImpl::RegisterEvent()
             meta.storeType > StoreMetaData::STORE_RELATIONAL_END) {
             return;
         }
-        auto watchers = GetWatchers(meta.tokenId, meta.storeId);
-        auto store = AutoCache::GetInstance().GetStore(meta, watchers);
+        auto store = AutoCache::GetInstance().GetStore(meta, {});
         if (store == nullptr) {
             ZLOGE("store null, storeId:%{public}s", meta.GetStoreAlias().c_str());
             return;

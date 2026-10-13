@@ -1,5 +1,5 @@
-/*
- * Copyright (c) 2022-2024 Huawei Device Co., Ltd.
+/**
+ * Copyright (c) 2022-2026 Huawei Device Co., Ltd.
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -20,7 +20,7 @@
 
 #include "accesstoken_kit.h"
 #include "account/account_delegate.h"
-#include "sync_mgr/sync_mgr.h"
+#include "app_id_mapping/app_id_mapping_config_manager.h"
 #include "backup_manager.h"
 #include "bootstrap.h"
 #include "changeevent/remote_change_event.h"
@@ -44,15 +44,16 @@
 #include "metadata/capability_meta_data.h"
 #include "metadata/store_meta_data.h"
 #include "metadata/switches_meta_data.h"
+#include "network/network_delegate.h"
 #include "permit_delegate.h"
 #include "query_helper.h"
 #include "store/store_info.h"
+#include "store/watcher_bridge.h"
+#include "sync_mgr/sync_mgr.h"
 #include "upgrade.h"
 #include "utils/anonymous.h"
 #include "utils/constant.h"
 #include "utils/converter.h"
-#include "app_id_mapping/app_id_mapping_config_manager.h"
-#include "network/network_delegate.h"
 
 namespace OHOS::DistributedKv {
 using namespace OHOS::DistributedData;
@@ -70,11 +71,11 @@ static constexpr const char *PATH_SEPARATOR = "/";
 static constexpr const char *DSOFTBUS_BUNDLE_NAME = "dsoftbus";
 static const size_t SECRET_KEY_COUNT = 2;
 __attribute__((used)) KVDBServiceImpl::Factory KVDBServiceImpl::factory_;
-KVDBServiceImpl::Factory::Factory()
+KVDBServiceImpl::Factory::Factory() : registry_(std::make_shared<SyncAgentRegistry>())
 {
     FeatureSystem::GetInstance().RegisterCreator("kv_store", [this]() {
         if (product_ == nullptr) {
-            product_ = std::make_shared<KVDBServiceImpl>();
+            product_ = std::shared_ptr<KVDBServiceImpl>(new KVDBServiceImpl(registry_));
         }
         return product_;
     });
@@ -90,19 +91,36 @@ KVDBServiceImpl::Factory::Factory()
         }
         return { E_OK, store };
     };
-    AutoCache::GetInstance().RegCreator(KvStoreType::SINGLE_VERSION, creator);
-    AutoCache::GetInstance().RegCreator(KvStoreType::DEVICE_COLLABORATION, creator);
+    auto watcherFactory = [weakRegistry = std::weak_ptr<SyncAgentRegistry>(registry_)](const StoreMetaData &meta) {
+        return std::shared_ptr<GeneralWatcher>(new (std::nothrow)
+                WatcherBridge([weakRegistry, tokenId = meta.tokenId, key = GenerateKey(meta.user, meta.storeId)]() {
+                    auto registry = weakRegistry.lock();
+                    return registry == nullptr ? AutoCache::Watchers{} : registry->GetWatchers(tokenId, key);
+                }));
+    };
+    AutoCache::GetInstance().RegCreator(KvStoreType::SINGLE_VERSION, creator, watcherFactory);
+    AutoCache::GetInstance().RegCreator(KvStoreType::DEVICE_COLLABORATION, creator, watcherFactory);
 }
 
 KVDBServiceImpl::Factory::~Factory()
 {
+    registry_->Deactivate();
     product_ = nullptr;
 }
 
-KVDBServiceImpl::KVDBServiceImpl() {}
+KVDBServiceImpl::KVDBServiceImpl() : KVDBServiceImpl(std::make_shared<SyncAgentRegistry>())
+{
+}
+
+KVDBServiceImpl::KVDBServiceImpl(std::shared_ptr<SyncAgentRegistry> registry)
+    : registry_(std::move(registry)), syncAgents_(registry_->agents)
+{
+    registry_->active = true;
+}
 
 KVDBServiceImpl::~KVDBServiceImpl()
 {
+    registry_->Deactivate();
     DumpManager::GetInstance().RemoveHandler("FEATURE_INFO", uintptr_t(this));
 }
 
@@ -132,8 +150,7 @@ void KVDBServiceImpl::Init()
             meta.storeType > StoreMetaData::StoreType::STORE_KV_END) {
             return;
         }
-        auto watchers = GetWatchers(meta.tokenId, meta.storeId, meta.user);
-        auto store = AutoCache::GetInstance().GetStore(meta, watchers);
+        auto store = AutoCache::GetInstance().GetStore(meta, {});
         if (store == nullptr) {
             ZLOGE("store null, storeId:%{public}s", meta.GetStoreAlias().c_str());
             return;
@@ -566,25 +583,19 @@ Status KVDBServiceImpl::Subscribe(const AppId &appId, const StoreId &storeId, in
     StoreMetaData metaData = LoadStoreMetaData(appId, storeId, subUser);
     ZLOGI("appId:%{public}s storeId:%{public}s tokenId:0x%{public}x", appId.appId.c_str(),
         Anonymous::Change(storeId.storeId).c_str(), metaData.tokenId);
-    bool isCreate = false;
     auto key = GenerateKey(metaData.user, storeId.storeId);
-    syncAgents_.Compute(metaData.tokenId, [&appId, &key, &observer, &isCreate](auto &, SyncAgent &agent) {
+    syncAgents_.Compute(metaData.tokenId, [&appId, &key, &observer](auto &, SyncAgent &agent) {
         if (agent.pid_ != IPCSkeleton::GetCallingPid()) {
             agent.ReInit(IPCSkeleton::GetCallingPid(), appId);
         }
-        isCreate = true;
         auto watcher = std::make_shared<KVDBWatcher>();
         watcher->SetObserver(observer);
         agent.watchers_[key].insert(watcher);
         return true;
     });
-    if (isCreate) {
-        AutoCache::GetInstance().SetObserver(metaData.tokenId,
-            GetWatchers(metaData.tokenId, storeId, metaData.user), metaData.dataDir, storeId);
-    }
     AutoLaunchMetaData launchData;
     if (MetaDataManager::GetInstance().LoadMeta(metaData.GetAutoLaunchKey(), launchData, true)) {
-        auto store = AutoCache::GetInstance().GetStore(metaData, GetWatchers(metaData.tokenId, storeId, metaData.user));
+        auto store = AutoCache::GetInstance().GetStore(metaData, {});
         if (store == nullptr) {
             return INVALID_ARGUMENT;
         }
@@ -604,16 +615,14 @@ Status KVDBServiceImpl::Unsubscribe(const AppId &appId, const StoreId &storeId, 
     StoreMetaData metaData = LoadStoreMetaData(appId, storeId, subUser);
     ZLOGI("appId:%{public}s storeId:%{public}s tokenId:0x%{public}x", appId.appId.c_str(),
         Anonymous::Change(storeId.storeId).c_str(), metaData.tokenId);
-    bool destroyed = false;
     auto key = GenerateKey(metaData.user, storeId.storeId);
-    syncAgents_.ComputeIfPresent(metaData.tokenId, [&appId, &key, &observer, &destroyed](auto &, SyncAgent &agent) {
+    syncAgents_.ComputeIfPresent(metaData.tokenId, [&key, &observer](auto &, SyncAgent &agent) {
         auto iter = agent.watchers_.find(key);
         if (iter == agent.watchers_.end()) {
             return true;
         }
-        for (auto watcher : iter->second) {
-            if (watcher == nullptr || watcher->GetObserver() == observer) {
-                destroyed = true;
+        for (auto watcher = iter->second.begin(); watcher != iter->second.end(); ++watcher) {
+            if (*watcher == nullptr || (*watcher)->GetObserver() == observer) {
                 iter->second.erase(watcher);
                 break;
             }
@@ -623,10 +632,6 @@ Status KVDBServiceImpl::Unsubscribe(const AppId &appId, const StoreId &storeId, 
         }
         return true;
     });
-    if (destroyed) {
-        AutoCache::GetInstance().SetObserver(metaData.tokenId,
-            GetWatchers(metaData.tokenId, storeId, metaData.user), metaData.dataDir, storeId);
-    }
     return SUCCESS;
 }
 
@@ -966,8 +971,7 @@ int32_t KVDBServiceImpl::ResolveAutoLaunch(const std::string &identifier, DBLaun
         if (identifier != identifierTag && !isTripleIdentifierEqual) {
             continue;
         }
-        auto watchers = GetWatchers(storeMeta.tokenId, storeMeta.storeId, storeMeta.user);
-        auto store = AutoCache::GetInstance().GetStore(storeMeta, watchers);
+        auto store = AutoCache::GetInstance().GetStore(storeMeta, {});
         if (isTripleIdentifierEqual && store != nullptr) {
             store->SetEqualIdentifier(storeMeta.appId, storeMeta.storeId, accountId);
             AutoLaunchMetaData launchData;
@@ -1337,10 +1341,9 @@ Status KVDBServiceImpl::DoSyncBegin(const std::vector<std::string> &devices, con
     if (devices.empty()) {
         return Status::INVALID_ARGUMENT;
     }
-    auto watcher = GetWatchers(meta.tokenId, meta.storeId, meta.user);
     RADAR_REPORT(STANDARD_DEVICE_SYNC, OPEN_STORE, RADAR_START, SYNC_STORE_ID, Anonymous::Change(meta.storeId),
         SYNC_APP_ID, meta.bundleName, CONCURRENT_ID, info.syncId, DATA_TYPE, meta.dataType);
-    auto store = AutoCache::GetInstance().GetStore(meta, watcher);
+    auto store = AutoCache::GetInstance().GetStore(meta, {});
     if (store == nullptr) {
         ZLOGE("GetStore failed! appId:%{public}s storeId:%{public}s storeId length:%{public}zu dir:%{public}s",
             meta.bundleName.c_str(), Anonymous::Change(meta.storeId).c_str(),
@@ -1626,12 +1629,16 @@ std::vector<std::string> KVDBServiceImpl::ConvertDevices(const std::vector<std::
     return DMAdapter::ToUUID(deviceIds);
 }
 
-AutoCache::Watchers KVDBServiceImpl::GetWatchers(uint32_t tokenId, const std::string &storeId,
-    const std::string &userId)
+AutoCache::Watchers KVDBServiceImpl::SyncAgentRegistry::GetWatchers(uint32_t tokenId, const std::string &key)
 {
     AutoCache::Watchers watchers{};
-    auto key = GenerateKey(userId, storeId);
-    syncAgents_.ComputeIfPresent(tokenId, [&key, &watchers](auto &, SyncAgent &agent) {
+    if (!active) {
+        return watchers;
+    }
+    agents.ComputeIfPresent(tokenId, [this, &key, &watchers](auto &, SyncAgent &agent) {
+        if (!active) {
+            return true;
+        }
         auto iter = agent.watchers_.find(key);
         if (iter != agent.watchers_.end()) {
             for (const auto &watcher : iter->second) {
@@ -1641,6 +1648,16 @@ AutoCache::Watchers KVDBServiceImpl::GetWatchers(uint32_t tokenId, const std::st
         return true;
     });
     return watchers;
+}
+
+void KVDBServiceImpl::SyncAgentRegistry::Deactivate()
+{
+    active = false;
+    std::vector<SyncAgent> retired;
+    agents.EraseIf([&retired](auto, SyncAgent &agent) {
+        retired.emplace_back(std::move(agent));
+        return true;
+    });
 }
 
 void KVDBServiceImpl::SyncAgent::ReInit(pid_t pid, const AppId &appId)
@@ -1701,8 +1718,7 @@ Status KVDBServiceImpl::RemoveDeviceData(const AppId &appId, const StoreId &stor
             Anonymous::Change(metaData.dataDir).c_str());
         return Status::ERROR;
     }
-    auto watcher = GetWatchers(metaData.tokenId, metaData.storeId, metaData.user);
-    auto store = AutoCache::GetInstance().GetStore(metaData, watcher);
+    auto store = AutoCache::GetInstance().GetStore(metaData, {});
     if (store == nullptr) {
         ZLOGE("GetStore failed! appId:%{public}s storeId:%{public}s dir:%{public}s", metaData.bundleName.c_str(),
             Anonymous::Change(metaData.storeId).c_str(), Anonymous::Change(metaData.dataDir).c_str());
@@ -1725,7 +1741,7 @@ Status KVDBServiceImpl::RemoveDeviceData(const AppId &appId, const StoreId &stor
     return ConvertGeneralErr(GeneralError(ret));
 }
 
-std::string KVDBServiceImpl::GenerateKey(const std::string &userId, const std::string &storeId) const
+std::string KVDBServiceImpl::GenerateKey(const std::string &userId, const std::string &storeId)
 {
     std::string key = "";
     if (userId.empty() || storeId.empty()) {
