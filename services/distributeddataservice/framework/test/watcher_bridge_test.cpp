@@ -90,8 +90,12 @@ HWTEST_F(WatcherBridgeTest, OnChange_MultipleWatchers_PreservesBothPayloads, Tes
     EXPECT_EQ(bridge.OnChange({}, GeneralWatcher::Fields{}, std::move(data)), E_OK);
     EXPECT_EQ(firstInfo["table"][GeneralWatcher::OP_INSERT], expectedInfo);
     EXPECT_EQ(secondInfo["table"][GeneralWatcher::OP_INSERT], expectedInfo);
-    EXPECT_EQ(firstData["table"][GeneralWatcher::OP_INSERT], expectedData);
-    EXPECT_EQ(secondData["table"][GeneralWatcher::OP_INSERT], expectedData);
+    ASSERT_EQ(firstData["table"][GeneralWatcher::OP_INSERT].size(), expectedData.size());
+    ASSERT_EQ(secondData["table"][GeneralWatcher::OP_INSERT].size(), expectedData.size());
+    ASSERT_EQ(firstData["table"][GeneralWatcher::OP_INSERT][0].size(), 1U);
+    ASSERT_EQ(secondData["table"][GeneralWatcher::OP_INSERT][0].size(), 1U);
+    EXPECT_EQ(std::get<int64_t>(firstData["table"][GeneralWatcher::OP_INSERT][0][0]), int64_t(42));
+    EXPECT_EQ(std::get<int64_t>(secondData["table"][GeneralWatcher::OP_INSERT][0][0]), int64_t(42));
     EXPECT_EQ(*queries, 2);
 }
 

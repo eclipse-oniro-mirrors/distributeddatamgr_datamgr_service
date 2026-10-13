@@ -971,6 +971,7 @@ int32_t KVDBServiceImpl::ResolveAutoLaunch(const std::string &identifier, DBLaun
         if (identifier != identifierTag && !isTripleIdentifierEqual) {
             continue;
         }
+        auto watchers = registry_->GetWatchers(storeMeta.tokenId, GenerateKey(storeMeta.user, storeMeta.storeId));
         auto store = AutoCache::GetInstance().GetStore(storeMeta, {});
         if (isTripleIdentifierEqual && store != nullptr) {
             store->SetEqualIdentifier(storeMeta.appId, storeMeta.storeId, accountId);

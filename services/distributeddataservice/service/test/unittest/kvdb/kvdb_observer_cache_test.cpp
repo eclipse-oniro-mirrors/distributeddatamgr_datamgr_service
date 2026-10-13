@@ -31,8 +31,13 @@ using namespace OHOS::DistributedKv;
 using namespace OHOS::Security::AccessToken;
 
 namespace OHOS::Test {
-class KvObserverMock final : public KvStoreObserverStub {
+class KvObserverMock final : public IKvStoreObserver {
 public:
+    sptr<IRemoteObject> AsObject() override
+    {
+        return nullptr;
+    }
+
     MOCK_METHOD(void, OnChange, (const ChangeNotification &), (override));
     MOCK_METHOD(void, OnChange, (const DataOrigin &, Keys &&), (override));
 };
