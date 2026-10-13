@@ -198,6 +198,23 @@ bool DataShareServiceImpl::VerifyPredicates(const DataSharePredicates &predicate
     return false;
 }
 
+bool DataShareServiceImpl::VerifyColumns(const std::vector<std::string> &columns, uint32_t callingTokenId,
+    DataProviderConfig::ProviderInfo &providerInfo, std::string &func)
+{
+    DataSharePredicatesVerify predicatesVerify;
+    if (predicatesVerify.VerifyColumns(columns)) {
+        return true;
+    }
+    std::string callingName = HiViewFaultAdapter::GetCallingName(callingTokenId).first;
+    std::string appendix = "callingName:" + callingName + " columns:" + std::to_string(columns.size());
+    DataShareFaultInfo faultInfo = {HiViewFaultAdapter::invalidColumns, providerInfo.bundleName,
+        providerInfo.moduleName, providerInfo.storeName, func, E_FIELD_ILLEGAL, appendix};
+    HiViewFaultAdapter::ReportDataFault(faultInfo);
+    ZLOGW("callingName:%{public}s %{public}s columns:%{public}zu invalid, bundle:%{public}s",
+        callingName.c_str(), func.c_str(), columns.size(), providerInfo.bundleName.c_str());
+    return false;
+}
+
 bool DataShareServiceImpl::VerifyQueryLanguage(const DataSharePredicates &predicates, uint32_t callingTokenId,
     DataProviderConfig::ProviderInfo &providerInfo, std::string &func)
 {
@@ -304,6 +321,9 @@ std::shared_ptr<DataShareResultSet> DataShareServiceImpl::Query(const std::strin
         TimeoutReport timeoutReport({providerInfo.bundleName, providerInfo.moduleName, providerInfo.storeName, func,
             callingTokenId}, true);
         if (!VerifyPredicates(predicates, callingTokenId, providerInfo, func)) {
+            return std::make_pair(E_ERROR, 0);
+        }
+        if (!VerifyColumns(columns, callingTokenId, providerInfo, func)) {
             return std::make_pair(E_ERROR, 0);
         }
         auto [err, result] = dbDelegate->Query(providerInfo.tableName,

@@ -174,6 +174,8 @@ private:
     void SetCriticalTask();
     bool VerifyPredicates(const DataSharePredicates &predicates, uint32_t callingTokenId,
         DataProviderConfig::ProviderInfo &providerInfo, std::string &func);
+    bool VerifyColumns(const std::vector<std::string> &columns, uint32_t callingTokenId,
+        DataProviderConfig::ProviderInfo &providerInfo, std::string &func);
     bool VerifyQueryLanguage(const DataSharePredicates &predicates, uint32_t callingTokenId,
         DataProviderConfig::ProviderInfo &providerInfo, std::string &func);
     std::shared_ptr<DataShareServiceImpl::TimerReceiver> GetTimerReceiver();
