@@ -48,10 +48,9 @@ void Verify(FuzzedDataProvider &fdp)
             creator = nullptr;
         }
         if (fdp.ConsumeBool()) {
-            cache.RegCreator(type, creator, factory);
-        } else {
-            cache.RegCreator(type, creator);
+            factory = nullptr;
         }
+        cache.RegCreator(type, creator, factory);
         StoreMetaData meta;
         meta.storeType = type;
         meta.tokenId = fdp.ConsumeIntegral<uint32_t>();
@@ -60,7 +59,7 @@ void Verify(FuzzedDataProvider &fdp)
         meta.storeId = fdp.ConsumeRandomLengthString(MAX_STORE_ID_LENGTH);
         cache.GetDBStore(meta, {});
     }
-    cache.RegCreator(FUZZ_STORE_TYPE, nullptr);
+    cache.RegCreator(FUZZ_STORE_TYPE, nullptr, nullptr);
 }
 } // namespace
 } // namespace OHOS::DistributedData

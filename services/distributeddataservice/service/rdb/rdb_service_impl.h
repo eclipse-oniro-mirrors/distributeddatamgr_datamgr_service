@@ -16,7 +16,6 @@
 #ifndef DISTRIBUTEDDATASERVICE_RDB_SERVICE_H
 #define DISTRIBUTEDDATASERVICE_RDB_SERVICE_H
 
-#include <atomic>
 #include <map>
 #include <mutex>
 #include <string>
@@ -165,7 +164,6 @@ private:
 
     struct SyncAgentRegistry {
         ConcurrentMap<uint32_t, SyncAgents> agents;
-        std::atomic<bool> active{ false };
         Watchers GetWatchers(uint32_t tokenId);
         void Deactivate();
     };

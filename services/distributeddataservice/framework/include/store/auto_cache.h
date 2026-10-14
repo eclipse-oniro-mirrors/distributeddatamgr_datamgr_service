@@ -19,7 +19,6 @@
 #include <memory>
 #include <mutex>
 #include <set>
-#include <shared_mutex>
 
 #include "concurrent_map.h"
 #include "concurrent_striped_map.h"
@@ -54,14 +53,13 @@ public:
 
     API_EXPORT void Configure(uint32_t garbageInterval);
 
-    API_EXPORT int32_t RegCreator(int32_t type, Creator creator);
-
     // The factory creates a fixed forwarding watcher, never queries subscriptions or opens a store.
-    // A null watcher fails opening; existing delegates retain their original watcher mode.
+    // A null watcher fails opening; an empty factory means no client subscriptions.
     API_EXPORT int32_t RegCreator(int32_t type, Creator creator, WatcherFactory watcherFactory);
 
     API_EXPORT void Bind(std::shared_ptr<Executor> executor);
 
+    // The watchers arguments are retained for source compatibility and ignored. Subscriptions come from WatcherFactory.
     API_EXPORT Store GetStore(const StoreMetaData &meta, const Watchers &watchers);
 
     API_EXPORT std::pair<int32_t, Store> GetDBStore(const StoreMetaData &meta, const Watchers &watchers,
@@ -73,9 +71,6 @@ public:
     API_EXPORT void CloseStore(uint32_t tokenId, const std::string &path = "", const std::string &storeId = "");
  
     API_EXPORT void CloseStore(const Filter &filter);
- 
-    API_EXPORT void SetObserver(
-        uint32_t tokenId, const Watchers &watchers, const std::string &path, const std::string &storeId = "");
  
     API_EXPORT void Enable(uint32_t tokenId, const std::string &path = "", const std::string &storeId = "");
  
@@ -94,17 +89,16 @@ private:
     static int32_t CheckStatusBeforeOpen(const StoreMetaData &meta);
     StoreFactory GetStoreFactory(int32_t type);
     std::pair<int32_t, GeneralStore *> OpenStore(
-        const StoreMetaData &meta, const StoreFactory &factory, Watchers &watchers, const StoreOption &option);
+        const StoreMetaData &meta, const StoreFactory &factory, const StoreOption &option, Watchers &watchers);
     struct Delegate : public GeneralWatcher {
         Delegate(GeneralStore *delegate, const Watchers &watchers, const StoreMetaData &meta,
-            uint32_t garbageInterval = DEFAULT_INTERVAL, bool dynamicWatcher = false);
+            uint32_t garbageInterval = DEFAULT_INTERVAL);
         ~Delegate();
         operator Store();
         bool operator<(const Time &time) const;
         bool Close();
         int32_t GetArea() const;
         const StoreMetaData &GetMeta() const;
-        void SetObservers(const Watchers &watchers);
         int32_t OnChange(const Origin &origin, const PRIFields &primaryFields, ChangeInfo &&values) override;
         int32_t OnChange(const Origin &origin, const Fields &fields, ChangeData &&datas) override;
         void PostDataChange(const StoreMetaData &meta, const std::vector<std::string> &tables);
@@ -112,11 +106,9 @@ private:
     private:
         mutable Time time_;
         GeneralStore *store_ = nullptr;
-        Watchers watchers_;
+        const Watchers watchers_;
         const StoreMetaData meta_;
         const uint32_t garbageInterval_;
-        const bool dynamicWatcher_;
-        std::shared_mutex mutex_;
     };
     static constexpr uint32_t DEFAULT_INTERVAL = 60 * 1000;
     static constexpr int32_t MAX_CREATOR_NUM = 30;

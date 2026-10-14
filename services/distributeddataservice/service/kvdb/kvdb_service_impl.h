@@ -120,7 +120,6 @@ private:
     };
     struct SyncAgentRegistry {
         ConcurrentMap<uint32_t, SyncAgent> agents;
-        std::atomic<bool> active{ false };
         DistributedData::AutoCache::Watchers GetWatchers(uint32_t tokenId, const std::string &key);
         void Deactivate();
     };

@@ -115,7 +115,6 @@ KVDBServiceImpl::KVDBServiceImpl() : KVDBServiceImpl(std::make_shared<SyncAgentR
 KVDBServiceImpl::KVDBServiceImpl(std::shared_ptr<SyncAgentRegistry> registry)
     : registry_(std::move(registry)), syncAgents_(registry_->agents)
 {
-    registry_->active = true;
 }
 
 KVDBServiceImpl::~KVDBServiceImpl()
@@ -1633,13 +1632,7 @@ std::vector<std::string> KVDBServiceImpl::ConvertDevices(const std::vector<std::
 AutoCache::Watchers KVDBServiceImpl::SyncAgentRegistry::GetWatchers(uint32_t tokenId, const std::string &key)
 {
     AutoCache::Watchers watchers{};
-    if (!active) {
-        return watchers;
-    }
-    agents.ComputeIfPresent(tokenId, [this, &key, &watchers](auto &, SyncAgent &agent) {
-        if (!active) {
-            return true;
-        }
+    agents.ComputeIfPresent(tokenId, [&key, &watchers](auto &, SyncAgent &agent) {
         auto iter = agent.watchers_.find(key);
         if (iter != agent.watchers_.end()) {
             for (const auto &watcher : iter->second) {
@@ -1653,7 +1646,6 @@ AutoCache::Watchers KVDBServiceImpl::SyncAgentRegistry::GetWatchers(uint32_t tok
 
 void KVDBServiceImpl::SyncAgentRegistry::Deactivate()
 {
-    active = false;
     std::vector<SyncAgent> retired;
     agents.EraseIf([&retired](auto, SyncAgent &agent) {
         retired.emplace_back(std::move(agent));

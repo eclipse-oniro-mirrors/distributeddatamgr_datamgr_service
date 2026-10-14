@@ -150,7 +150,6 @@ RdbServiceImpl::RdbServiceImpl() : RdbServiceImpl(std::make_shared<SyncAgentRegi
 RdbServiceImpl::RdbServiceImpl(std::shared_ptr<SyncAgentRegistry> registry)
     : registry_(std::move(registry)), syncAgents_(registry_->agents), eventContainer_(std::make_shared<GlobalEvent>())
 {
-    registry_->active = true;
     ZLOGI("construct");
     DistributedDB::RelationalStoreManager::SetAutoLaunchRequestCallback(
         [this](const std::string &identifier, DistributedDB::AutoLaunchParam &param) {
@@ -575,13 +574,7 @@ std::string RdbServiceImpl::TransferStringToHex(const std::string &origStr)
 AutoCache::Watchers RdbServiceImpl::SyncAgentRegistry::GetWatchers(uint32_t tokenId)
 {
     AutoCache::Watchers watchers;
-    if (!active) {
-        return watchers;
-    }
-    agents.ComputeIfPresent(tokenId, [this, &watchers](auto, SyncAgents &syncAgents) {
-        if (!active) {
-            return true;
-        }
+    agents.ComputeIfPresent(tokenId, [&watchers](auto, SyncAgents &syncAgents) {
         std::for_each(syncAgents.begin(), syncAgents.end(), [&watchers](const auto &item) {
             if (item.second.watcher_ != nullptr) {
                 watchers.insert(item.second.watcher_);
@@ -594,7 +587,6 @@ AutoCache::Watchers RdbServiceImpl::SyncAgentRegistry::GetWatchers(uint32_t toke
 
 void RdbServiceImpl::SyncAgentRegistry::Deactivate()
 {
-    active = false;
     std::vector<SyncAgents> retired;
     agents.EraseIf([&retired](auto, SyncAgents &syncAgents) {
         retired.emplace_back(std::move(syncAgents));

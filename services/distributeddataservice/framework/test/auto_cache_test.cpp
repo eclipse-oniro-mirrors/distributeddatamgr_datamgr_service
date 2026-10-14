@@ -1,4 +1,4 @@
-/*
+/**
  * Copyright (c) 2026 Huawei Device Co., Ltd.
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -53,7 +53,8 @@ public:
     static void SetUpTestCase(void)
     {
         testing::FLAGS_gmock_verbose = "error";
-        auto result = AutoCache::GetInstance().RegCreator(MOCK_STORE_TYPE,
+        auto result = AutoCache::GetInstance().RegCreator(
+            MOCK_STORE_TYPE,
             [](const StoreMetaData &metaData,
                 const AutoCache::StoreOption &option) -> std::pair<int32_t, GeneralStore *> {
                 auto store = new (std::nothrow) AutoCacheTestGeneralStoreMock(metaData, option.createRequired);
@@ -61,7 +62,8 @@ public:
                     return { GeneralError::E_ERROR, nullptr };
                 }
                 return { E_OK, store };
-            });
+            },
+            nullptr);
         EXPECT_EQ(result, E_OK);
         auto pool = std::make_shared<ExecutorPool>(5, 2);
         AutoCache::GetInstance().Bind(pool);
@@ -144,12 +146,14 @@ HWTEST_F(AutoCacheTest, GetStore_IdenticalMetadata_CacheHit, TestSize.Level1)
     auto mock = std::make_shared<AutoCacheTestGeneralStoreMock>();
     EXPECT_CALL(*mock, SetExecutor).Times(1);
     auto creationCount = 0;
-    auto result = AutoCache::GetInstance().RegCreator(0,
-        [mock, &creationCount](const StoreMetaData &,
-            const AutoCache::StoreOption &) -> std::pair<int32_t, GeneralStore *> {
+    auto result = AutoCache::GetInstance().RegCreator(
+        0,
+        [mock, &creationCount](
+            const StoreMetaData &, const AutoCache::StoreOption &) -> std::pair<int32_t, GeneralStore *> {
             creationCount++;
             return { E_OK, mock.get() };
-        });
+        },
+        nullptr);
     EXPECT_EQ(result, E_OK);
     auto meta = GetStoreMetaData("GetStore_IdenticalMetadata_CacheHit.db");
     meta.storeType = 0;
@@ -192,16 +196,20 @@ HWTEST_F(AutoCacheTest, AutoCache_GetStore_WithInvalidMetaData, TestSize.Level1)
  */
 HWTEST_F(AutoCacheTest, AutoCache_RegCreator_InvalidType, TestSize.Level1)
 {
-    auto result = AutoCache::GetInstance().RegCreator(-1,
+    auto result = AutoCache::GetInstance().RegCreator(
+        -1,
         [](const StoreMetaData &metaData, const AutoCache::StoreOption &option) -> std::pair<int32_t, GeneralStore *> {
             return { E_OK, nullptr };
-        });
+        },
+        nullptr);
     EXPECT_EQ(result, E_ERROR);
 
-    result = AutoCache::GetInstance().RegCreator(AutoCache::MAX_CREATOR_NUM,
+    result = AutoCache::GetInstance().RegCreator(
+        AutoCache::MAX_CREATOR_NUM,
         [](const StoreMetaData &metaData, const AutoCache::StoreOption &option) -> std::pair<int32_t, GeneralStore *> {
             return { E_OK, nullptr };
-        });
+        },
+        nullptr);
     EXPECT_EQ(result, E_ERROR);
 }
 
@@ -226,12 +234,14 @@ HWTEST_F(AutoCacheTest, AutoCache_GarbageCollection_StoreNotReleasedBeforeTimeou
     const uint32_t garbageInterval = 100; // garbage once 100ms
     AutoCache::GetInstance().Configure(garbageInterval);
     auto creationCount = 0;
-    AutoCache::GetInstance().RegCreator(0,
-        [mock, &creationCount](const StoreMetaData &,
-            const AutoCache::StoreOption &) -> std::pair<int32_t, GeneralStore *> {
+    AutoCache::GetInstance().RegCreator(
+        0,
+        [mock, &creationCount](
+            const StoreMetaData &, const AutoCache::StoreOption &) -> std::pair<int32_t, GeneralStore *> {
             creationCount++;
             return { E_OK, mock.get() };
-        });
+        },
+        nullptr);
     auto meta = GetStoreMetaData("AutoCache_GarbageCollection_StoreNotReleasedBeforeTimeout.db");
     meta.storeType = 0;
 
@@ -289,9 +299,10 @@ HWTEST_F(AutoCacheTest, AutoCache_GetStore_SameTypeDifferentDB_DifferentInstance
     EXPECT_CALL(*mock2, SetExecutor).Times(1);
 
     auto creationCount = 0;
-    auto result = AutoCache::GetInstance().RegCreator(3,
-        [&, mock1, mock2](const StoreMetaData &meta,
-            const AutoCache::StoreOption &) -> std::pair<int32_t, GeneralStore *> {
+    auto result = AutoCache::GetInstance().RegCreator(
+        3,
+        [&, mock1, mock2](
+            const StoreMetaData &meta, const AutoCache::StoreOption &) -> std::pair<int32_t, GeneralStore *> {
             creationCount++;
             if (meta.storeId == "db1_same_type.db") {
                 return { E_OK, mock1.get() };
@@ -299,7 +310,8 @@ HWTEST_F(AutoCacheTest, AutoCache_GetStore_SameTypeDifferentDB_DifferentInstance
                 return { E_OK, mock2.get() };
             }
             return { GeneralError::E_ERROR, nullptr };
-        });
+        },
+        nullptr);
     EXPECT_EQ(result, E_OK);
 
     auto meta1 = GetStoreMetaData("db1_same_type.db");
@@ -355,20 +367,24 @@ HWTEST_F(AutoCacheTest, AutoCache_GetStore_MultipleStores_DifferentInstances, Te
     EXPECT_CALL(*mock2, SetExecutor).Times(1);
 
     auto creationCount = 0;
-    auto result1 = AutoCache::GetInstance().RegCreator(1,
-        [mock1, &creationCount](const StoreMetaData &,
-            const AutoCache::StoreOption &) -> std::pair<int32_t, GeneralStore *> {
+    auto result1 = AutoCache::GetInstance().RegCreator(
+        1,
+        [mock1, &creationCount](
+            const StoreMetaData &, const AutoCache::StoreOption &) -> std::pair<int32_t, GeneralStore *> {
             creationCount++;
             return { E_OK, mock1.get() };
-        });
+        },
+        nullptr);
     EXPECT_EQ(result1, E_OK);
 
-    auto result2 = AutoCache::GetInstance().RegCreator(2,
-        [mock2, &creationCount](const StoreMetaData &,
-            const AutoCache::StoreOption &) -> std::pair<int32_t, GeneralStore *> {
+    auto result2 = AutoCache::GetInstance().RegCreator(
+        2,
+        [mock2, &creationCount](
+            const StoreMetaData &, const AutoCache::StoreOption &) -> std::pair<int32_t, GeneralStore *> {
             creationCount++;
             return { E_OK, mock2.get() };
-        });
+        },
+        nullptr);
     EXPECT_EQ(result2, E_OK);
 
     auto meta1 = GetStoreMetaData("db1.db");
@@ -444,7 +460,7 @@ HWTEST_F(AutoCacheTest, AutoCache_GetStore_ConcurrentCalls_PerformanceTest, Test
         return { GeneralError::E_ERROR, nullptr };
     };
 
-    auto result = AutoCache::GetInstance().RegCreator(4, create);
+    auto result = AutoCache::GetInstance().RegCreator(4, create, nullptr);
     EXPECT_EQ(result, E_OK);
 
     // Launch concurrent threads to get stores
@@ -515,7 +531,7 @@ HWTEST_F(AutoCacheTest, AutoCache_CloseStore_SameTokenId_MultipleStores, TestSiz
         }
         return { GeneralError::E_ERROR, nullptr };
     };
-    auto result = AutoCache::GetInstance().RegCreator(5, create);
+    auto result = AutoCache::GetInstance().RegCreator(5, create, nullptr);
     EXPECT_EQ(result, E_OK);
 
     // Create metadata for multiple stores with same tokenId
@@ -591,16 +607,18 @@ HWTEST_F(AutoCacheTest, AutoCache_CloseStore_DifferentTokenIds_MultipleStores, T
 
     // Register creator for store type 6
     int creationCount = 0;
-    auto result = AutoCache::GetInstance().RegCreator(storeType,
-        [holder, &creationCount](const StoreMetaData &meta,
-            const AutoCache::StoreOption &) -> std::pair<int32_t, GeneralStore *> {
+    auto result = AutoCache::GetInstance().RegCreator(
+        storeType,
+        [holder, &creationCount](
+            const StoreMetaData &meta, const AutoCache::StoreOption &) -> std::pair<int32_t, GeneralStore *> {
             creationCount++;
             auto it = holder->find(meta.storeId);
             if (it != holder->end()) {
                 return { E_OK, it->second.get() };
             }
             return { GeneralError::E_ERROR, nullptr };
-        });
+        },
+        nullptr);
     ASSERT_EQ(result, E_OK);
 
     for (int i = 0; i < storesPerToken * 2; i++) {
@@ -654,16 +672,18 @@ HWTEST_F(AutoCacheTest, AutoCache_CloseStore_FilterBased_Closure, TestSize.Level
 
     // Register creator for store type 7
     int creationCount = 0;
-    auto result = AutoCache::GetInstance().RegCreator(7,
-        [holder, &creationCount](const StoreMetaData &meta,
-            const AutoCache::StoreOption &) -> std::pair<int32_t, GeneralStore *> {
+    auto result = AutoCache::GetInstance().RegCreator(
+        7,
+        [holder, &creationCount](
+            const StoreMetaData &meta, const AutoCache::StoreOption &) -> std::pair<int32_t, GeneralStore *> {
             creationCount++;
             auto it = holder->find(meta.storeId);
             if (it != holder->end()) {
                 return { E_OK, it->second.get() };
             }
             return { GeneralError::E_ERROR, nullptr };
-        });
+        },
+        nullptr);
     EXPECT_EQ(result, E_OK);
 
     // Create metadata for stores with different bundle names
@@ -715,12 +735,14 @@ HWTEST_F(AutoCacheTest, AutoCache_GetDBStore_DisableEnable_StoreAvailability, Te
 
     // Register creator for store type
     int creationCount = 0;
-    auto result = AutoCache::GetInstance().RegCreator(storeType,
-        [mock, &creationCount](const StoreMetaData &meta,
-            const AutoCache::StoreOption &) -> std::pair<int32_t, GeneralStore *> {
+    auto result = AutoCache::GetInstance().RegCreator(
+        storeType,
+        [mock, &creationCount](
+            const StoreMetaData &meta, const AutoCache::StoreOption &) -> std::pair<int32_t, GeneralStore *> {
             creationCount++;
             return { E_OK, mock.get() };
-        });
+        },
+        nullptr);
     EXPECT_EQ(result, E_OK);
 
     // Create metadata for the store
@@ -780,10 +802,12 @@ HWTEST_F(AutoCacheTest, AutoCache_GetDBStore_CheckStatusBeforeOpen_EL4ScreenLock
     EXPECT_CALL(*mock, SetExecutor).Times(0); // Should not be called since it fails at CheckStatusBeforeOpen
 
     // Register creator for store type
-    auto result = AutoCache::GetInstance().RegCreator(storeType,
+    auto result = AutoCache::GetInstance().RegCreator(
+        storeType,
         [mock](const StoreMetaData &meta, const AutoCache::StoreOption &) -> std::pair<int32_t, GeneralStore *> {
             return { E_OK, mock.get() };
-        });
+        },
+        nullptr);
     EXPECT_EQ(result, E_OK);
 
     // Create metadata for the store with EL4 area and screen locked scenario
@@ -823,10 +847,12 @@ HWTEST_F(AutoCacheTest, AutoCache_GetDBStore_CheckStatusBeforeOpen_UserDeactivat
     EXPECT_CALL(*mock, SetExecutor).Times(0); // Should not be called since it fails at CheckStatusBeforeOpen
 
     // Register creator for store type
-    auto result = AutoCache::GetInstance().RegCreator(storeType,
+    auto result = AutoCache::GetInstance().RegCreator(
+        storeType,
         [mock](const StoreMetaData &meta, const AutoCache::StoreOption &) -> std::pair<int32_t, GeneralStore *> {
             return { E_OK, mock.get() };
-        });
+        },
+        nullptr);
     EXPECT_EQ(result, E_OK);
 
     // Create metadata for the store with non-zero user ID and non-EL1/EL4 area
@@ -870,10 +896,12 @@ HWTEST_F(AutoCacheTest, AutoCache_GetDBStore_CheckStatusBeforeOpen_UserNotVerifi
     EXPECT_CALL(*mock, SetExecutor).Times(0); // Should not be called since it fails at CheckStatusBeforeOpen
 
     // Register creator for store type
-    auto result = AutoCache::GetInstance().RegCreator(storeType,
+    auto result = AutoCache::GetInstance().RegCreator(
+        storeType,
         [mock](const StoreMetaData &meta, const AutoCache::StoreOption &) -> std::pair<int32_t, GeneralStore *> {
             return { E_OK, mock.get() };
-        });
+        },
+        nullptr);
     EXPECT_EQ(result, E_OK);
 
     // Create metadata for the store with non-zero user ID and non-EL1 area
@@ -916,12 +944,14 @@ HWTEST_F(AutoCacheTest, AutoCache_GetDBStore_CheckStatusBeforeOpen_EL4ScreenUnlo
 
     // Register creator for store type
     int creationCount = 0;
-    auto result = AutoCache::GetInstance().RegCreator(storeType,
+    auto result = AutoCache::GetInstance().RegCreator(
+        storeType,
         [mock, &creationCount](
             const StoreMetaData &meta, const AutoCache::StoreOption &) -> std::pair<int32_t, GeneralStore *> {
             creationCount++;
             return { E_OK, mock.get() };
-        });
+        },
+        nullptr);
     EXPECT_EQ(result, E_OK);
 
     // Create metadata for the store with EL4 area
@@ -968,12 +998,14 @@ HWTEST_F(AutoCacheTest, AutoCache_GetDBStore_CheckStatusBeforeOpen_ValidUserVeri
 
     // Register creator for store type
     int creationCount = 0;
-    auto result = AutoCache::GetInstance().RegCreator(storeType,
+    auto result = AutoCache::GetInstance().RegCreator(
+        storeType,
         [mock, &creationCount](
             const StoreMetaData &meta, const AutoCache::StoreOption &) -> std::pair<int32_t, GeneralStore *> {
             creationCount++;
             return { E_OK, mock.get() };
-        });
+        },
+        nullptr);
     EXPECT_EQ(result, E_OK);
 
     // Create metadata for the store with non-zero user ID and non-EL1 area
@@ -1016,10 +1048,12 @@ HWTEST_F(AutoCacheTest, AutoCache_GenerateKey_NonEmptyPath_NonExistentPath, Test
     auto mock = std::make_shared<AutoCacheTestGeneralStoreMock>();
     EXPECT_CALL(*mock, SetExecutor).Times(2);
 
-    auto result = AutoCache::GetInstance().RegCreator(storeType,
+    auto result = AutoCache::GetInstance().RegCreator(
+        storeType,
         [mock](const StoreMetaData &meta, const AutoCache::StoreOption &) -> std::pair<int32_t, GeneralStore *> {
             return { E_OK, mock.get() };
-        });
+        },
+        nullptr);
     EXPECT_EQ(result, E_OK);
 
     auto meta = GetStoreMetaData(storeId);
@@ -1076,10 +1110,12 @@ HWTEST_F(AutoCacheTest, AutoCache_GenerateKey_NonEmptyPath_OverlongPathFallback,
     auto mock = std::make_shared<AutoCacheTestGeneralStoreMock>();
     EXPECT_CALL(*mock, SetExecutor).Times(2);
 
-    auto result = AutoCache::GetInstance().RegCreator(storeType,
+    auto result = AutoCache::GetInstance().RegCreator(
+        storeType,
         [mock](const StoreMetaData &meta, const AutoCache::StoreOption &) -> std::pair<int32_t, GeneralStore *> {
             return { E_OK, mock.get() };
-        });
+        },
+        nullptr);
     EXPECT_EQ(result, E_OK);
 
     auto meta = GetStoreMetaData(storeId);
@@ -1134,10 +1170,12 @@ HWTEST_F(AutoCacheTest, AutoCache_GenerateKey_NonEmptyPath_ValidPath, TestSize.L
     auto mock = std::make_shared<AutoCacheTestGeneralStoreMock>();
     EXPECT_CALL(*mock, SetExecutor).Times(2);
 
-    auto result = AutoCache::GetInstance().RegCreator(storeType,
+    auto result = AutoCache::GetInstance().RegCreator(
+        storeType,
         [mock](const StoreMetaData &meta, const AutoCache::StoreOption &) -> std::pair<int32_t, GeneralStore *> {
             return { E_OK, mock.get() };
-        });
+        },
+        nullptr);
     EXPECT_EQ(result, E_OK);
 
     auto meta = GetStoreMetaData(storeId);
@@ -1192,10 +1230,12 @@ HWTEST_F(AutoCacheTest, AutoCache_GenerateKey_CloseStore_NonEmptyPath, TestSize.
     auto mock = std::make_shared<AutoCacheTestGeneralStoreMock>();
     EXPECT_CALL(*mock, SetExecutor).Times(2);
 
-    auto result = AutoCache::GetInstance().RegCreator(storeType,
+    auto result = AutoCache::GetInstance().RegCreator(
+        storeType,
         [mock](const StoreMetaData &meta, const AutoCache::StoreOption &) -> std::pair<int32_t, GeneralStore *> {
             return { E_OK, mock.get() };
-        });
+        },
+        nullptr);
     EXPECT_EQ(result, E_OK);
 
     // Create store with invalid path
@@ -1234,16 +1274,16 @@ HWTEST_F(AutoCacheTest, AutoCache_GenerateKey_CloseStore_NonEmptyPath, TestSize.
 }
 
 /**
- * @tc.name: AutoCache_GenerateKey_SetObserver_NonEmptyPath
- * @tc.desc: Test GenerateKey indirectly through SetObserver with non-empty path
+ * @tc.name: GetStore_NonEmptyPath_ReusesCachedStore
+ * @tc.desc: Test GenerateKey indirectly through repeated GetStore with non-empty path
  * Step 1: Register mock creator for store type 25
- * Step 2: Create store with invalid path and get a watcher callback
- * Step 3: Call SetObserver with the same invalid path to trigger GenerateKey branch 2
- * Step 4: Verify observer is set (no crash, correct key generation)
+ * Step 2: Create store with invalid path
+ * Step 3: Call GetStore with the same invalid path
+ * Step 4: Verify the same store is returned and lookup finds exactly one store
  * @tc.type: FUNC
  * @tc.author: agent
  */
-HWTEST_F(AutoCacheTest, AutoCache_GenerateKey_SetObserver_NonEmptyPath, TestSize.Level1)
+HWTEST_F(AutoCacheTest, GetStore_NonEmptyPath_ReusesCachedStore, TestSize.Level1)
 {
     const uint32_t storeType = 25;
     const uint32_t tokenId = 503;
@@ -1253,10 +1293,12 @@ HWTEST_F(AutoCacheTest, AutoCache_GenerateKey_SetObserver_NonEmptyPath, TestSize
     auto mock = std::make_shared<AutoCacheTestGeneralStoreMock>();
     EXPECT_CALL(*mock, SetExecutor).Times(1);
 
-    auto result = AutoCache::GetInstance().RegCreator(storeType,
+    auto result = AutoCache::GetInstance().RegCreator(
+        storeType,
         [mock](const StoreMetaData &meta, const AutoCache::StoreOption &) -> std::pair<int32_t, GeneralStore *> {
             return { E_OK, mock.get() };
-        });
+        },
+        nullptr);
     EXPECT_EQ(result, E_OK);
 
     auto meta = GetStoreMetaData(storeId);
@@ -1267,10 +1309,10 @@ HWTEST_F(AutoCacheTest, AutoCache_GenerateKey_SetObserver_NonEmptyPath, TestSize
     auto store = AutoCache::GetInstance().GetStore(meta, {});
     ASSERT_NE(store, nullptr);
 
-    // Call SetObserver with the same invalid path - exercises GenerateKey branch 2
-    AutoCache::GetInstance().SetObserver(tokenId, {}, invalidPath, storeId);
+    auto cachedStore = AutoCache::GetInstance().GetStore(meta, {});
+    EXPECT_EQ(cachedStore.get(), store.get());
 
-    // Verify store is still accessible (observer was set without error)
+    // Verify the path resolves to the existing cache entry.
     auto stores = AutoCache::GetInstance().GetStoresIfPresent(tokenId, invalidPath, storeId);
     EXPECT_EQ(stores.size(), 1);
 }
@@ -1295,10 +1337,12 @@ HWTEST_F(AutoCacheTest, AutoCache_GenerateKey_GetStoresIfPresent_NonEmptyPath, T
     auto mock = std::make_shared<AutoCacheTestGeneralStoreMock>();
     EXPECT_CALL(*mock, SetExecutor).Times(2);
 
-    auto result = AutoCache::GetInstance().RegCreator(storeType,
+    auto result = AutoCache::GetInstance().RegCreator(
+        storeType,
         [mock](const StoreMetaData &meta, const AutoCache::StoreOption &) -> std::pair<int32_t, GeneralStore *> {
             return { E_OK, mock.get() };
-        });
+        },
+        nullptr);
     EXPECT_EQ(result, E_OK);
 
     const std::string validPath = GetValidPath();

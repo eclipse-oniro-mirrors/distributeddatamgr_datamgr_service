@@ -15,6 +15,7 @@
 
 #include <gtest/gtest.h>
 
+#include "../../../../framework/test/mock/general_store_mock.h"
 #include "account_delegate_mock.h"
 #include "ipc_skeleton.h"
 #include "kvdb_service_impl.h"
@@ -31,6 +32,7 @@ using namespace OHOS::DistributedKv;
 using namespace OHOS::Security::AccessToken;
 
 namespace OHOS::Test {
+using ObserverCache = OHOS::DistributedData::Test::ObserverCache<GeneralStoreMock>;
 class KvObserverMock final : public IKvStoreObserver {
 public:
     sptr<IRemoteObject> AsObject() override
@@ -174,7 +176,7 @@ HWTEST_F(KvObserverCacheTest, OnChange_DifferentUserOrDestroyedService_DoesNotNo
     EXPECT_EQ(Notify(), E_OK);
     auto registry = service_->registry_;
     service_.reset();
-    EXPECT_FALSE(registry->active);
+    EXPECT_TRUE(registry->agents.Empty());
     GeneralWatcher::Origin origin;
     origin.store = storeId_.storeId;
     GeneralWatcher::ChangeInfo info;

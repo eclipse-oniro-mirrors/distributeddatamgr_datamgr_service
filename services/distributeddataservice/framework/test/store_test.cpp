@@ -1,5 +1,5 @@
-/*
-* Copyright (c) 2024 Huawei Device Co., Ltd.
+/**
+* Copyright (c) 2024-2026 Huawei Device Co., Ltd.
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
 * You may obtain a copy of the License at
@@ -139,7 +139,6 @@ HWTEST_F(AutoCacheTest, OnChange001, TestSize.Level2)
     AutoCache::Watchers watchers;
     StoreMetaData meta;
     AutoCache::Delegate delegate(store, watchers, meta);
-    delegate.SetObservers(watchers);
     GeneralWatcher::Origin origin;
     GeneralWatcher::PRIFields primaryFields;
     GeneralWatcher::ChangeInfo values;
@@ -161,7 +160,6 @@ HWTEST_F(AutoCacheTest, OnChange002, TestSize.Level2)
     AutoCache::Watchers watchers;
     StoreMetaData meta;
     AutoCache::Delegate delegate(store, watchers, meta);
-    delegate.SetObservers(watchers);
     GeneralWatcher::Origin origin;
     GeneralWatcher::Fields fields;
     GeneralWatcher::ChangeData datas;
@@ -241,7 +239,7 @@ HWTEST_F(AutoCacheTest, GetDBStore, TestSize.Level2)
                        const AutoCache::StoreOption &) -> std::pair<int32_t, GeneralStore *> {
         return { GeneralError::E_OK, new (std::nothrow) GeneralStoreMock() };
     };
-    AutoCache::GetInstance().RegCreator(DistributedRdb::RDB_DEVICE_COLLABORATION, creator);
+    AutoCache::GetInstance().RegCreator(DistributedRdb::RDB_DEVICE_COLLABORATION, creator, nullptr);
     AutoCache::Watchers watchers;
     StoreMetaData meta;
     meta.storeType = DistributedRdb::RDB_DEVICE_COLLABORATION;

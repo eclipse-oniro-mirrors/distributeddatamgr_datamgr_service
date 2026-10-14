@@ -38,11 +38,6 @@ AutoCache &AutoCache::GetInstance()
     return cache;
 }
 
-int32_t AutoCache::RegCreator(int32_t type, Creator creator)
-{
-    return RegCreator(type, std::move(creator), nullptr);
-}
-
 int32_t AutoCache::RegCreator(int32_t type, Creator creator, WatcherFactory watcherFactory)
 {
     if (type < 0 || type >= MAX_CREATOR_NUM) {
@@ -120,7 +115,7 @@ AutoCache::StoreFactory AutoCache::GetStoreFactory(int32_t type)
 }
 
 std::pair<int32_t, GeneralStore *> AutoCache::OpenStore(
-    const StoreMetaData &meta, const StoreFactory &factory, Watchers &watchers, const StoreOption &option)
+    const StoreMetaData &meta, const StoreFactory &factory, const StoreOption &option, Watchers &watchers)
 {
     if (factory.watcherFactory) {
         auto watcher = factory.watcherFactory(meta);
@@ -138,7 +133,7 @@ std::pair<int32_t, GeneralStore *> AutoCache::OpenStore(
 }
 
 std::pair<int32_t, AutoCache::Store> AutoCache::GetDBStore(
-    const StoreMetaData &meta, const Watchers &watchers, const StoreOption &option)
+    const StoreMetaData &meta, const Watchers &, const StoreOption &option)
 {
     Store store;
     auto factory = GetStoreFactory(meta.storeType);
@@ -158,26 +153,22 @@ std::pair<int32_t, AutoCache::Store> AutoCache::GetDBStore(
     bool startTimer = false;
     XCollie xcollie(__FUNCTION__, AUTO_CACHE_XCOLLIE_FLAG, AUTO_CACHE_XCOLLIE_TIMEOUT);
     stores_.Compute(meta.tokenId,
-        [this, &meta, &watchers, &store, &storeKey, &option, &ret, &startTimer, &factory](
+        [this, &meta, &store, &storeKey, &option, &ret, &startTimer, &factory](
             auto &, std::map<std::string, Delegate> &stores) -> bool {
             auto it = stores.find(storeKey);
             if (it != stores.end()) {
-                if (!watchers.empty()) {
-                    it->second.SetObservers(watchers);
-                }
                 store = it->second;
                 return !stores.empty();
             }
-            Watchers effectiveWatchers = watchers;
+            Watchers effectiveWatchers;
             GeneralStore *dbStore = nullptr;
-            std::tie(ret, dbStore) = OpenStore(meta, factory, effectiveWatchers, option);
+            std::tie(ret, dbStore) = OpenStore(meta, factory, option, effectiveWatchers);
             if (dbStore == nullptr) {
                 return !stores.empty();
             }
             dbStore->SetExecutor(executor_);
             auto result = stores.emplace(std::piecewise_construct, std::forward_as_tuple(storeKey),
-                std::forward_as_tuple(
-                    dbStore, effectiveWatchers, meta, garbageInterval_, static_cast<bool>(factory.watcherFactory)));
+                std::forward_as_tuple(dbStore, effectiveWatchers, meta, garbageInterval_));
             store = result.first->second;
             startTimer = true;
             return !stores.empty();
@@ -279,22 +270,6 @@ void AutoCache::CloseStore(const AutoCache::Filter &filter)
     });
 }
 
-void AutoCache::SetObserver(
-    uint32_t tokenId, const AutoCache::Watchers &watchers, const std::string &path, const std::string &storeId)
-{
-    auto storeKey = GenerateKey(path, storeId);
-    XCollie xcollie(__FUNCTION__, AUTO_CACHE_XCOLLIE_FLAG, AUTO_CACHE_XCOLLIE_TIMEOUT);
-    stores_.ComputeIfPresent(tokenId, [&storeKey, &watchers](auto &key, auto &stores) {
-        ZLOGD("tokenId:0x%{public}x storeId:%{public}s observers:%{public}zu", key,
-            Anonymous::Change(storeKey).c_str(), watchers.size());
-        auto it = stores.find(storeKey);
-        if (it != stores.end()) {
-            it->second.SetObservers(watchers);
-        }
-        return true;
-    });
-}
-
 void AutoCache::GarbageCollect(bool isForce)
 {
     auto current = std::chrono::steady_clock::now();
@@ -347,10 +322,9 @@ void AutoCache::Configure(uint32_t garbageInterval)
     }
 }
 
-AutoCache::Delegate::Delegate(GeneralStore *delegate, const Watchers &watchers, const StoreMetaData &meta,
-    uint32_t garbageInterval, bool dynamicWatcher)
-    : store_(delegate), watchers_(watchers), meta_(meta), garbageInterval_(garbageInterval),
-      dynamicWatcher_(dynamicWatcher)
+AutoCache::Delegate::Delegate(
+    GeneralStore *delegate, const Watchers &watchers, const StoreMetaData &meta, uint32_t garbageInterval)
+    : store_(delegate), watchers_(watchers), meta_(meta), garbageInterval_(garbageInterval)
 {
     time_ = std::chrono::steady_clock::now() + std::chrono::milliseconds(garbageInterval);
 
@@ -396,15 +370,6 @@ bool AutoCache::Delegate::Close()
     return true;
 }
 
-void AutoCache::Delegate::SetObservers(const AutoCache::Watchers &watchers)
-{
-    if (dynamicWatcher_) {
-        return;
-    }
-    std::unique_lock<decltype(mutex_)> lock(mutex_);
-    watchers_ = watchers;
-}
-
 int32_t AutoCache::Delegate::GetArea() const
 {
     return meta_.area;
@@ -422,11 +387,7 @@ int32_t AutoCache::Delegate::OnChange(const Origin &origin, const PRIFields &pri
         tables.emplace_back(table);
     }
     PostDataChange(meta_, tables);
-    Watchers watchers;
-    {
-        std::unique_lock<decltype(mutex_)> lock(mutex_);
-        watchers = watchers_;
-    }
+    Watchers watchers = watchers_;
     size_t remain = watchers.size();
     for (auto &watcher : watchers) {
         remain--;
@@ -445,11 +406,7 @@ int32_t AutoCache::Delegate::OnChange(const Origin &origin, const Fields &fields
         tables.emplace_back(table);
     }
     PostDataChange(meta_, tables);
-    Watchers watchers;
-    {
-        std::unique_lock<decltype(mutex_)> lock(mutex_);
-        watchers = watchers_;
-    }
+    Watchers watchers = watchers_;
     size_t remain = watchers.size();
     for (auto &watcher : watchers) {
         remain--;

@@ -15,6 +15,7 @@
 
 #include <gtest/gtest.h>
 
+#include "../../mock/general_store_mock.h"
 #include "ipc_skeleton.h"
 #include "mock/observer_cache_test_helper.h"
 #include "rdb_service_impl.h"
@@ -27,6 +28,15 @@ using namespace OHOS::DistributedData::Test;
 using namespace OHOS::DistributedRdb;
 
 namespace OHOS::Test {
+// Extend the RDB suite's existing mock, avoiding its same-name framework mock.
+class RdbObserverStoreMock : public GeneralStoreMock {
+public:
+    MOCK_METHOD(int32_t, AddRef, (), (override));
+    MOCK_METHOD(int32_t, Release, (), (override));
+    MOCK_METHOD(int32_t, Watch, (int32_t origin, Watcher &watcher), (override));
+    MOCK_METHOD(int32_t, Close, (bool isForce), (override));
+};
+using ObserverCache = OHOS::DistributedData::Test::ObserverCache<RdbObserverStoreMock>;
 class RdbObserverNotifierMock final : public RdbNotifierProxy {
 public:
     RdbObserverNotifierMock() : RdbNotifierProxy(nullptr)
@@ -123,7 +133,7 @@ HWTEST_F(RdbObserverCacheTest, Subscribe_CloseBlocked_ReturnsBeforeRelease, Test
 
 /**
  * @tc.name: OnChange_ServiceDestroyed_StopsForwarding
- * @tc.desc: A retained delegate safely observes an inactive registry.
+ * @tc.desc: A retained delegate safely observes a cleared registry after service destruction.
  * @tc.type: RELI
  * @tc.author: agent
  */
@@ -138,7 +148,7 @@ HWTEST_F(RdbObserverCacheTest, OnChange_ServiceDestroyed_StopsForwarding, TestSi
     EXPECT_EQ(service_->Subscribe(param_, option_, nullptr), RDB_OK);
     auto registry = service_->registry_;
     service_.reset();
-    EXPECT_FALSE(registry->active);
+    EXPECT_TRUE(registry->agents.Empty());
     EXPECT_EQ(fixture_->watcher->OnChange({}, GeneralWatcher::PRIFields{}, GeneralWatcher::ChangeInfo{}), E_OK);
 }
 } // namespace OHOS::Test

@@ -16,11 +16,12 @@
 #ifndef OHOS_DISTRIBUTED_DATA_OBSERVER_CACHE_TEST_HELPER_H
 #define OHOS_DISTRIBUTED_DATA_OBSERVER_CACHE_TEST_HELPER_H
 
+#include <gmock/gmock.h>
+
 #include <condition_variable>
 #include <future>
 #include <thread>
 
-#include "general_store_mock.h"
 #include "store/auto_cache.h"
 
 namespace OHOS::DistributedData::Test {
@@ -46,6 +47,7 @@ struct CloseGate {
 };
 
 // Owns only a fake store. Restore the complete creator configuration after closing its delegate.
+template<typename StoreMock>
 class ObserverCache final {
 public:
     ObserverCache(int32_t type, uint32_t tokenId, AutoCache::WatcherFactory watcherFactory)
@@ -122,7 +124,7 @@ public:
 
 private:
     AutoCache::StoreFactory saved_;
-    testing::NiceMock<GeneralStoreMock> store_;
+    testing::NiceMock<StoreMock> store_;
     std::shared_ptr<CloseGate> gate_ = std::make_shared<CloseGate>();
     std::thread closeThread_;
 };
