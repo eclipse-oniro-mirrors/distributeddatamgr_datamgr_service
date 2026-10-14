@@ -128,8 +128,10 @@ RdbServiceImpl::Factory::Factory() : syncAgents_(std::make_shared<SyncAgentMap>(
             return { ret, store };
         },
         [weakAgents = std::weak_ptr<SyncAgentMap>(syncAgents_)](const StoreMetaData &meta) {
-            return std::shared_ptr<GeneralWatcher>(new (std::nothrow) WatcherBridge(
-                [weakAgents, tokenId = meta.tokenId]() -> Watchers { return GetWatchers(weakAgents.lock(), tokenId); }));
+            auto getWatchers = [weakAgents, tokenId = meta.tokenId]() -> Watchers {
+                return GetWatchers(weakAgents.lock(), tokenId);
+            };
+            return std::shared_ptr<GeneralWatcher>(new (std::nothrow) WatcherBridge(std::move(getWatchers)));
         });
     staticActs_ = std::make_shared<RdbStatic>();
     FeatureSystem::GetInstance().RegisterStaticActs(RdbServiceImpl::SERVICE_NAME, staticActs_);
