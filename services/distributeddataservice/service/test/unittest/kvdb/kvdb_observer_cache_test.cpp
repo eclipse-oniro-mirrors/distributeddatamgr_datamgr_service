@@ -60,13 +60,12 @@ public:
         ON_CALL(*token, GetTokenTypeFlag(_)).WillByDefault(Return(TOKEN_NATIVE));
         BAccessTokenKit::accessTokenkit = token;
         service_ = std::make_unique<KVDBServiceImpl>();
-        auto weakRegistry = std::weak_ptr<KVDBServiceImpl::SyncAgentRegistry>(service_->registry_);
+        auto weakAgents = std::weak_ptr<KVDBServiceImpl::SyncAgentMap>(service_->syncAgents_);
         fixture_ = std::make_unique<ObserverCache>(
-            STORE_TYPE, IPCSkeleton::GetCallingTokenID(), [weakRegistry](const StoreMetaData &meta) {
+            STORE_TYPE, IPCSkeleton::GetCallingTokenID(), [weakAgents](const StoreMetaData &meta) {
                 return std::make_shared<WatcherBridge>(
-                    [weakRegistry, tokenId = meta.tokenId, key = meta.user + "###" + meta.storeId]() {
-                        auto registry = weakRegistry.lock();
-                        return registry == nullptr ? AutoCache::Watchers{} : registry->GetWatchers(tokenId, key);
+                    [weakAgents, tokenId = meta.tokenId, key = meta.user + "###" + meta.storeId]() {
+                        return KVDBServiceImpl::GetWatchers(weakAgents.lock(), tokenId, key);
                     });
             });
     }
@@ -154,7 +153,7 @@ HWTEST_F(KvObserverCacheTest, Subscribe_CloseBlocked_ReturnsBeforeRelease, TestS
 
 /**
  * @tc.name: OnChange_DifferentUserOrDestroyedService_DoesNotNotify
- * @tc.desc: Store identity is bound at open time and a destroyed service stops new notifications.
+ * @tc.desc: Store identity is bound at open time; a cleared or expired shared agent map stops new notifications.
  * @tc.type: RELI
  * @tc.author: agent
  */
@@ -174,13 +173,15 @@ HWTEST_F(KvObserverCacheTest, OnChange_DifferentUserOrDestroyedService_DoesNotNo
     auto otherStore = AutoCache::GetInstance().GetStore(otherMeta, {});
     ASSERT_NE(otherStore, nullptr);
     EXPECT_EQ(Notify(), E_OK);
-    auto registry = service_->registry_;
+    auto syncAgents = service_->syncAgents_;
     service_.reset();
-    EXPECT_TRUE(registry->agents.Empty());
+    EXPECT_TRUE(syncAgents->Empty());
     GeneralWatcher::Origin origin;
     origin.store = storeId_.storeId;
     GeneralWatcher::ChangeInfo info;
     info[origin.store][GeneralWatcher::OP_INSERT].emplace_back(std::string("key"));
     EXPECT_EQ(matchingWatcher->OnChange(origin, GeneralWatcher::PRIFields{}, std::move(info)), E_OK);
+    syncAgents.reset();
+    EXPECT_EQ(matchingWatcher->OnChange(origin, GeneralWatcher::PRIFields{}, GeneralWatcher::ChangeInfo{}), E_OK);
 }
 } // namespace OHOS::Test

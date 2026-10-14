@@ -71,11 +71,11 @@ static constexpr const char *PATH_SEPARATOR = "/";
 static constexpr const char *DSOFTBUS_BUNDLE_NAME = "dsoftbus";
 static const size_t SECRET_KEY_COUNT = 2;
 __attribute__((used)) KVDBServiceImpl::Factory KVDBServiceImpl::factory_;
-KVDBServiceImpl::Factory::Factory() : registry_(std::make_shared<SyncAgentRegistry>())
+KVDBServiceImpl::Factory::Factory() : syncAgents_(std::make_shared<SyncAgentMap>())
 {
     FeatureSystem::GetInstance().RegisterCreator("kv_store", [this]() {
         if (product_ == nullptr) {
-            product_ = std::shared_ptr<KVDBServiceImpl>(new KVDBServiceImpl(registry_));
+            product_ = std::shared_ptr<KVDBServiceImpl>(new KVDBServiceImpl(syncAgents_));
         }
         return product_;
     });
@@ -91,11 +91,10 @@ KVDBServiceImpl::Factory::Factory() : registry_(std::make_shared<SyncAgentRegist
         }
         return { E_OK, store };
     };
-    auto watcherFactory = [weakRegistry = std::weak_ptr<SyncAgentRegistry>(registry_)](const StoreMetaData &meta) {
+    auto watcherFactory = [weakAgents = std::weak_ptr<SyncAgentMap>(syncAgents_)](const StoreMetaData &meta) {
         return std::shared_ptr<GeneralWatcher>(new (std::nothrow)
-                WatcherBridge([weakRegistry, tokenId = meta.tokenId, key = GenerateKey(meta.user, meta.storeId)]() {
-                    auto registry = weakRegistry.lock();
-                    return registry == nullptr ? AutoCache::Watchers{} : registry->GetWatchers(tokenId, key);
+                WatcherBridge([weakAgents, tokenId = meta.tokenId, key = GenerateKey(meta.user, meta.storeId)]() {
+                    return GetWatchers(weakAgents.lock(), tokenId, key);
                 }));
     };
     AutoCache::GetInstance().RegCreator(KvStoreType::SINGLE_VERSION, creator, watcherFactory);
@@ -104,22 +103,21 @@ KVDBServiceImpl::Factory::Factory() : registry_(std::make_shared<SyncAgentRegist
 
 KVDBServiceImpl::Factory::~Factory()
 {
-    registry_->Deactivate();
+    ClearSyncAgents(syncAgents_);
     product_ = nullptr;
 }
 
-KVDBServiceImpl::KVDBServiceImpl() : KVDBServiceImpl(std::make_shared<SyncAgentRegistry>())
+KVDBServiceImpl::KVDBServiceImpl() : KVDBServiceImpl(std::make_shared<SyncAgentMap>())
 {
 }
 
-KVDBServiceImpl::KVDBServiceImpl(std::shared_ptr<SyncAgentRegistry> registry)
-    : registry_(std::move(registry)), syncAgents_(registry_->agents)
+KVDBServiceImpl::KVDBServiceImpl(std::shared_ptr<SyncAgentMap> syncAgents) : syncAgents_(std::move(syncAgents))
 {
 }
 
 KVDBServiceImpl::~KVDBServiceImpl()
 {
-    registry_->Deactivate();
+    ClearSyncAgents(syncAgents_);
     DumpManager::GetInstance().RemoveHandler("FEATURE_INFO", uintptr_t(this));
 }
 
@@ -256,7 +254,7 @@ Status KVDBServiceImpl::CloudSync(const AppId &appId, const StoreId &storeId, co
 void KVDBServiceImpl::OnAsyncComplete(uint32_t tokenId, uint64_t seqNum, ProgressDetail &&detail)
 {
     ZLOGI("tokenId=%{public}x seqnum=%{public}" PRIu64, tokenId, seqNum);
-    auto [success, agent] = syncAgents_.Find(tokenId);
+    auto [success, agent] = syncAgents_->Find(tokenId);
     if (success && agent.notifier_ != nullptr) {
         agent.notifier_->SyncCompleted(seqNum, std::move(detail));
     }
@@ -368,7 +366,7 @@ Status KVDBServiceImpl::GetSwitch(const AppId &appId, const std::string &network
 Status KVDBServiceImpl::RegServiceNotifier(const AppId &appId, sptr<IKVDBNotifier> notifier)
 {
     auto tokenId = IPCSkeleton::GetCallingTokenID();
-    syncAgents_.Compute(tokenId, [&appId, notifier](const auto &, SyncAgent &value) {
+    syncAgents_->Compute(tokenId, [&appId, notifier](const auto &, SyncAgent &value) {
         if (value.pid_ != IPCSkeleton::GetCallingPid()) {
             value.ReInit(IPCSkeleton::GetCallingPid(), appId);
         }
@@ -380,7 +378,7 @@ Status KVDBServiceImpl::RegServiceNotifier(const AppId &appId, sptr<IKVDBNotifie
 
 Status KVDBServiceImpl::UnregServiceNotifier(const AppId &appId)
 {
-    syncAgents_.ComputeIfPresent(IPCSkeleton::GetCallingTokenID(), [&appId](const auto &key, SyncAgent &value) {
+    syncAgents_->ComputeIfPresent(IPCSkeleton::GetCallingTokenID(), [&appId](const auto &key, SyncAgent &value) {
         if (value.pid_ != IPCSkeleton::GetCallingPid()) {
             ZLOGW("agent already changed! old pid:%{public}d, new pid:%{public}d, appId:%{public}s",
                 IPCSkeleton::GetCallingPid(), value.pid_, appId.appId.c_str());
@@ -396,7 +394,7 @@ Status KVDBServiceImpl::SubscribeSwitchData(const AppId &appId)
 {
     sptr<IKVDBNotifier> notifier = nullptr;
     auto tokenId = IPCSkeleton::GetCallingTokenID();
-    syncAgents_.Compute(tokenId, [&appId, &notifier](const auto &, SyncAgent &value) {
+    syncAgents_->Compute(tokenId, [&appId, &notifier](const auto &, SyncAgent &value) {
         if (value.pid_ != IPCSkeleton::GetCallingPid()) {
             value.ReInit(IPCSkeleton::GetCallingPid(), appId);
         }
@@ -434,7 +432,7 @@ Status KVDBServiceImpl::UnsubscribeSwitchData(const AppId &appId)
 {
     bool destroyed = false;
     auto tokenId = IPCSkeleton::GetCallingTokenID();
-    syncAgents_.ComputeIfPresent(tokenId, [&destroyed](auto &key, SyncAgent &value) {
+    syncAgents_->ComputeIfPresent(tokenId, [&destroyed](auto &key, SyncAgent &value) {
         if (value.switchesObserverCount_ > 0) {
             value.switchesObserverCount_--;
         }
@@ -480,7 +478,7 @@ Status KVDBServiceImpl::SetSyncParam(const AppId &appId, const StoreId &storeId,
     }
     StoreMetaData meta = GetStoreMetaData(appId, storeId, subUser);
     auto key = GenerateKey(meta.user, storeId.storeId);
-    syncAgents_.Compute(meta.tokenId, [&appId, &key, &syncParam](auto &, SyncAgent &value) {
+    syncAgents_->Compute(meta.tokenId, [&appId, &key, &syncParam](auto &, SyncAgent &value) {
         if (value.pid_ != IPCSkeleton::GetCallingPid()) {
             value.ReInit(IPCSkeleton::GetCallingPid(), appId);
         }
@@ -496,7 +494,7 @@ Status KVDBServiceImpl::GetSyncParam(const AppId &appId, const StoreId &storeId,
     syncParam.allowedDelayMs = 0;
     StoreMetaData meta = GetStoreMetaData(appId, storeId, subUser);
     auto key = GenerateKey(meta.user, storeId.storeId);
-    syncAgents_.ComputeIfPresent(meta.tokenId, [&appId, &key, &syncParam](auto &, SyncAgent &value) {
+    syncAgents_->ComputeIfPresent(meta.tokenId, [&appId, &key, &syncParam](auto &, SyncAgent &value) {
         if (value.pid_ != IPCSkeleton::GetCallingPid()) {
             ZLOGW("agent already changed! old pid:%{public}d, new pid:%{public}d, appId:%{public}s",
                 IPCSkeleton::GetCallingPid(), value.pid_, appId.appId.c_str());
@@ -583,7 +581,7 @@ Status KVDBServiceImpl::Subscribe(const AppId &appId, const StoreId &storeId, in
     ZLOGI("appId:%{public}s storeId:%{public}s tokenId:0x%{public}x", appId.appId.c_str(),
         Anonymous::Change(storeId.storeId).c_str(), metaData.tokenId);
     auto key = GenerateKey(metaData.user, storeId.storeId);
-    syncAgents_.Compute(metaData.tokenId, [&appId, &key, &observer](auto &, SyncAgent &agent) {
+    syncAgents_->Compute(metaData.tokenId, [&appId, &key, &observer](auto &, SyncAgent &agent) {
         if (agent.pid_ != IPCSkeleton::GetCallingPid()) {
             agent.ReInit(IPCSkeleton::GetCallingPid(), appId);
         }
@@ -615,7 +613,7 @@ Status KVDBServiceImpl::Unsubscribe(const AppId &appId, const StoreId &storeId, 
     ZLOGI("appId:%{public}s storeId:%{public}s tokenId:0x%{public}x", appId.appId.c_str(),
         Anonymous::Change(storeId.storeId).c_str(), metaData.tokenId);
     auto key = GenerateKey(metaData.user, storeId.storeId);
-    syncAgents_.ComputeIfPresent(metaData.tokenId, [&key, &observer](auto &, SyncAgent &agent) {
+    syncAgents_->ComputeIfPresent(metaData.tokenId, [&key, &observer](auto &, SyncAgent &agent) {
         auto iter = agent.watchers_.find(key);
         if (iter == agent.watchers_.end()) {
             return true;
@@ -882,7 +880,7 @@ int32_t KVDBServiceImpl::OnAppExit(pid_t uid, pid_t pid, uint32_t tokenId, const
     info.uid = uid;
     info.tokenId = tokenId;
     info.bundleName = appId;
-    syncAgents_.EraseIf([pid, &info](auto &key, SyncAgent &agent) {
+    syncAgents_->EraseIf([pid, &info](auto &key, SyncAgent &agent) {
         if (agent.pid_ != pid) {
             return false;
         }
@@ -908,7 +906,7 @@ int32_t KVDBServiceImpl::OnFeatureExit(pid_t uid, pid_t pid, uint32_t tokenId, c
     info.uid = uid;
     info.tokenId = tokenId;
     info.bundleName = appId;
-    syncAgents_.EraseIf([pid, &info](auto &key, SyncAgent &agent) {
+    syncAgents_->EraseIf([pid, &info](auto &key, SyncAgent &agent) {
         if (agent.pid_ != pid) {
             return false;
         }
@@ -970,7 +968,7 @@ int32_t KVDBServiceImpl::ResolveAutoLaunch(const std::string &identifier, DBLaun
         if (identifier != identifierTag && !isTripleIdentifierEqual) {
             continue;
         }
-        auto watchers = registry_->GetWatchers(storeMeta.tokenId, GenerateKey(storeMeta.user, storeMeta.storeId));
+        auto watchers = GetWatchers(syncAgents_, storeMeta.tokenId, GenerateKey(storeMeta.user, storeMeta.storeId));
         auto store = AutoCache::GetInstance().GetStore(storeMeta, {});
         if (isTripleIdentifierEqual && store != nullptr) {
             store->SetEqualIdentifier(storeMeta.appId, storeMeta.storeId, accountId);
@@ -1426,7 +1424,7 @@ Status KVDBServiceImpl::DoComplete(const StoreMetaData &meta, const SyncInfo &in
         return SUCCESS;
     }
     sptr<IKVDBNotifier> notifier;
-    syncAgents_.ComputeIfPresent(meta.tokenId, [&notifier](auto &key, SyncAgent &agent) {
+    syncAgents_->ComputeIfPresent(meta.tokenId, [&notifier](auto &key, SyncAgent &agent) {
         notifier = agent.notifier_;
         return true;
     });
@@ -1461,7 +1459,7 @@ uint32_t KVDBServiceImpl::GetSyncDelayTime(uint32_t delay, const StoreId &storeI
     }
     delay = KvStoreSyncManager::SYNC_DEFAULT_DELAY_MS;
     auto key = GenerateKey(subUser, storeId);
-    syncAgents_.ComputeIfPresent(IPCSkeleton::GetCallingTokenID(), [&delay, &key](auto &, SyncAgent &agent) {
+    syncAgents_->ComputeIfPresent(IPCSkeleton::GetCallingTokenID(), [&delay, &key](auto &, SyncAgent &agent) {
         auto it = agent.delayTimes_.find(key);
         if (it != agent.delayTimes_.end() && it->second != 0) {
             delay = it->second;
@@ -1629,10 +1627,14 @@ std::vector<std::string> KVDBServiceImpl::ConvertDevices(const std::vector<std::
     return DMAdapter::ToUUID(deviceIds);
 }
 
-AutoCache::Watchers KVDBServiceImpl::SyncAgentRegistry::GetWatchers(uint32_t tokenId, const std::string &key)
+AutoCache::Watchers KVDBServiceImpl::GetWatchers(
+    const std::shared_ptr<SyncAgentMap> &syncAgents, uint32_t tokenId, const std::string &key)
 {
     AutoCache::Watchers watchers{};
-    agents.ComputeIfPresent(tokenId, [&key, &watchers](auto &, SyncAgent &agent) {
+    if (syncAgents == nullptr) {
+        return watchers;
+    }
+    syncAgents->ComputeIfPresent(tokenId, [&key, &watchers](auto &, SyncAgent &agent) {
         auto iter = agent.watchers_.find(key);
         if (iter != agent.watchers_.end()) {
             for (const auto &watcher : iter->second) {
@@ -1644,10 +1646,10 @@ AutoCache::Watchers KVDBServiceImpl::SyncAgentRegistry::GetWatchers(uint32_t tok
     return watchers;
 }
 
-void KVDBServiceImpl::SyncAgentRegistry::Deactivate()
+void KVDBServiceImpl::ClearSyncAgents(const std::shared_ptr<SyncAgentMap> &syncAgents)
 {
     std::vector<SyncAgent> retired;
-    agents.EraseIf([&retired](auto, SyncAgent &agent) {
+    syncAgents->EraseIf([&retired](auto, SyncAgent &agent) {
         retired.emplace_back(std::move(agent));
         return true;
     });
@@ -1745,7 +1747,7 @@ std::string KVDBServiceImpl::GenerateKey(const std::string &userId, const std::s
 
 void KVDBServiceImpl::DeleteInner(const AppId &appId, const StoreId &storeId, const StoreMetaData &metaData)
 {
-    syncAgents_.ComputeIfPresent(metaData.tokenId, [&appId, &storeId](auto &key, SyncAgent &syncAgent) {
+    syncAgents_->ComputeIfPresent(metaData.tokenId, [&appId, &storeId](auto &key, SyncAgent &syncAgent) {
         if (syncAgent.pid_ != IPCSkeleton::GetCallingPid()) {
             ZLOGW("agent already changed! old pid:%{public}d new pid:%{public}d appId:%{public}s",
                 IPCSkeleton::GetCallingPid(), syncAgent.pid_, appId.appId.c_str());

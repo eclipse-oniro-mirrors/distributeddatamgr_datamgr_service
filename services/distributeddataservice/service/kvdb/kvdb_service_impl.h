@@ -118,12 +118,11 @@ private:
         std::map<std::string, std::set<std::shared_ptr<KVDBWatcher>>> watchers_;
         void ReInit(pid_t pid, const AppId &appId);
     };
-    struct SyncAgentRegistry {
-        ConcurrentMap<uint32_t, SyncAgent> agents;
-        DistributedData::AutoCache::Watchers GetWatchers(uint32_t tokenId, const std::string &key);
-        void Deactivate();
-    };
-    explicit KVDBServiceImpl(std::shared_ptr<SyncAgentRegistry> registry);
+    using SyncAgentMap = ConcurrentMap<uint32_t, SyncAgent>;
+    static DistributedData::AutoCache::Watchers GetWatchers(
+        const std::shared_ptr<SyncAgentMap> &syncAgents, uint32_t tokenId, const std::string &key);
+    static void ClearSyncAgents(const std::shared_ptr<SyncAgentMap> &syncAgents);
+    explicit KVDBServiceImpl(std::shared_ptr<SyncAgentMap> syncAgents);
 
     class Factory {
     public:
@@ -131,7 +130,7 @@ private:
         ~Factory();
 
     private:
-        std::shared_ptr<SyncAgentRegistry> registry_;
+        std::shared_ptr<SyncAgentMap> syncAgents_;
         std::shared_ptr<KVDBServiceImpl> product_;
     };
 
@@ -185,8 +184,7 @@ private:
     void DeleteInner(const AppId &appId, const StoreId &storeId, const StoreMetaData &metaData);
     void SaveLaunchInfo(StoreMetaData &meta);
     static Factory factory_;
-    std::shared_ptr<SyncAgentRegistry> registry_;
-    ConcurrentMap<uint32_t, SyncAgent> &syncAgents_;
+    std::shared_ptr<SyncAgentMap> syncAgents_;
     std::shared_ptr<ExecutorPool> executors_;
     std::atomic_uint64_t syncId_ = 0;
     static constexpr int32_t OH_OS_TYPE = 10;

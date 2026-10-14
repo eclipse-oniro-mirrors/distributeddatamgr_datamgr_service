@@ -105,11 +105,11 @@ bool IsPathStartWithRoot(const std::string &path, const std::string &root)
 } // namespace
 __attribute__((used)) RdbServiceImpl::Factory RdbServiceImpl::factory_;
 __attribute__((used)) std::shared_ptr<RdbFlowControlManager> RdbServiceImpl::rdbFlowControlManager_;
-RdbServiceImpl::Factory::Factory() : registry_(std::make_shared<SyncAgentRegistry>())
+RdbServiceImpl::Factory::Factory() : syncAgents_(std::make_shared<SyncAgentMap>())
 {
     FeatureSystem::GetInstance().RegisterCreator(RdbServiceImpl::SERVICE_NAME, [this]() {
         if (product_ == nullptr) {
-            product_ = std::shared_ptr<RdbServiceImpl>(new RdbServiceImpl(registry_));
+            product_ = std::shared_ptr<RdbServiceImpl>(new RdbServiceImpl(syncAgents_));
         }
         return product_;
     });
@@ -127,12 +127,9 @@ RdbServiceImpl::Factory::Factory() : registry_(std::make_shared<SyncAgentRegistr
             }
             return { ret, store };
         },
-        [weakRegistry = std::weak_ptr<SyncAgentRegistry>(registry_)](const StoreMetaData &meta) {
-            return std::shared_ptr<GeneralWatcher>(
-                new (std::nothrow) WatcherBridge([weakRegistry, tokenId = meta.tokenId]() -> Watchers {
-                    auto registry = weakRegistry.lock();
-                    return registry == nullptr ? Watchers{} : registry->GetWatchers(tokenId);
-                }));
+        [weakAgents = std::weak_ptr<SyncAgentMap>(syncAgents_)](const StoreMetaData &meta) {
+            return std::shared_ptr<GeneralWatcher>(new (std::nothrow) WatcherBridge(
+                [weakAgents, tokenId = meta.tokenId]() -> Watchers { return GetWatchers(weakAgents.lock(), tokenId); }));
         });
     staticActs_ = std::make_shared<RdbStatic>();
     FeatureSystem::GetInstance().RegisterStaticActs(RdbServiceImpl::SERVICE_NAME, staticActs_);
@@ -140,15 +137,15 @@ RdbServiceImpl::Factory::Factory() : registry_(std::make_shared<SyncAgentRegistr
 
 RdbServiceImpl::Factory::~Factory()
 {
-    registry_->Deactivate();
+    ClearSyncAgents(syncAgents_);
 }
 
-RdbServiceImpl::RdbServiceImpl() : RdbServiceImpl(std::make_shared<SyncAgentRegistry>())
+RdbServiceImpl::RdbServiceImpl() : RdbServiceImpl(std::make_shared<SyncAgentMap>())
 {
 }
 
-RdbServiceImpl::RdbServiceImpl(std::shared_ptr<SyncAgentRegistry> registry)
-    : registry_(std::move(registry)), syncAgents_(registry_->agents), eventContainer_(std::make_shared<GlobalEvent>())
+RdbServiceImpl::RdbServiceImpl(std::shared_ptr<SyncAgentMap> syncAgents)
+    : syncAgents_(std::move(syncAgents)), eventContainer_(std::make_shared<GlobalEvent>())
 {
     ZLOGI("construct");
     DistributedDB::RelationalStoreManager::SetAutoLaunchRequestCallback(
@@ -203,7 +200,7 @@ int32_t RdbServiceImpl::OnAppExit(pid_t uid, pid_t pid, uint32_t tokenId, const 
 {
     ZLOGI("client dead, tokenId:%{public}d, pid:%{public}d ", tokenId, pid);
     bool destroyed = false;
-    syncAgents_.ComputeIfPresent(tokenId, [pid, &destroyed](auto &key, SyncAgents &agents) {
+    syncAgents_->ComputeIfPresent(tokenId, [pid, &destroyed](auto &key, SyncAgents &agents) {
         auto it = agents.find(pid);
         if (it != agents.end()) {
             it->second.SetNotifier(nullptr);
@@ -232,7 +229,7 @@ int32_t RdbServiceImpl::OnFeatureExit(pid_t uid, pid_t pid, uint32_t tokenId, co
 {
     ZLOGI("rdb exit, tokenId:%{public}d, pid:%{public}d, bundleName:%{public}s.", tokenId, pid, bundleName.c_str());
     bool destroyed = false;
-    syncAgents_.ComputeIfPresent(tokenId, [pid, &destroyed](auto &key, SyncAgents &agents) {
+    syncAgents_->ComputeIfPresent(tokenId, [pid, &destroyed](auto &key, SyncAgents &agents) {
         auto it = agents.find(pid);
         if (it != agents.end()) {
             it->second.SetNotifier(nullptr);
@@ -309,7 +306,7 @@ int32_t RdbServiceImpl::InitNotifier(const RdbSyncerParam &param, const sptr<IRe
     }
     pid_t pid = IPCSkeleton::GetCallingPid();
     uint32_t tokenId = IPCSkeleton::GetCallingTokenID();
-    syncAgents_.Compute(tokenId, [bundleName = param.bundleName_, notifierProxy, pid](auto, SyncAgents &agents) {
+    syncAgents_->Compute(tokenId, [bundleName = param.bundleName_, notifierProxy, pid](auto, SyncAgents &agents) {
         auto [it, success] = agents.try_emplace(pid, SyncAgent(bundleName));
         if (it == agents.end()) {
             return true;
@@ -544,7 +541,7 @@ std::pair<int32_t, std::vector<std::string>> RdbServiceImpl::ObtainUuid(
 void RdbServiceImpl::OnAsyncComplete(uint32_t tokenId, pid_t pid, uint32_t seqNum, Details &&result)
 {
     sptr<RdbNotifierProxy> notifier = nullptr;
-    syncAgents_.ComputeIfPresent(tokenId, [&notifier, pid](auto, SyncAgents &syncAgents) {
+    syncAgents_->ComputeIfPresent(tokenId, [&notifier, pid](auto, SyncAgents &syncAgents) {
         auto it = syncAgents.find(pid);
         if (it != syncAgents.end()) {
             notifier = it->second.notifier_;
@@ -571,11 +568,14 @@ std::string RdbServiceImpl::TransferStringToHex(const std::string &origStr)
     return tmp;
 }
 
-AutoCache::Watchers RdbServiceImpl::SyncAgentRegistry::GetWatchers(uint32_t tokenId)
+AutoCache::Watchers RdbServiceImpl::GetWatchers(const std::shared_ptr<SyncAgentMap> &syncAgents, uint32_t tokenId)
 {
     AutoCache::Watchers watchers;
-    agents.ComputeIfPresent(tokenId, [&watchers](auto, SyncAgents &syncAgents) {
-        std::for_each(syncAgents.begin(), syncAgents.end(), [&watchers](const auto &item) {
+    if (syncAgents == nullptr) {
+        return watchers;
+    }
+    syncAgents->ComputeIfPresent(tokenId, [&watchers](auto, SyncAgents &agents) {
+        std::for_each(agents.begin(), agents.end(), [&watchers](const auto &item) {
             if (item.second.watcher_ != nullptr) {
                 watchers.insert(item.second.watcher_);
             }
@@ -585,11 +585,11 @@ AutoCache::Watchers RdbServiceImpl::SyncAgentRegistry::GetWatchers(uint32_t toke
     return watchers;
 }
 
-void RdbServiceImpl::SyncAgentRegistry::Deactivate()
+void RdbServiceImpl::ClearSyncAgents(const std::shared_ptr<SyncAgentMap> &syncAgents)
 {
     std::vector<SyncAgents> retired;
-    agents.EraseIf([&retired](auto, SyncAgents &syncAgents) {
-        retired.emplace_back(std::move(syncAgents));
+    syncAgents->EraseIf([&retired](auto, SyncAgents &agents) {
+        retired.emplace_back(std::move(agents));
         return true;
     });
 }
@@ -597,7 +597,7 @@ void RdbServiceImpl::SyncAgentRegistry::Deactivate()
 RdbServiceImpl::DetailAsync RdbServiceImpl::GetCallbacks(uint32_t tokenId, const std::string &storeName)
 {
     std::list<sptr<RdbNotifierProxy>> notifiers;
-    syncAgents_.ComputeIfPresent(tokenId, [&storeName, &notifiers](auto, SyncAgents &syncAgents) {
+    syncAgents_->ComputeIfPresent(tokenId, [&storeName, &notifiers](auto, SyncAgents &syncAgents) {
         std::for_each(syncAgents.begin(), syncAgents.end(), [&storeName, &notifiers](const auto &item) {
             if (item.second.callBackStores_.count(storeName) != 0) {
                 notifiers.push_back(item.second.notifier_);
@@ -979,7 +979,7 @@ int32_t RdbServiceImpl::Subscribe(const RdbSyncerParam &param, const SubscribeOp
     }
     pid_t pid = IPCSkeleton::GetCallingPid();
     auto tokenId = IPCSkeleton::GetCallingTokenID();
-    syncAgents_.Compute(tokenId, [pid, &param](auto &key, SyncAgents &agents) {
+    syncAgents_->Compute(tokenId, [pid, &param](auto &key, SyncAgents &agents) {
         auto [it, _] = agents.try_emplace(pid, param.bundleName_);
         if (it == agents.end()) {
             return !agents.empty();
@@ -1002,7 +1002,7 @@ int32_t RdbServiceImpl::UnSubscribe(const RdbSyncerParam &param, const Subscribe
     }
     auto tokenId = IPCSkeleton::GetCallingTokenID();
     auto pid = IPCSkeleton::GetCallingPid();
-    syncAgents_.ComputeIfPresent(tokenId, [pid](auto, SyncAgents &agents) {
+    syncAgents_->ComputeIfPresent(tokenId, [pid](auto, SyncAgents &agents) {
         auto it = agents.find(pid);
         if (it == agents.end()) {
             return !agents.empty();
@@ -1022,7 +1022,7 @@ int32_t RdbServiceImpl::RegisterAutoSyncCallback(const RdbSyncerParam &param,
     pid_t pid = IPCSkeleton::GetCallingPid();
     auto tokenId = IPCSkeleton::GetCallingTokenID();
     auto storeName = RemoveSuffix(param.storeName_);
-    syncAgents_.Compute(tokenId, [pid, &param, &storeName](auto, SyncAgents &agents) {
+    syncAgents_->Compute(tokenId, [pid, &param, &storeName](auto, SyncAgents &agents) {
         auto [it, success] = agents.try_emplace(pid, param.bundleName_);
         if (it == agents.end()) {
             return !agents.empty();
@@ -1042,7 +1042,7 @@ int32_t RdbServiceImpl::UnregisterAutoSyncCallback(const RdbSyncerParam &param,
     auto tokenId = IPCSkeleton::GetCallingTokenID();
     auto pid = IPCSkeleton::GetCallingPid();
     auto storeName = RemoveSuffix(param.storeName_);
-    syncAgents_.ComputeIfPresent(tokenId, [pid, &storeName](auto, SyncAgents &agents) {
+    syncAgents_->ComputeIfPresent(tokenId, [pid, &storeName](auto, SyncAgents &agents) {
         auto agent = agents.find(pid);
         if (agent == agents.end()) {
             return !agents.empty();
@@ -2082,7 +2082,7 @@ void RdbServiceImpl::UpdateBundleVerison()
 
 RdbServiceImpl::~RdbServiceImpl()
 {
-    registry_->Deactivate();
+    ClearSyncAgents(syncAgents_);
     DumpManager::GetInstance().RemoveHandler("FEATURE_INFO", uintptr_t(this));
 }
 

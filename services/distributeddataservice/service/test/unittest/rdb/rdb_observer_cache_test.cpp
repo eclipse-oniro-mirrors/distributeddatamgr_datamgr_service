@@ -53,12 +53,11 @@ public:
         service_ = std::make_unique<RdbServiceImpl>();
         param_.bundleName_ = "observer.test";
         param_.storeName_ = "observer_cache_test";
-        auto weakRegistry = std::weak_ptr<RdbServiceImpl::SyncAgentRegistry>(service_->registry_);
+        auto weakAgents = std::weak_ptr<RdbServiceImpl::SyncAgentMap>(service_->syncAgents_);
         fixture_ = std::make_unique<ObserverCache>(
-            STORE_TYPE, IPCSkeleton::GetCallingTokenID(), [weakRegistry](const StoreMetaData &meta) {
-                return std::make_shared<WatcherBridge>([weakRegistry, tokenId = meta.tokenId]() {
-                    auto registry = weakRegistry.lock();
-                    return registry == nullptr ? AutoCache::Watchers{} : registry->GetWatchers(tokenId);
+            STORE_TYPE, IPCSkeleton::GetCallingTokenID(), [weakAgents](const StoreMetaData &meta) {
+                return std::make_shared<WatcherBridge>([weakAgents, tokenId = meta.tokenId]() {
+                    return RdbServiceImpl::GetWatchers(weakAgents.lock(), tokenId);
                 });
             });
     }
@@ -71,7 +70,7 @@ public:
     // Inject only the notifier transport; subscriptions are always made through public APIs.
     void BindNotifier(const sptr<RdbNotifierProxy> &notifier, pid_t pid = IPCSkeleton::GetCallingPid())
     {
-        service_->syncAgents_.Compute(
+        service_->syncAgents_->Compute(
             IPCSkeleton::GetCallingTokenID(), [notifier, pid](auto, RdbServiceImpl::SyncAgents &agents) {
                 auto [it, inserted] = agents.try_emplace(pid, "observer.test");
                 it->second.SetNotifier(notifier);
@@ -133,7 +132,7 @@ HWTEST_F(RdbObserverCacheTest, Subscribe_CloseBlocked_ReturnsBeforeRelease, Test
 
 /**
  * @tc.name: OnChange_ServiceDestroyed_StopsForwarding
- * @tc.desc: A retained delegate safely observes a cleared registry after service destruction.
+ * @tc.desc: A retained delegate safely handles a cleared or expired shared agent map after service destruction.
  * @tc.type: RELI
  * @tc.author: agent
  */
@@ -146,9 +145,11 @@ HWTEST_F(RdbObserverCacheTest, OnChange_ServiceDestroyed_StopsForwarding, TestSi
     BindNotifier(notifier);
     EXPECT_CALL(*notifier, OnChange(_, _, _)).Times(0);
     EXPECT_EQ(service_->Subscribe(param_, option_, nullptr), RDB_OK);
-    auto registry = service_->registry_;
+    auto syncAgents = service_->syncAgents_;
     service_.reset();
-    EXPECT_TRUE(registry->agents.Empty());
+    EXPECT_TRUE(syncAgents->Empty());
+    EXPECT_EQ(fixture_->watcher->OnChange({}, GeneralWatcher::PRIFields{}, GeneralWatcher::ChangeInfo{}), E_OK);
+    syncAgents.reset();
     EXPECT_EQ(fixture_->watcher->OnChange({}, GeneralWatcher::PRIFields{}, GeneralWatcher::ChangeInfo{}), E_OK);
 }
 } // namespace OHOS::Test
