@@ -88,10 +88,10 @@ private:
     void StartTimer();
     static int32_t CheckStatusBeforeOpen(const StoreMetaData &meta);
     StoreFactory GetStoreFactory(int32_t type);
-    std::pair<int32_t, GeneralStore *> OpenStore(
-        const StoreMetaData &meta, const StoreFactory &factory, const StoreOption &option, Watchers &watchers);
+    std::pair<int32_t, GeneralStore *> OpenStore(const StoreMetaData &meta, const StoreFactory &factory,
+        const StoreOption &option, std::shared_ptr<GeneralWatcher> &watcher);
     struct Delegate : public GeneralWatcher {
-        Delegate(GeneralStore *delegate, const Watchers &watchers, const StoreMetaData &meta,
+        Delegate(GeneralStore *delegate, std::shared_ptr<GeneralWatcher> watcher, const StoreMetaData &meta,
             uint32_t garbageInterval = DEFAULT_INTERVAL);
         ~Delegate();
         operator Store();
@@ -106,7 +106,7 @@ private:
     private:
         mutable Time time_;
         GeneralStore *store_ = nullptr;
-        const Watchers watchers_;
+        const std::shared_ptr<GeneralWatcher> watcher_;
         const StoreMetaData meta_;
         const uint32_t garbageInterval_;
     };

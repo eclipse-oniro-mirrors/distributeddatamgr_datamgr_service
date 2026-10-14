@@ -114,16 +114,16 @@ AutoCache::StoreFactory AutoCache::GetStoreFactory(int32_t type)
     return factories_[type];
 }
 
-std::pair<int32_t, GeneralStore *> AutoCache::OpenStore(
-    const StoreMetaData &meta, const StoreFactory &factory, const StoreOption &option, Watchers &watchers)
+std::pair<int32_t, GeneralStore *> AutoCache::OpenStore(const StoreMetaData &meta, const StoreFactory &factory,
+    const StoreOption &option, std::shared_ptr<GeneralWatcher> &watcher)
 {
+    watcher.reset();
     if (factory.watcherFactory) {
-        auto watcher = factory.watcherFactory(meta);
+        watcher = factory.watcherFactory(meta);
         if (watcher == nullptr) {
             ZLOGE("watcher factory failed. storeName:%{public}s", meta.GetStoreAlias().c_str());
             return { E_ERROR, nullptr };
         }
-        watchers = { std::move(watcher) };
     }
     auto [ret, store] = factory.creator(meta, option);
     if (store == nullptr) {
@@ -160,15 +160,15 @@ std::pair<int32_t, AutoCache::Store> AutoCache::GetDBStore(
                 store = it->second;
                 return !stores.empty();
             }
-            Watchers effectiveWatchers;
+            std::shared_ptr<GeneralWatcher> effectiveWatcher;
             GeneralStore *dbStore = nullptr;
-            std::tie(ret, dbStore) = OpenStore(meta, factory, option, effectiveWatchers);
+            std::tie(ret, dbStore) = OpenStore(meta, factory, option, effectiveWatcher);
             if (dbStore == nullptr) {
                 return !stores.empty();
             }
             dbStore->SetExecutor(executor_);
             auto result = stores.emplace(std::piecewise_construct, std::forward_as_tuple(storeKey),
-                std::forward_as_tuple(dbStore, effectiveWatchers, meta, garbageInterval_));
+                std::forward_as_tuple(dbStore, std::move(effectiveWatcher), meta, garbageInterval_));
             store = result.first->second;
             startTimer = true;
             return !stores.empty();
@@ -322,9 +322,9 @@ void AutoCache::Configure(uint32_t garbageInterval)
     }
 }
 
-AutoCache::Delegate::Delegate(
-    GeneralStore *delegate, const Watchers &watchers, const StoreMetaData &meta, uint32_t garbageInterval)
-    : store_(delegate), watchers_(watchers), meta_(meta), garbageInterval_(garbageInterval)
+AutoCache::Delegate::Delegate(GeneralStore *delegate, std::shared_ptr<GeneralWatcher> watcher,
+    const StoreMetaData &meta, uint32_t garbageInterval)
+    : store_(delegate), watcher_(std::move(watcher)), meta_(meta), garbageInterval_(garbageInterval)
 {
     time_ = std::chrono::steady_clock::now() + std::chrono::milliseconds(garbageInterval);
 
@@ -387,14 +387,9 @@ int32_t AutoCache::Delegate::OnChange(const Origin &origin, const PRIFields &pri
         tables.emplace_back(table);
     }
     PostDataChange(meta_, tables);
-    Watchers watchers = watchers_;
-    size_t remain = watchers.size();
-    for (auto &watcher : watchers) {
-        remain--;
-        if (watcher == nullptr) {
-            continue;
-        }
-        watcher->OnChange(origin, primaryFields, (remain != 0) ? ChangeInfo(values) : std::move(values));
+    auto watcher = watcher_;
+    if (watcher != nullptr) {
+        watcher->OnChange(origin, primaryFields, std::move(values));
     }
     return Error::E_OK;
 }
@@ -406,14 +401,9 @@ int32_t AutoCache::Delegate::OnChange(const Origin &origin, const Fields &fields
         tables.emplace_back(table);
     }
     PostDataChange(meta_, tables);
-    Watchers watchers = watchers_;
-    size_t remain = watchers.size();
-    for (auto &watcher : watchers) {
-        remain--;
-        if (watcher == nullptr) {
-            continue;
-        }
-        watcher->OnChange(origin, fields, (remain != 0) ? ChangeData(datas) : std::move(datas));
+    auto watcher = watcher_;
+    if (watcher != nullptr) {
+        watcher->OnChange(origin, fields, std::move(datas));
     }
     return Error::E_OK;
 }
