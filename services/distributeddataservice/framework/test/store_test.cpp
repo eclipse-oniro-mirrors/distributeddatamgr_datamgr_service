@@ -136,9 +136,8 @@ HWTEST_F(AutoCacheTest, OnChange001, TestSize.Level2)
 {
     GeneralStoreMock *store = new (std::nothrow) GeneralStoreMock();
     ASSERT_NE(store, nullptr);
-    AutoCache::Watchers watchers;
     StoreMetaData meta;
-    AutoCache::Delegate delegate(store, watchers, meta);
+    AutoCache::Delegate delegate(store, nullptr, meta);
     GeneralWatcher::Origin origin;
     GeneralWatcher::PRIFields primaryFields;
     GeneralWatcher::ChangeInfo values;
@@ -157,9 +156,8 @@ HWTEST_F(AutoCacheTest, OnChange002, TestSize.Level2)
 {
     GeneralStoreMock *store = new (std::nothrow) GeneralStoreMock();
     ASSERT_NE(store, nullptr);
-    AutoCache::Watchers watchers;
     StoreMetaData meta;
-    AutoCache::Delegate delegate(store, watchers, meta);
+    AutoCache::Delegate delegate(store, nullptr, meta);
     GeneralWatcher::Origin origin;
     GeneralWatcher::Fields fields;
     GeneralWatcher::ChangeData datas;
@@ -178,9 +176,8 @@ HWTEST_F(AutoCacheTest, operatorStore, TestSize.Level2)
 {
     GeneralStoreMock *store = new (std::nothrow) GeneralStoreMock();
     ASSERT_NE(store, nullptr);
-    AutoCache::Watchers watchers;
     StoreMetaData meta;
-    AutoCache::Delegate delegate(store, watchers, meta);
+    AutoCache::Delegate delegate(store, nullptr, meta);
     AutoCache::Store result = static_cast<AutoCache::Store>(delegate);
     EXPECT_NE(result, nullptr);
     GeneralWatcher::Origin origin;
@@ -201,10 +198,9 @@ HWTEST_F(AutoCacheTest, GetMeta, TestSize.Level2)
 {
     GeneralStoreMock *store = new (std::nothrow) GeneralStoreMock();
     ASSERT_NE(store, nullptr);
-    AutoCache::Watchers watchers;
     StoreMetaData meta;
     meta.enableCloud = true;
-    AutoCache::Delegate delegate(store, watchers, meta);
+    AutoCache::Delegate delegate(store, nullptr, meta);
     auto newMate = delegate.GetMeta();
     ASSERT_TRUE(newMate.enableCloud);
 }
@@ -218,10 +214,9 @@ HWTEST_F(AutoCacheTest, GetMeta, TestSize.Level2)
 */
 HWTEST_F(AutoCacheTest, GetArea, TestSize.Level2)
 {
-    AutoCache::Watchers watchers;
     StoreMetaData meta;
     meta.area = GeneralStore::EL1;
-    AutoCache::Delegate delegate(nullptr, watchers, meta);
+    AutoCache::Delegate delegate(nullptr, nullptr, meta);
     auto newArea = delegate.GetArea();
     ASSERT_EQ(newArea, GeneralStore::EL1);
 }
@@ -282,18 +277,17 @@ HWTEST_F(AutoCacheTest, CloseStore001, TestSize.Level2)
 {
     GeneralStoreMock *store = new (std::nothrow) GeneralStoreMock();
     ASSERT_NE(store, nullptr);
-    AutoCache::Watchers watchers;
     mock_->isLocked_ = true;
     StoreMetaData meta;
     meta.area = GeneralStore::EL1;
     meta.dataDir = "";
     uint32_t tokenId = 123;
     AutoCache autoCache;
-    autoCache.stores_.Compute(tokenId,
-        [this, &meta, &watchers, &store](auto &, std::map<std::string, AutoCache::Delegate> &stores) -> bool {
+    autoCache.stores_.Compute(
+        tokenId, [this, &meta, &store](auto &, std::map<std::string, AutoCache::Delegate> &stores) -> bool {
             std::string storeKey = "key";
             stores.emplace(std::piecewise_construct, std::forward_as_tuple(storeKey),
-                std::forward_as_tuple(store, watchers, meta));
+                std::forward_as_tuple(store, nullptr, meta));
             return !stores.empty();
         });
     autoCache.CloseStore(tokenId, meta.dataDir);
@@ -311,7 +305,6 @@ HWTEST_F(AutoCacheTest, CloseStore002, TestSize.Level2)
 {
     GeneralStoreMock *store = new (std::nothrow) GeneralStoreMock();
     ASSERT_NE(store, nullptr);
-    AutoCache::Watchers watchers;
     mock_->isLocked_ = true;
     StoreMetaData meta;
     meta.area = GeneralStore::EL4;
@@ -319,11 +312,11 @@ HWTEST_F(AutoCacheTest, CloseStore002, TestSize.Level2)
     std::string storeId = "";
     uint32_t tokenId = 123;
     AutoCache autoCache;
-    autoCache.stores_.Compute(tokenId,
-        [this, &meta, &watchers, &store](auto &, std::map<std::string, AutoCache::Delegate> &stores) -> bool {
+    autoCache.stores_.Compute(
+        tokenId, [this, &meta, &store](auto &, std::map<std::string, AutoCache::Delegate> &stores) -> bool {
             std::string storeKey = "key";
             stores.emplace(std::piecewise_construct, std::forward_as_tuple(storeKey),
-                std::forward_as_tuple(store, watchers, meta));
+                std::forward_as_tuple(store, nullptr, meta));
             return !stores.empty();
         });
     autoCache.CloseStore(tokenId, meta.dataDir, storeId);
