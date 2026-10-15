@@ -190,6 +190,51 @@ HWTEST_F(RdbObserverCacheTest, OnChange_CachedSubscriptions_DoesNotWaitForAgentM
 }
 
 /**
+ * @tc.name: OnChange_CacheWriteBlocked_ReleasesAgentMapAfterCopy
+ * @tc.desc: A cache rebuild releases the agent map before waiting for the cache write lock.
+ * @tc.type: RELI
+ * @tc.author: agent
+ */
+HWTEST_F(RdbObserverCacheTest, OnChange_CacheWriteBlocked_ReleasesAgentMapAfterCopy, TestSize.Level1)
+{
+    auto store = AutoCache::GetInstance().GetStore(fixture_->meta);
+    ASSERT_NE(store, nullptr);
+    ASSERT_NE(fixture_->watcher, nullptr);
+    sptr<RdbObserverNotifierMock> notifier = new RdbObserverNotifierMock();
+    BindNotifier(notifier);
+    EXPECT_CALL(*notifier, OnChange(_, _, _)).Times(1).WillOnce(Return(RDB_OK));
+    ASSERT_EQ(service_->Subscribe(param_, option_, nullptr), RDB_OK);
+    auto agent = service_->clientAgentHolder_;
+    auto tokenId = IPCSkeleton::GetCallingTokenID();
+    auto pid = IPCSkeleton::GetCallingPid();
+    std::weak_ptr<RdbWatcher> clientWatcher;
+    ASSERT_TRUE(agent->agents_.ContainIf(tokenId, [&clientWatcher](const auto &agents) {
+        if (agents.empty()) {
+            return false;
+        }
+        clientWatcher = agents.begin()->second.watcher_;
+        return true;
+    }));
+    ASSERT_EQ(clientWatcher.use_count(), 1);
+    std::shared_lock<std::shared_mutex> lock(agent->mutex_);
+    auto notify = std::async(std::launch::async, [watcher = fixture_->watcher]() {
+        return watcher->OnChange({}, GeneralWatcher::PRIFields{}, GeneralWatcher::ChangeInfo{});
+    });
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(CloseGate::WAIT_SECONDS);
+    while (clientWatcher.use_count() == 1 && std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::yield();
+    }
+    EXPECT_GT(clientWatcher.use_count(), 1);
+    auto update = std::async(std::launch::async,
+        [agent, tokenId, pid, notifier]() { agent->SetNotifier(tokenId, pid, "observer.test", notifier); });
+    auto status = update.wait_for(std::chrono::seconds(CloseGate::WAIT_SECONDS));
+    lock.unlock();
+    update.get();
+    EXPECT_EQ(status, std::future_status::ready);
+    EXPECT_EQ(notify.get(), E_OK);
+}
+
+/**
  * @tc.name: UnSubscribe_LastSubscription_InvalidatesWatcherSnapshot
  * @tc.desc: Last unsubscribe releases weakly cached watchers, then changes rebuild an empty or fresh cache.
  * @tc.type: FUNC

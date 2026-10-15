@@ -1,4 +1,4 @@
-/**
+/*
  * Copyright (c) 2026 Huawei Device Co., Ltd.
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -96,8 +96,7 @@ HWTEST_F(RdbServiceImplReplicaPathTest, GetStoreMetaDataWithReplicaPath, TestSiz
 HWTEST_F(RdbServiceImplReplicaPathTest, AfterOpenReplicaPathChangeInvalidatesCache, TestSize.Level1)
 {
     constexpr int32_t MOCK_STORE_TYPE = 8;
-    auto regResult = AutoCache::GetInstance().RegCreator(
-        MOCK_STORE_TYPE,
+    auto regResult = AutoCache::GetInstance().RegCreator(MOCK_STORE_TYPE,
         [](const StoreMetaData &metaData, const AutoCache::StoreOption &) -> std::pair<int32_t, GeneralStore *> {
             auto *store = new (std::nothrow) GeneralStoreMock();
             if (store == nullptr) {

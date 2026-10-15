@@ -189,8 +189,9 @@ private:
         using WeakWatchers = std::vector<std::weak_ptr<DistributedData::GeneralWatcher>>;
         void InvalidateWatchers(uint32_t tokenId);
         ConcurrentMap<uint32_t, SyncAgents> agents_;
-        // Lock order for updates/rebuilds: agents_ first, then mutex_. Cache hits only take mutex_.
+        // Updates lock agents_ before mutex_; rebuilds copy agents_ before taking the cache write lock.
         mutable std::shared_mutex mutex_;
+        uint64_t watcherVersion_ = 0;
         mutable std::map<uint32_t, WeakWatchers> watchers_;
     };
 

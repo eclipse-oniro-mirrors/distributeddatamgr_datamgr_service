@@ -112,8 +112,7 @@ RdbServiceImpl::Factory::Factory()
         }
         return product_;
     });
-    AutoCache::GetInstance().RegCreator(
-        RDB_DEVICE_COLLABORATION,
+    AutoCache::GetInstance().RegCreator(RDB_DEVICE_COLLABORATION,
         [](const StoreMetaData &metaData, const AutoCache::StoreOption &option) -> std::pair<int32_t, GeneralStore *> {
             auto store = new (std::nothrow) RdbGeneralStore(metaData, option.createRequired, option.isEnableBinlog);
             if (store == nullptr) {
@@ -1876,6 +1875,7 @@ RdbServiceImpl::Watchers RdbServiceImpl::ClientAgent::GetWatchers(uint32_t token
 {
     WeakWatchers snapshot;
     bool cached = false;
+    uint64_t version = 0;
     {
         std::shared_lock<std::shared_mutex> lock(mutex_);
         auto it = watchers_.find(tokenId);
@@ -1883,21 +1883,23 @@ RdbServiceImpl::Watchers RdbServiceImpl::ClientAgent::GetWatchers(uint32_t token
             snapshot = it->second;
             cached = true;
         }
+        version = watcherVersion_;
     }
     if (!cached) {
-        agents_.ContainIf(tokenId, [this, tokenId, &snapshot](const SyncAgents &agents) {
-            std::unique_lock<std::shared_mutex> lock(mutex_);
-            auto [it, inserted] = watchers_.try_emplace(tokenId);
-            if (inserted) {
-                for (const auto &[pid, agent] : agents) {
-                    if (agent.watcher_ != nullptr) {
-                        it->second.emplace_back(agent.watcher_);
-                    }
-                }
+        auto [found, agents] = agents_.Find(tokenId);
+        if (!found) {
+            return {};
+        }
+        for (const auto &[pid, agent] : agents) {
+            if (agent.watcher_ != nullptr) {
+                snapshot.emplace_back(agent.watcher_);
             }
-            snapshot = it->second;
-            return true;
-        });
+        }
+        std::unique_lock<std::shared_mutex> lock(mutex_);
+        // An update after the copy must not be overwritten with an outdated snapshot.
+        if (version == watcherVersion_) {
+            watchers_.try_emplace(tokenId, snapshot);
+        }
     }
     Watchers watchers;
     for (const auto &weakWatcher : snapshot) {
@@ -1911,6 +1913,7 @@ RdbServiceImpl::Watchers RdbServiceImpl::ClientAgent::GetWatchers(uint32_t token
 void RdbServiceImpl::ClientAgent::InvalidateWatchers(uint32_t tokenId)
 {
     std::unique_lock<std::shared_mutex> lock(mutex_);
+    ++watcherVersion_;
     watchers_.erase(tokenId);
 }
 

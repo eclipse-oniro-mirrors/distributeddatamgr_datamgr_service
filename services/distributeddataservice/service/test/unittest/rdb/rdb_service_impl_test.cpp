@@ -1,5 +1,5 @@
-/**
-* Copyright (c) 2025-2026 Huawei Device Co., Ltd.
+/*
+ * Copyright (c) 2025 Huawei Device Co., Ltd.
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -154,8 +154,7 @@ void RdbServiceImplTest::SetUpTestCase()
     MetaDataManager::GetInstance().Initialize(dbStoreMock_, nullptr, "");
 
     // Construct the statisticInfo data
-    AutoCache::GetInstance().RegCreator(
-        RDB_DEVICE_COLLABORATION,
+    AutoCache::GetInstance().RegCreator(RDB_DEVICE_COLLABORATION,
         [](const StoreMetaData &metaData, const AutoCache::StoreOption &option) -> std::pair<int32_t, GeneralStore *> {
             auto store = new (std::nothrow) GeneralStoreMock();
             if (store != nullptr) {
@@ -172,8 +171,7 @@ void RdbServiceImplTest::TearDownTestCase()
 {
     deviceManagerAdapterMock = nullptr;
     BDeviceManagerAdapter::deviceManagerAdapter = nullptr;
-    AutoCache::GetInstance().RegCreator(
-        DistributedRdb::RDB_DEVICE_COLLABORATION,
+    AutoCache::GetInstance().RegCreator(DistributedRdb::RDB_DEVICE_COLLABORATION,
         [](const StoreMetaData &metaData, const AutoCache::StoreOption &option) -> std::pair<int32_t, GeneralStore *> {
             auto store = new (std::nothrow) RdbGeneralStore(metaData, option.createRequired);
             if (store == nullptr) {

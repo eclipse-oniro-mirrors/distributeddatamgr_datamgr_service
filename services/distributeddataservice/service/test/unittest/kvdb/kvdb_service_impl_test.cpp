@@ -1,5 +1,5 @@
-/**
-* Copyright (c) 2024-2026 Huawei Device Co., Ltd.
+/*
+* Copyright (c) 2024 Huawei Device Co., Ltd.
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
 * You may obtain a copy of the License at
@@ -515,7 +515,7 @@ HWTEST_F(KvdbServiceImplTest, OnAsyncCompleteTest001, TestSize.Level0)
     syncAgent.switchesObserverCount_ = 1; // test
     syncAgent.appId_ = { "ohos.OnAsyncCompleteTest001.kvdb" };
     syncAgent.notifier_ = notifier;
-    kvdbServiceImpl_->syncAgents_.Insert(100, syncAgent);      // test
+    kvdbServiceImpl_->syncAgents_.Insert(100, syncAgent);       // test
     kvdbServiceImpl_->OnAsyncComplete(1, 1, std::move(detail)); // test
     EXPECT_EQ(kvdbServiceImpl_->syncAgents_.Find(1).first, false);
     kvdbServiceImpl_->OnAsyncComplete(100, 1, std::move(detail)); // test

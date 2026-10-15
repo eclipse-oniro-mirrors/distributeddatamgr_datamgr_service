@@ -1,5 +1,5 @@
-/**
-* Copyright (c) 2025-2026 Huawei Device Co., Ltd.
+/*
+* Copyright (c) 2025 Huawei Device Co., Ltd.
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
 * You may obtain a copy of the License at
@@ -654,9 +654,8 @@ HWTEST_F(CloudDataMockTest, GetStore001, TestSize.Level0)
         .Times(1)
         .WillOnce(DoAll(SetArgReferee<0>(users), Return(true)));
     auto mock = std::make_shared<CloudTestGeneralStoreMock>();
-    auto result = AutoCache::GetInstance().RegCreator(
-        MOCK_STORE_TYPE,
-        [mock](const StoreMetaData &, const AutoCache::StoreOption &) -> std::pair<int32_t, GeneralStore *> {
+    auto result = AutoCache::GetInstance().RegCreator(MOCK_STORE_TYPE,
+        [mock](const StoreMetaData &, const AutoCache::StoreOption &) -> std::pair<int32_t, GeneralStore*> {
             if (mock == nullptr) {
                 return { GeneralError::E_ERROR, nullptr };
             }
@@ -693,9 +692,8 @@ HWTEST_F(CloudDataMockTest, GetStore002, TestSize.Level0)
         .Times(1)
         .WillOnce(DoAll(SetArgReferee<0>(users), Return(true)));
     auto mock = std::make_shared<CloudTestGeneralStoreMock>();
-    auto result = AutoCache::GetInstance().RegCreator(
-        MOCK_STORE_TYPE,
-        [mock](const StoreMetaData &, const AutoCache::StoreOption &) -> std::pair<int32_t, GeneralStore *> {
+    auto result = AutoCache::GetInstance().RegCreator(MOCK_STORE_TYPE,
+        [mock](const StoreMetaData &, const AutoCache::StoreOption &) -> std::pair<int32_t, GeneralStore*> {
             if (mock == nullptr) {
                 return { GeneralError::E_ERROR, nullptr };
             }
@@ -728,9 +726,8 @@ HWTEST_F(CloudDataMockTest, GetStore003, TestSize.Level0)
     EXPECT_CALL(*accountDelegateMock, IsVerified(_)).WillRepeatedly(DoAll(Return(true)));
     EXPECT_CALL(*accTokenMock, GetTokenTypeFlag(_)).WillRepeatedly(Return(ATokenTypeEnum::TOKEN_HAP));
     auto mock = std::make_shared<CloudTestGeneralStoreMock>();
-    auto result = AutoCache::GetInstance().RegCreator(
-        MOCK_STORE_TYPE,
-        [mock](const StoreMetaData &, const AutoCache::StoreOption &) -> std::pair<int32_t, GeneralStore *> {
+    auto result = AutoCache::GetInstance().RegCreator(MOCK_STORE_TYPE,
+        [mock](const StoreMetaData &, const AutoCache::StoreOption &) -> std::pair<int32_t, GeneralStore*> {
             if (mock == nullptr) {
                 return { GeneralError::E_ERROR, nullptr };
             }
@@ -763,9 +760,8 @@ HWTEST_F(CloudDataMockTest, GetStore004, TestSize.Level0)
     EXPECT_CALL(*accountDelegateMock, IsVerified(_)).WillRepeatedly(DoAll(Return(true)));
     EXPECT_CALL(*accTokenMock, GetTokenTypeFlag(_)).WillRepeatedly(Return(ATokenTypeEnum::TOKEN_HAP));
     auto mock = std::make_shared<CloudTestGeneralStoreMock>();
-    auto result = AutoCache::GetInstance().RegCreator(
-        MOCK_STORE_TYPE,
-        [mock](const StoreMetaData &, const AutoCache::StoreOption &) -> std::pair<int32_t, GeneralStore *> {
+    auto result = AutoCache::GetInstance().RegCreator(MOCK_STORE_TYPE,
+        [mock](const StoreMetaData &, const AutoCache::StoreOption &) -> std::pair<int32_t, GeneralStore*> {
             if (mock == nullptr) {
                 return { GeneralError::E_ERROR, nullptr };
             }
