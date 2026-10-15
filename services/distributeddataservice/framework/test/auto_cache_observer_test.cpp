@@ -89,8 +89,7 @@ HWTEST_F(AutoCacheObserverTest, RegWatcherFactory_AfterOpen_BindsExistingDelegat
 {
     ObserverCache fixture(STORE_TYPE, TOKEN_ID, [](const auto &) { return std::make_shared<WatcherBridge>(nullptr); });
     auto &cache = AutoCache::GetInstance();
-    auto creator = cache.GetStoreFactory(STORE_TYPE).creator;
-    EXPECT_EQ(cache.RegCreator(STORE_TYPE, creator, nullptr), E_OK);
+    EXPECT_EQ(cache.RegWatcherFactory(STORE_TYPE, nullptr), E_OK);
     auto store = cache.GetStore(fixture.meta);
     ASSERT_NE(store, nullptr);
     ASSERT_NE(fixture.watcher, nullptr);
@@ -112,8 +111,8 @@ HWTEST_F(AutoCacheObserverTest, RegWatcherFactory_AfterOpen_BindsExistingDelegat
 HWTEST_F(AutoCacheObserverTest, RegCreator_InvalidType_ReturnsError, TestSize.Level2)
 {
     auto &cache = AutoCache::GetInstance();
-    EXPECT_EQ(cache.RegCreator(-1, nullptr, nullptr), E_ERROR);
-    EXPECT_EQ(cache.RegCreator(30, nullptr, nullptr), E_ERROR);
+    EXPECT_EQ(cache.RegCreator(-1, nullptr), E_ERROR);
+    EXPECT_EQ(cache.RegCreator(30, nullptr), E_ERROR);
     EXPECT_EQ(cache.RegWatcherFactory(-1, nullptr), E_ERROR);
     EXPECT_EQ(cache.RegWatcherFactory(30, nullptr), E_ERROR);
 }

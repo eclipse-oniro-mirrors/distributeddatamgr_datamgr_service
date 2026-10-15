@@ -128,8 +128,7 @@ void RdbServiceImplTokenTest::SetUpTestCase()
                 return { GeneralError::E_OK, store };
             }
             return { GeneralError::E_ERROR, nullptr };
-        },
-        nullptr);
+        });
 }
 
 void RdbServiceImplTokenTest::TearDownTestCase()
@@ -153,8 +152,7 @@ void RdbServiceImplTokenTest::TearDownTestCase()
                 store = nullptr;
             }
             return { ret, store };
-        },
-        nullptr);
+        });
 }
 
 void RdbServiceImplTokenTest::SetUp()

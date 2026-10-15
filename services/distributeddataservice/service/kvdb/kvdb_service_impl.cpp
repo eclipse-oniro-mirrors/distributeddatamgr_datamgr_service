@@ -91,8 +91,8 @@ KVDBServiceImpl::Factory::Factory()
         }
         return { E_OK, store };
     };
-    AutoCache::GetInstance().RegCreator(KvStoreType::SINGLE_VERSION, creator, nullptr);
-    AutoCache::GetInstance().RegCreator(KvStoreType::DEVICE_COLLABORATION, creator, nullptr);
+    AutoCache::GetInstance().RegCreator(KvStoreType::SINGLE_VERSION, creator);
+    AutoCache::GetInstance().RegCreator(KvStoreType::DEVICE_COLLABORATION, creator);
 }
 
 KVDBServiceImpl::Factory::~Factory()

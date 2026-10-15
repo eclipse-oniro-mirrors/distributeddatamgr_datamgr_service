@@ -38,14 +38,12 @@ AutoCache &AutoCache::GetInstance()
     return cache;
 }
 
-int32_t AutoCache::RegCreator(int32_t type, Creator creator, WatcherFactory watcherFactory)
+int32_t AutoCache::RegCreator(int32_t type, Creator creator)
 {
     if (type < 0 || type >= MAX_CREATOR_NUM) {
         return E_ERROR;
     }
-    std::shared_ptr<const StoreFactory> factory =
-        std::make_shared<StoreFactory>(StoreFactory{ std::move(creator), std::move(watcherFactory) });
-    std::atomic_store(&factories_[type], std::move(factory));
+    creators_[type] = creator;
     return E_OK;
 }
 
@@ -54,17 +52,7 @@ int32_t AutoCache::RegWatcherFactory(int32_t type, WatcherFactory watcherFactory
     if (type < 0 || type >= MAX_CREATOR_NUM) {
         return E_ERROR;
     }
-    auto factory = std::atomic_load(&factories_[type]);
-    do {
-        if (factory == nullptr || !factory->creator) {
-            return E_ERROR;
-        }
-        std::shared_ptr<const StoreFactory> updated =
-            std::make_shared<StoreFactory>(StoreFactory{ factory->creator, watcherFactory });
-        if (std::atomic_compare_exchange_weak(&factories_[type], &factory, std::move(updated))) {
-            break;
-        }
-    } while (true);
+    watcherFactories_[type] = std::move(watcherFactory);
     return E_OK;
 }
 
@@ -125,13 +113,12 @@ int32_t AutoCache::CheckStatusBeforeOpen(const StoreMetaData &meta)
     return E_OK;
 }
 
-AutoCache::StoreFactory AutoCache::GetStoreFactory(int32_t type)
+AutoCache::StoreFactory AutoCache::GetStoreFactory(int32_t type) const
 {
     if (type < 0 || type >= MAX_CREATOR_NUM) {
         return {};
     }
-    auto factory = std::atomic_load(&factories_[type]);
-    return factory == nullptr ? StoreFactory{} : *factory;
+    return { creators_[type], watcherFactories_[type] };
 }
 
 std::pair<int32_t, GeneralStore *> AutoCache::OpenStore(const StoreMetaData &meta, const StoreFactory &factory,

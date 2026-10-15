@@ -126,8 +126,7 @@ RdbServiceImpl::Factory::Factory()
                 store = nullptr;
             }
             return { ret, store };
-        },
-        nullptr);
+        });
     staticActs_ = std::make_shared<RdbStatic>();
     FeatureSystem::GetInstance().RegisterStaticActs(RdbServiceImpl::SERVICE_NAME, staticActs_);
 }

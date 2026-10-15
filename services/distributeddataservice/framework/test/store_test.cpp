@@ -234,7 +234,7 @@ HWTEST_F(AutoCacheTest, GetDBStore, TestSize.Level2)
                        const AutoCache::StoreOption &) -> std::pair<int32_t, GeneralStore *> {
         return { GeneralError::E_OK, new (std::nothrow) GeneralStoreMock() };
     };
-    AutoCache::GetInstance().RegCreator(DistributedRdb::RDB_DEVICE_COLLABORATION, creator, nullptr);
+    AutoCache::GetInstance().RegCreator(DistributedRdb::RDB_DEVICE_COLLABORATION, creator);
     StoreMetaData meta;
     meta.storeType = DistributedRdb::RDB_DEVICE_COLLABORATION;
     mock_->isLocked_ = true;

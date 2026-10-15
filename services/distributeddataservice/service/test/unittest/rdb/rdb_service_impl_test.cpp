@@ -163,8 +163,7 @@ void RdbServiceImplTest::SetUpTestCase()
                 return { GeneralError::E_OK, store };
             }
             return { GeneralError::E_ERROR, nullptr };
-        },
-        nullptr);
+        });
     SyncManager::AutoSyncInfo syncInfo = { 3, TEST_APPID, TEST_BUNDLE };
     SyncManager::GetInstance().Initialize({ syncInfo });
 }
@@ -186,8 +185,7 @@ void RdbServiceImplTest::TearDownTestCase()
                 store = nullptr;
             }
             return { ret, store };
-        },
-        nullptr);
+        });
 }
 
 void RdbServiceImplTest::SetUp()
