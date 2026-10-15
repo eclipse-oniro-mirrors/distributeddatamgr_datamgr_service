@@ -1,5 +1,5 @@
-/*
-* Copyright (c) 2025 Huawei Device Co., Ltd.
+/**
+* Copyright (c) 2025-2026 Huawei Device Co., Ltd.
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
 * You may obtain a copy of the License at
@@ -59,14 +59,13 @@ HWTEST_F(AutoCacheMockTest, GetDBStoreMockTest001, TestSize.Level0)
     };
     AccountDelegate::RegisterAccountInstance(accountDelegateMock);
     AutoCache::GetInstance().RegCreator(DistributedRdb::RDB_DEVICE_COLLABORATION, creator);
-    AutoCache::Watchers watchers;
     StoreMetaData meta;
     meta.storeType = DistributedRdb::RDB_DEVICE_COLLABORATION;
     meta.area = GeneralStore::EL2;
     meta.user = "100";
     EXPECT_CALL(*accountDelegateMock, IsDeactivating(_)).WillRepeatedly(Return(false));
     EXPECT_CALL(*accountDelegateMock, IsVerified(_)).WillRepeatedly(Return(false));
-    EXPECT_EQ(AutoCache::GetInstance().GetDBStore(meta, watchers).first, E_USER_LOCKED);
+    EXPECT_EQ(AutoCache::GetInstance().GetDBStore(meta).first, E_USER_LOCKED);
 
     if (accountDelegateMock != nullptr) {
         delete accountDelegateMock;

@@ -1,5 +1,5 @@
-/*
- * Copyright (c) 2023 Huawei Device Co., Ltd.
+/**
+ * Copyright (c) 2023-2026 Huawei Device Co., Ltd.
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -28,6 +28,7 @@
 #include "store/general_store.h"
 #include "store/general_value.h"
 #include "store/general_watcher.h"
+#include "store/watcher_bridge.h"
 #include "visibility.h"
 namespace OHOS::DistributedData {
 class SchemaMeta;
@@ -46,6 +47,7 @@ public:
     using Executor = ExecutorPool;
     using TaskId = ExecutorPool::TaskId;
     using Creator = std::function<std::pair<int32_t, GeneralStore *>(const StoreMetaData &, const StoreOption &)>;
+    using WatcherFactory = std::function<WatcherBridge::Getter(const StoreMetaData &)>;
     using Filter = std::function<bool(const StoreMetaData &)>;
 
     API_EXPORT static AutoCache &GetInstance();
@@ -54,11 +56,15 @@ public:
 
     API_EXPORT int32_t RegCreator(int32_t type, Creator creator);
 
+    // The factory creates a getter without querying subscriptions or opening a store.
+    // Delegate owns the forwarding bridge; an empty getter means no client subscriptions.
+    API_EXPORT int32_t RegWatcherFactory(int32_t type, WatcherFactory watcherFactory);
+
     API_EXPORT void Bind(std::shared_ptr<Executor> executor);
 
-    API_EXPORT Store GetStore(const StoreMetaData &meta, const Watchers &watchers);
+    API_EXPORT Store GetStore(const StoreMetaData &meta);
 
-    API_EXPORT std::pair<int32_t, Store> GetDBStore(const StoreMetaData &meta, const Watchers &watchers,
+    API_EXPORT std::pair<int32_t, Store> GetDBStore(const StoreMetaData &meta,
         const StoreOption &option = { false, false });
 
     API_EXPORT Stores GetStoresIfPresent(
@@ -67,9 +73,6 @@ public:
     API_EXPORT void CloseStore(uint32_t tokenId, const std::string &path = "", const std::string &storeId = "");
  
     API_EXPORT void CloseStore(const Filter &filter);
- 
-    API_EXPORT void SetObserver(
-        uint32_t tokenId, const Watchers &watchers, const std::string &path, const std::string &storeId = "");
  
     API_EXPORT void Enable(uint32_t tokenId, const std::string &path = "", const std::string &storeId = "");
  
@@ -82,17 +85,16 @@ private:
     void GarbageCollect(bool isForce);
     void StartTimer();
     static int32_t CheckStatusBeforeOpen(const StoreMetaData &meta);
+    WatcherBridge::Getter GetWatcher(const StoreMetaData &meta) const;
     struct Delegate : public GeneralWatcher {
-        Delegate(GeneralStore *delegate, const Watchers &watchers,
-                 const StoreMetaData &meta,
-                 uint32_t garbageInterval = DEFAULT_INTERVAL);
+        Delegate(GeneralStore *delegate, WatcherBridge::Getter getter, const StoreMetaData &meta,
+            uint32_t garbageInterval = DEFAULT_INTERVAL);
         ~Delegate();
         operator Store();
         bool operator<(const Time &time) const;
         bool Close();
         int32_t GetArea() const;
         const StoreMetaData &GetMeta() const;
-        void SetObservers(const Watchers &watchers);
         int32_t OnChange(const Origin &origin, const PRIFields &primaryFields, ChangeInfo &&values) override;
         int32_t OnChange(const Origin &origin, const Fields &fields, ChangeData &&datas) override;
         void PostDataChange(const StoreMetaData &meta, const std::vector<std::string> &tables);
@@ -100,10 +102,9 @@ private:
     private:
         mutable Time time_;
         GeneralStore *store_ = nullptr;
-        Watchers watchers_;
+        WatcherBridge watcher_;
         const StoreMetaData meta_;
         const uint32_t garbageInterval_;
-        std::shared_mutex mutex_;
     };
     static constexpr uint32_t DEFAULT_INTERVAL = 60 * 1000;
     static constexpr int32_t MAX_CREATOR_NUM = 30;
@@ -114,6 +115,8 @@ private:
     ConcurrentStripedMap<uint32_t, std::map<std::string, Delegate>> stores_;
     ConcurrentMap<uint32_t, std::set<std::string>> disables_;
     Creator creators_[MAX_CREATOR_NUM];
+    mutable std::shared_mutex watcherMutex_;
+    WatcherFactory watcherFactories_[MAX_CREATOR_NUM];
 };
 } // namespace OHOS::DistributedData
 #endif // OHOS_DISTRIBUTED_DATA_SERVICES_FRAMEWORK_STORE_AUTO_CACHE_H

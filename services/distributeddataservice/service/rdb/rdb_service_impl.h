@@ -1,5 +1,5 @@
-/*
- * Copyright (c) 2022 Huawei Device Co., Ltd.
+/**
+ * Copyright (c) 2022-2026 Huawei Device Co., Ltd.
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -16,10 +16,14 @@
 #ifndef DISTRIBUTEDDATASERVICE_RDB_SERVICE_H
 #define DISTRIBUTEDDATASERVICE_RDB_SERVICE_H
 
+#include <list>
 #include <map>
+#include <memory>
 #include <mutex>
+#include <shared_mutex>
 #include <string>
 #include <variant>
+#include <vector>
 
 #include "cloud/cloud_event.h"
 #include "commonevent/data_change_event.h"
@@ -149,18 +153,46 @@ private:
     using AutoCache = DistributedData::AutoCache;
     using CryptoManager = DistributedData::CryptoManager;
     using FlowControlManager = OHOS::DistributedData::FlowControlManager;
-    struct SyncAgent {
-        SyncAgent() = default;
-        explicit SyncAgent(const std::string &bundleName);
-        int32_t count_ = 0;
-        std::map<std::string, int> callBackStores_;
-        std::string bundleName_;
-        sptr<RdbNotifierProxy> notifier_ = nullptr;
-        std::shared_ptr<RdbWatcher> watcher_ = nullptr;
-        void SetNotifier(sptr<RdbNotifierProxy> notifier);
-        void SetWatcher(std::shared_ptr<RdbWatcher> watcher);
+    class ClientAgent final {
+    public:
+        ClientAgent() = default;
+        ClientAgent(const ClientAgent &) = delete;
+        ClientAgent &operator=(const ClientAgent &) = delete;
+        ClientAgent(ClientAgent &&) = delete;
+        ClientAgent &operator=(ClientAgent &&) = delete;
+        void SetNotifier(
+            uint32_t tokenId, pid_t pid, const std::string &bundleName, const sptr<RdbNotifierProxy> &notifier);
+        sptr<RdbNotifierProxy> GetNotifier(uint32_t tokenId, pid_t pid) const;
+        // Returns true when the token's last PID entry has been removed.
+        bool Remove(uint32_t tokenId, pid_t pid);
+        void Subscribe(uint32_t tokenId, pid_t pid, const std::string &bundleName);
+        void UnSubscribe(uint32_t tokenId, pid_t pid);
+        void RegisterCallback(uint32_t tokenId, pid_t pid, const std::string &bundleName, const std::string &storeName);
+        void UnregisterCallback(uint32_t tokenId, pid_t pid, const std::string &storeName);
+        std::list<sptr<RdbNotifierProxy>> GetCallbacks(uint32_t tokenId, const std::string &storeName) const;
+        Watchers GetWatchers(uint32_t tokenId) const;
+        void Clear();
+
+    private:
+        struct SyncAgent {
+            SyncAgent() = default;
+            explicit SyncAgent(const std::string &bundleName);
+            int32_t count_ = 0;
+            std::map<std::string, int> callBackStores_;
+            std::string bundleName_;
+            sptr<RdbNotifierProxy> notifier_ = nullptr;
+            std::shared_ptr<RdbWatcher> watcher_ = nullptr;
+            void SetNotifier(sptr<RdbNotifierProxy> notifier);
+            void SetWatcher(std::shared_ptr<RdbWatcher> watcher);
+        };
+        using SyncAgents = std::map<int32_t, SyncAgent>;
+        using WeakWatchers = std::vector<std::weak_ptr<DistributedData::GeneralWatcher>>;
+        void RemoveWatcher(uint32_t tokenId, const RdbWatcher *watcher);
+        ConcurrentMap<uint32_t, SyncAgents> agents_;
+        // Writers lock agents_ before mutex_; readers only copy the snapshot under mutex_.
+        mutable std::shared_mutex mutex_;
+        std::map<uint32_t, WeakWatchers> watchers_;
     };
-    using SyncAgents = std::map<int32_t, SyncAgent>;
 
     struct GlobalEvent {
         void AddEvent(const std::string& path, const DistributedData::DataChangeEvent::EventInfo& eventInfo);
@@ -188,7 +220,6 @@ private:
     class Factory {
     public:
         Factory();
-        ~Factory();
     private:
         std::shared_ptr<RdbServiceImpl> product_;
         std::shared_ptr<RdbStatic> staticActs_;
@@ -234,8 +265,6 @@ private:
     int32_t SetDeviceDistributedTables(int32_t tableType, StoreMetaData &metaData,
         std::shared_ptr<DistributedData::GeneralStore> store);
     void SetCloudDistributedTables(const RdbSyncerParam &param, StoreMetaData &metaData);
-
-    Watchers GetWatchers(uint32_t tokenId, const std::string &storeName);
 
     DetailAsync GetCallbacks(uint32_t tokenId, const std::string &storeName);
 
@@ -345,7 +374,8 @@ private:
         const std::map<std::string, std::vector<std::string>> &retainDevices);
 
     static Factory factory_;
-    ConcurrentMap<uint32_t, SyncAgents> syncAgents_;
+    std::shared_ptr<ClientAgent> clientAgentHolder_;
+    ClientAgent &clientAgent_;
     static std::shared_ptr<RdbFlowControlManager> rdbFlowControlManager_;
     std::shared_ptr<ExecutorPool> executors_;
     std::shared_ptr<GlobalEvent> eventContainer_;
