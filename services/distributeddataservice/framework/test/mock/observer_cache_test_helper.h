@@ -80,8 +80,10 @@ public:
             type,
             [this](const StoreMetaData &, const AutoCache::StoreOption &) {
                 return std::pair<int32_t, GeneralStore *>{ GeneralError::E_OK, &store_ };
-            },
-            std::move(watcherFactory));
+            });
+        if (registration == GeneralError::E_OK) {
+            registration = AutoCache::GetInstance().RegWatcherFactory(type, std::move(watcherFactory));
+        }
     }
 
     ~ObserverCache()
@@ -90,7 +92,8 @@ public:
         AutoCache::GetInstance().CloseStore([meta = meta](const StoreMetaData &value) {
             return value.tokenId == meta.tokenId && value.storeType == meta.storeType;
         });
-        AutoCache::GetInstance().RegCreator(meta.storeType, saved_.creator, saved_.watcherFactory);
+        AutoCache::GetInstance().RegCreator(meta.storeType, saved_.creator);
+        AutoCache::GetInstance().RegWatcherFactory(meta.storeType, saved_.watcherFactory);
     }
 
     void StartClose()

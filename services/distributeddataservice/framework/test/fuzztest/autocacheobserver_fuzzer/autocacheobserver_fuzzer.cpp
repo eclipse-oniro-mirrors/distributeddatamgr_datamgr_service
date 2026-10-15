@@ -50,7 +50,7 @@ void Verify(FuzzedDataProvider &fdp)
         if (fdp.ConsumeBool()) {
             factory = nullptr;
         }
-        cache.RegCreator(type, creator, factory);
+        cache.RegCreator(type, creator);
         cache.RegWatcherFactory(type, fdp.ConsumeBool() ? factory : nullptr);
         StoreMetaData meta;
         meta.storeType = type;
@@ -60,7 +60,8 @@ void Verify(FuzzedDataProvider &fdp)
         meta.storeId = fdp.ConsumeRandomLengthString(MAX_STORE_ID_LENGTH);
         cache.GetDBStore(meta);
     }
-    cache.RegCreator(FUZZ_STORE_TYPE, nullptr, nullptr);
+    cache.RegCreator(FUZZ_STORE_TYPE, nullptr);
+    cache.RegWatcherFactory(FUZZ_STORE_TYPE, nullptr);
 }
 } // namespace
 } // namespace OHOS::DistributedData

@@ -104,8 +104,7 @@ HWTEST_F(RdbServiceImplReplicaPathTest, AfterOpenReplicaPathChangeInvalidatesCac
                 return { GeneralError::E_ERROR, nullptr };
             }
             return { GeneralError::E_OK, store };
-        },
-        nullptr);
+        });
     ASSERT_EQ(regResult, E_OK);
 
     RdbServiceImpl service;

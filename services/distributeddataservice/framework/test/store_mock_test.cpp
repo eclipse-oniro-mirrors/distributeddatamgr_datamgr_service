@@ -58,7 +58,7 @@ HWTEST_F(AutoCacheMockTest, GetDBStoreMockTest001, TestSize.Level0)
         return { GeneralError::E_OK, new (std::nothrow) GeneralStoreMock() };
     };
     AccountDelegate::RegisterAccountInstance(accountDelegateMock);
-    AutoCache::GetInstance().RegCreator(DistributedRdb::RDB_DEVICE_COLLABORATION, creator, nullptr);
+    AutoCache::GetInstance().RegCreator(DistributedRdb::RDB_DEVICE_COLLABORATION, creator);
     StoreMetaData meta;
     meta.storeType = DistributedRdb::RDB_DEVICE_COLLABORATION;
     meta.area = GeneralStore::EL2;

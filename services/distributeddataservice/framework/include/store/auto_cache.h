@@ -52,10 +52,10 @@ public:
 
     API_EXPORT void Configure(uint32_t garbageInterval);
 
-    // The factory creates a fixed forwarding watcher, never queries subscriptions or opens a store.
-    // A null watcher fails opening; an empty factory means no client subscriptions.
-    API_EXPORT int32_t RegCreator(int32_t type, Creator creator, WatcherFactory watcherFactory);
+    API_EXPORT int32_t RegCreator(int32_t type, Creator creator);
 
+    // Factories are registered during process initialization and remain read-only afterwards.
+    // The factory creates a fixed forwarding watcher without querying subscriptions or opening a store.
     // Unbound cached delegates acquire the factory's watcher on their next change; bound delegates keep theirs.
     API_EXPORT int32_t RegWatcherFactory(int32_t type, WatcherFactory watcherFactory);
 
@@ -88,7 +88,7 @@ private:
     void GarbageCollect(bool isForce);
     void StartTimer();
     static int32_t CheckStatusBeforeOpen(const StoreMetaData &meta);
-    StoreFactory GetStoreFactory(int32_t type);
+    StoreFactory GetStoreFactory(int32_t type) const;
     std::pair<int32_t, GeneralStore *> OpenStore(const StoreMetaData &meta, const StoreFactory &factory,
         const StoreOption &option, std::shared_ptr<GeneralWatcher> &watcher);
     struct Delegate : public GeneralWatcher {
@@ -120,7 +120,8 @@ private:
     TaskId taskId_ = Executor::INVALID_TASK_ID;
     ConcurrentStripedMap<uint32_t, std::map<std::string, Delegate>> stores_;
     ConcurrentMap<uint32_t, std::set<std::string>> disables_;
-    std::shared_ptr<const StoreFactory> factories_[MAX_CREATOR_NUM];
+    Creator creators_[MAX_CREATOR_NUM];
+    WatcherFactory watcherFactories_[MAX_CREATOR_NUM];
 };
 } // namespace OHOS::DistributedData
 #endif // OHOS_DISTRIBUTED_DATA_SERVICES_FRAMEWORK_STORE_AUTO_CACHE_H

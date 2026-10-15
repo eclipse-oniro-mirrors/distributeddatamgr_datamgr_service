@@ -417,8 +417,7 @@ void CloudDataTest::SetUpTestCase(void)
                 return { GeneralError::E_OK, store };
             }
             return { GeneralError::E_ERROR, nullptr };
-        },
-        nullptr);
+        });
 }
 
 void CloudDataTest::TearDownTestCase()
@@ -438,8 +437,7 @@ void CloudDataTest::TearDownTestCase()
                 store = nullptr;
             }
             return { ret, store };
-        },
-        nullptr);
+        });
 }
 
 void CloudDataTest::SetUp()
