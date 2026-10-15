@@ -162,7 +162,7 @@ std::pair<int32_t, AutoCache::Store> AutoCache::GetDBStore(
             }
             dbStore->SetExecutor(executor_);
             auto result = stores.emplace(std::piecewise_construct, std::forward_as_tuple(storeKey),
-                std::forward_as_tuple(dbStore, meta, garbageInterval_));
+                std::forward_as_tuple(dbStore, GetWatcher(meta), meta, garbageInterval_));
             store = result.first->second;
             startTimer = true;
             return !stores.empty();
@@ -316,9 +316,9 @@ void AutoCache::Configure(uint32_t garbageInterval)
     }
 }
 
-AutoCache::Delegate::Delegate(GeneralStore *delegate, const StoreMetaData &meta, uint32_t garbageInterval)
-    : store_(delegate), watcher_(AutoCache::GetInstance().GetWatcher(meta)), meta_(meta),
-      garbageInterval_(garbageInterval)
+AutoCache::Delegate::Delegate(
+    GeneralStore *delegate, WatcherBridge::Getter getter, const StoreMetaData &meta, uint32_t garbageInterval)
+    : store_(delegate), watcher_(std::move(getter)), meta_(meta), garbageInterval_(garbageInterval)
 {
     time_ = std::chrono::steady_clock::now() + std::chrono::milliseconds(garbageInterval);
 

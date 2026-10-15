@@ -87,7 +87,8 @@ private:
     static int32_t CheckStatusBeforeOpen(const StoreMetaData &meta);
     WatcherBridge::Getter GetWatcher(const StoreMetaData &meta) const;
     struct Delegate : public GeneralWatcher {
-        Delegate(GeneralStore *delegate, const StoreMetaData &meta, uint32_t garbageInterval = DEFAULT_INTERVAL);
+        Delegate(GeneralStore *delegate, WatcherBridge::Getter getter, const StoreMetaData &meta,
+            uint32_t garbageInterval = DEFAULT_INTERVAL);
         ~Delegate();
         operator Store();
         bool operator<(const Time &time) const;
