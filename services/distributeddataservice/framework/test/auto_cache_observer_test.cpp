@@ -80,23 +80,21 @@ HWTEST_F(AutoCacheObserverTest, GetDBStore_NullForwarder_FailsBeforeOpening, Tes
 }
 
 /**
- * @tc.name: RegWatcherFactory_AfterOpen_BindsExistingDelegate
- * @tc.desc: A factory registered after cloud opened a store binds the existing delegate on its next change.
+ * @tc.name: RegWatcherFactory_BeforeOpen_InstallsFixedWatcher
+ * @tc.desc: A factory registered before opening provides the delegate's fixed watcher for subsequent changes.
  * @tc.type: FUNC
  * @tc.author: agent
  */
-HWTEST_F(AutoCacheObserverTest, RegWatcherFactory_AfterOpen_BindsExistingDelegate, TestSize.Level1)
+HWTEST_F(AutoCacheObserverTest, RegWatcherFactory_BeforeOpen_InstallsFixedWatcher, TestSize.Level1)
 {
-    ObserverCache fixture(STORE_TYPE, TOKEN_ID, [](const auto &) { return std::make_shared<WatcherBridge>(nullptr); });
+    ObserverCache fixture(STORE_TYPE, TOKEN_ID, nullptr);
     auto &cache = AutoCache::GetInstance();
-    EXPECT_EQ(cache.RegWatcherFactory(STORE_TYPE, nullptr), E_OK);
-    auto store = cache.GetStore(fixture.meta);
-    ASSERT_NE(store, nullptr);
-    ASSERT_NE(fixture.watcher, nullptr);
-    EXPECT_EQ(fixture.watcher->OnChange({}, GeneralWatcher::PRIFields{}, GeneralWatcher::ChangeInfo{}), E_OK);
     auto client = std::make_shared<GeneralWatcherMock>();
     EXPECT_CALL(*client, OnChange(_, A<const GeneralWatcher::PRIFields &>(), _)).Times(2).WillRepeatedly(Return(E_OK));
     EXPECT_EQ(cache.RegWatcherFactory(STORE_TYPE, [client](const StoreMetaData &) { return client; }), E_OK);
+    auto store = cache.GetStore(fixture.meta);
+    ASSERT_NE(store, nullptr);
+    ASSERT_NE(fixture.watcher, nullptr);
     EXPECT_EQ(cache.GetStore(fixture.meta).get(), store.get());
     EXPECT_EQ(fixture.watcher->OnChange({}, GeneralWatcher::PRIFields{}, GeneralWatcher::ChangeInfo{}), E_OK);
     EXPECT_EQ(fixture.watcher->OnChange({}, GeneralWatcher::PRIFields{}, GeneralWatcher::ChangeInfo{}), E_OK);
