@@ -614,8 +614,8 @@ Status KVDBServiceImpl::Unsubscribe(const AppId &appId, const StoreId &storeId, 
         if (iter == agent.watchers_.end()) {
             return true;
         }
-        for (auto watcher = iter->second.begin(); watcher != iter->second.end(); ++watcher) {
-            if (*watcher == nullptr || (*watcher)->GetObserver() == observer) {
+        for (auto watcher : iter->second) {
+            if (watcher == nullptr || watcher->GetObserver() == observer) {
                 iter->second.erase(watcher);
                 break;
             }

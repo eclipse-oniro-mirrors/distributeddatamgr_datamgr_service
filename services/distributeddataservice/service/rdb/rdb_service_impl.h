@@ -187,12 +187,11 @@ private:
         };
         using SyncAgents = std::map<int32_t, SyncAgent>;
         using WeakWatchers = std::vector<std::weak_ptr<DistributedData::GeneralWatcher>>;
-        void InvalidateWatchers(uint32_t tokenId);
+        void RemoveWatcher(uint32_t tokenId, const RdbWatcher *watcher);
         ConcurrentMap<uint32_t, SyncAgents> agents_;
-        // Updates lock agents_ before mutex_; rebuilds copy agents_ before taking the cache write lock.
+        // Writers lock agents_ before mutex_; readers only copy the snapshot under mutex_.
         mutable std::shared_mutex mutex_;
-        uint64_t watcherVersion_ = 0;
-        mutable std::map<uint32_t, WeakWatchers> watchers_;
+        std::map<uint32_t, WeakWatchers> watchers_;
     };
 
     struct GlobalEvent {

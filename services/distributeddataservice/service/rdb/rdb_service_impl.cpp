@@ -15,6 +15,8 @@
 #define LOG_TAG "RdbServiceImpl"
 #include "rdb_service_impl.h"
 
+#include <algorithm>
+
 #include "abs_rdb_predicates.h"
 #include "accesstoken_kit.h"
 #include "account/account_delegate.h"
@@ -1751,6 +1753,7 @@ int32_t RdbServiceImpl::OnReady(const std::string &device)
 void RdbServiceImpl::ClientAgent::SetNotifier(
     uint32_t tokenId, pid_t pid, const std::string &bundleName, const sptr<RdbNotifierProxy> &notifier)
 {
+    // Keep the previous notifier alive until the agent map lock has been released.
     sptr<RdbNotifierProxy> retired;
     agents_.Compute(tokenId, [pid, &bundleName, &notifier, &retired](auto, SyncAgents &agents) {
         auto it = agents.try_emplace(pid, bundleName).first;
@@ -1785,14 +1788,11 @@ bool RdbServiceImpl::ClientAgent::Remove(uint32_t tokenId, pid_t pid)
                 retiredNotifier = it->second.notifier_;
                 it->second.SetNotifier(nullptr);
                 if (it->second.watcher_ != nullptr) {
-                    InvalidateWatchers(tokenId);
+                    RemoveWatcher(tokenId, it->second.watcher_.get());
                 }
                 retiredAgent = agents.extract(it);
             }
             removed = agents.empty();
-            if (removed) {
-                InvalidateWatchers(tokenId);
-            }
             return !removed;
         });
     return removed;
@@ -1805,7 +1805,8 @@ void RdbServiceImpl::ClientAgent::Subscribe(uint32_t tokenId, pid_t pid, const s
         auto &agent = it->second;
         if (agent.watcher_ == nullptr) {
             agent.SetWatcher(std::make_shared<RdbWatcher>());
-            InvalidateWatchers(tokenId);
+            std::unique_lock<std::shared_mutex> lock(mutex_);
+            watchers_[tokenId].emplace_back(agent.watcher_);
         }
         agent.count_++;
         return true;
@@ -1825,7 +1826,7 @@ void RdbServiceImpl::ClientAgent::UnSubscribe(uint32_t tokenId, pid_t pid)
         if (agent.count_ <= 0 && agent.watcher_ != nullptr) {
             retiredWatcher = agent.watcher_;
             agent.SetWatcher(nullptr);
-            InvalidateWatchers(tokenId);
+            RemoveWatcher(tokenId, retiredWatcher.get());
         }
         return true;
     });
@@ -1874,31 +1875,11 @@ std::list<sptr<RdbNotifierProxy>> RdbServiceImpl::ClientAgent::GetCallbacks(
 RdbServiceImpl::Watchers RdbServiceImpl::ClientAgent::GetWatchers(uint32_t tokenId) const
 {
     WeakWatchers snapshot;
-    bool cached = false;
-    uint64_t version = 0;
     {
         std::shared_lock<std::shared_mutex> lock(mutex_);
         auto it = watchers_.find(tokenId);
         if (it != watchers_.end()) {
             snapshot = it->second;
-            cached = true;
-        }
-        version = watcherVersion_;
-    }
-    if (!cached) {
-        auto [found, agents] = agents_.Find(tokenId);
-        if (!found) {
-            return {};
-        }
-        for (const auto &[pid, agent] : agents) {
-            if (agent.watcher_ != nullptr) {
-                snapshot.emplace_back(agent.watcher_);
-            }
-        }
-        std::unique_lock<std::shared_mutex> lock(mutex_);
-        // An update after the copy must not be overwritten with an outdated snapshot.
-        if (version == watcherVersion_) {
-            watchers_.try_emplace(tokenId, snapshot);
         }
     }
     Watchers watchers;
@@ -1910,18 +1891,30 @@ RdbServiceImpl::Watchers RdbServiceImpl::ClientAgent::GetWatchers(uint32_t token
     return watchers;
 }
 
-void RdbServiceImpl::ClientAgent::InvalidateWatchers(uint32_t tokenId)
+void RdbServiceImpl::ClientAgent::RemoveWatcher(uint32_t tokenId, const RdbWatcher *watcher)
 {
     std::unique_lock<std::shared_mutex> lock(mutex_);
-    ++watcherVersion_;
-    watchers_.erase(tokenId);
+    auto it = watchers_.find(tokenId);
+    if (it == watchers_.end()) {
+        return;
+    }
+    auto &snapshot = it->second;
+    auto end = std::remove_if(snapshot.begin(), snapshot.end(),
+        [watcher](const auto &weakWatcher) { return weakWatcher.lock().get() == watcher; });
+    snapshot.erase(end, snapshot.end());
+    if (snapshot.empty()) {
+        watchers_.erase(it);
+    }
 }
 
 void RdbServiceImpl::ClientAgent::Clear()
 {
     std::vector<SyncAgents> retired;
     agents_.EraseIf([this, &retired](auto tokenId, SyncAgents &agents) {
-        InvalidateWatchers(tokenId);
+        {
+            std::unique_lock<std::shared_mutex> lock(mutex_);
+            watchers_.erase(tokenId);
+        }
         retired.emplace_back(std::move(agents));
         return true;
     });
