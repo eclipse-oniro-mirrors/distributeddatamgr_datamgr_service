@@ -56,7 +56,7 @@ public:
 
     // Factories are registered during process initialization and remain read-only afterwards.
     // The factory creates a fixed forwarding watcher without querying subscriptions or opening a store.
-    // Unbound cached delegates acquire the factory's watcher on their next change; bound delegates keep theirs.
+    // A null watcher fails opening; an empty factory means no client subscriptions.
     API_EXPORT int32_t RegWatcherFactory(int32_t type, WatcherFactory watcherFactory);
 
     API_EXPORT void Bind(std::shared_ptr<Executor> executor);
@@ -105,10 +105,9 @@ private:
         void PostDataChange(const StoreMetaData &meta, const std::vector<std::string> &tables);
 
     private:
-        std::shared_ptr<GeneralWatcher> GetWatcher();
         mutable Time time_;
         GeneralStore *store_ = nullptr;
-        std::shared_ptr<GeneralWatcher> watcher_;
+        const std::shared_ptr<GeneralWatcher> watcher_;
         const StoreMetaData meta_;
         const uint32_t garbageInterval_;
     };

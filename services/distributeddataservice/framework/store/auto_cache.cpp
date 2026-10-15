@@ -387,24 +387,6 @@ const StoreMetaData &AutoCache::Delegate::GetMeta() const
     return meta_;
 }
 
-std::shared_ptr<GeneralWatcher> AutoCache::Delegate::GetWatcher()
-{
-    auto watcher = std::atomic_load(&watcher_);
-    if (watcher != nullptr) {
-        return watcher;
-    }
-    // Cloud may open the store before the lazily constructed feature registers its watcher factory.
-    auto factory = AutoCache::GetInstance().GetStoreFactory(meta_.storeType);
-    if (!factory.watcherFactory) {
-        return nullptr;
-    }
-    auto created = factory.watcherFactory(meta_);
-    if (std::atomic_compare_exchange_strong(&watcher_, &watcher, created)) {
-        return created;
-    }
-    return watcher;
-}
-
 int32_t AutoCache::Delegate::OnChange(const Origin &origin, const PRIFields &primaryFields, ChangeInfo &&values)
 {
     std::vector<std::string> tables;
@@ -412,9 +394,8 @@ int32_t AutoCache::Delegate::OnChange(const Origin &origin, const PRIFields &pri
         tables.emplace_back(table);
     }
     PostDataChange(meta_, tables);
-    auto watcher = GetWatcher();
-    if (watcher != nullptr) {
-        watcher->OnChange(origin, primaryFields, std::move(values));
+    if (watcher_ != nullptr) {
+        watcher_->OnChange(origin, primaryFields, std::move(values));
     }
     return Error::E_OK;
 }
@@ -426,9 +407,8 @@ int32_t AutoCache::Delegate::OnChange(const Origin &origin, const Fields &fields
         tables.emplace_back(table);
     }
     PostDataChange(meta_, tables);
-    auto watcher = GetWatcher();
-    if (watcher != nullptr) {
-        watcher->OnChange(origin, fields, std::move(datas));
+    if (watcher_ != nullptr) {
+        watcher_->OnChange(origin, fields, std::move(datas));
     }
     return Error::E_OK;
 }
