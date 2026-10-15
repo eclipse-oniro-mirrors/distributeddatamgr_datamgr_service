@@ -515,11 +515,11 @@ HWTEST_F(KvdbServiceImplTest, OnAsyncCompleteTest001, TestSize.Level0)
     syncAgent.switchesObserverCount_ = 1; // test
     syncAgent.appId_ = { "ohos.OnAsyncCompleteTest001.kvdb" };
     syncAgent.notifier_ = notifier;
-    kvdbServiceImpl_->syncAgents_->Insert(100, syncAgent);      // test
+    kvdbServiceImpl_->syncAgents_.Insert(100, syncAgent);      // test
     kvdbServiceImpl_->OnAsyncComplete(1, 1, std::move(detail)); // test
-    EXPECT_EQ(kvdbServiceImpl_->syncAgents_->Find(1).first, false);
+    EXPECT_EQ(kvdbServiceImpl_->syncAgents_.Find(1).first, false);
     kvdbServiceImpl_->OnAsyncComplete(100, 1, std::move(detail)); // test
-    EXPECT_EQ(kvdbServiceImpl_->syncAgents_->Find(100).first, true);
+    EXPECT_EQ(kvdbServiceImpl_->syncAgents_.Find(100).first, true);
 }
 
 /**
@@ -575,7 +575,7 @@ HWTEST_F(KvdbServiceImplTest, UnregServiceNotifierTest001, TestSize.Level0)
     syncAgent.switchesObserverCount_ = 1; // test
     syncAgent.appId_ = { "ohos.OnAsyncCompleteTest001.kvdb" };
     syncAgent.notifier_ = notifier;
-    kvdbServiceImpl_->syncAgents_->Insert(IPCSkeleton::GetCallingTokenID(), syncAgent);
+    kvdbServiceImpl_->syncAgents_.Insert(IPCSkeleton::GetCallingTokenID(), syncAgent);
     auto status = kvdbServiceImpl_->UnregServiceNotifier(appId);
     ASSERT_EQ(status, Status::SUCCESS);
 }
@@ -1002,7 +1002,7 @@ HWTEST_F(KvdbServiceImplTest, UnsubscribeTest001, TestSize.Level0)
     key.append(metaData.user).append("###").append(storeId.storeId);
     syncAgent.watchers_[key].insert(nullptr);
     auto tokenId = IPCSkeleton::GetCallingTokenID();
-    kvdbServiceImpl_->syncAgents_->Insert(tokenId, syncAgent);
+    kvdbServiceImpl_->syncAgents_.Insert(tokenId, syncAgent);
     sptr<OHOS::DistributedKv::IKvStoreObserver> observer;
     auto status = kvdbServiceImpl_->Unsubscribe(appId, storeId, 0, observer);
     ZLOGI("UnsubscribeTest001 status = :%{public}d", status);
@@ -1511,11 +1511,11 @@ HWTEST_F(KvdbServiceImplTest, OnAsyncCompleteTest002, TestSize.Level0)
     EXPECT_EQ(notifier, nullptr);
     uint32_t tokenId = 2;
     uint64_t seqNum = 1;
-    kvdbServiceImpl_->syncAgents_->Insert(tokenId, syncAgent);
+    kvdbServiceImpl_->syncAgents_.Insert(tokenId, syncAgent);
     kvdbServiceImpl_->OnAsyncComplete(tokenId, seqNum, std::move(detail));
-    EXPECT_TRUE(kvdbServiceImpl_->syncAgents_->Find(tokenId).first);
+    EXPECT_TRUE(kvdbServiceImpl_->syncAgents_.Find(tokenId).first);
     kvdbServiceImpl_->OnAsyncComplete(0, 1, std::move(detail));
-    EXPECT_TRUE(kvdbServiceImpl_->syncAgents_->Find(tokenId).first);
+    EXPECT_TRUE(kvdbServiceImpl_->syncAgents_.Find(tokenId).first);
 }
 
 /**
@@ -1534,9 +1534,9 @@ HWTEST_F(KvdbServiceImplTest, OnAsyncCompleteTest003, TestSize.Level0)
     syncAgent.notifier_ = notifier;
     DistributedKv::ProgressDetail detail;
     auto tokenId = IPCSkeleton::GetCallingTokenID();
-    kvdbServiceImpl_->syncAgents_->Insert(tokenId, syncAgent);
+    kvdbServiceImpl_->syncAgents_.Insert(tokenId, syncAgent);
     kvdbServiceImpl_->OnAsyncComplete(tokenId, 1, std::move(detail));
-    EXPECT_TRUE(kvdbServiceImpl_->syncAgents_->Find(tokenId).first);
+    EXPECT_TRUE(kvdbServiceImpl_->syncAgents_.Find(tokenId).first);
 }
 
 /**
@@ -1673,7 +1673,7 @@ HWTEST_F(KvdbServiceImplTest, SubscribeSwitchData, TestSize.Level0)
     status = kvdbServiceImpl_->SubscribeSwitchData(appId);
     EXPECT_EQ(status, Status::SUCCESS);
     ASSERT_FALSE(MetaDataManager::GetInstance().LoadMeta(metaData_.GetKey(), metaData));
-    kvdbServiceImpl_->syncAgents_->Insert(IPCSkeleton::GetCallingTokenID(), syncAgent);
+    kvdbServiceImpl_->syncAgents_.Insert(IPCSkeleton::GetCallingTokenID(), syncAgent);
     EXPECT_EQ(tokenId, syncAgent.pid_);
     status = kvdbServiceImpl_->UnregServiceNotifier(appId);
     ASSERT_EQ(status, Status::SUCCESS);

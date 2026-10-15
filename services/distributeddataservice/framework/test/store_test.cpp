@@ -235,35 +235,34 @@ HWTEST_F(AutoCacheTest, GetDBStore, TestSize.Level2)
         return { GeneralError::E_OK, new (std::nothrow) GeneralStoreMock() };
     };
     AutoCache::GetInstance().RegCreator(DistributedRdb::RDB_DEVICE_COLLABORATION, creator, nullptr);
-    AutoCache::Watchers watchers;
     StoreMetaData meta;
     meta.storeType = DistributedRdb::RDB_DEVICE_COLLABORATION;
     mock_->isLocked_ = true;
     meta.user = "0";
-    EXPECT_EQ(AutoCache::GetInstance().GetDBStore(meta, watchers).first, GeneralError::E_OK);
+    EXPECT_EQ(AutoCache::GetInstance().GetDBStore(meta).first, GeneralError::E_OK);
     meta.user = "";
     meta.area = GeneralStore::EL4;
-    EXPECT_EQ(AutoCache::GetInstance().GetDBStore(meta, watchers).first, GeneralError::E_SCREEN_LOCKED);
+    EXPECT_EQ(AutoCache::GetInstance().GetDBStore(meta).first, GeneralError::E_SCREEN_LOCKED);
     meta.area = GeneralStore::EL1;
-    EXPECT_NE(AutoCache::GetInstance().GetDBStore(meta, watchers).first, GeneralError::E_SCREEN_LOCKED);
+    EXPECT_NE(AutoCache::GetInstance().GetDBStore(meta).first, GeneralError::E_SCREEN_LOCKED);
     meta.area = GeneralStore::EL2;
-    EXPECT_NE(AutoCache::GetInstance().GetDBStore(meta, watchers).first, GeneralError::E_SCREEN_LOCKED);
+    EXPECT_NE(AutoCache::GetInstance().GetDBStore(meta).first, GeneralError::E_SCREEN_LOCKED);
     meta.area = GeneralStore::EL3;
-    EXPECT_NE(AutoCache::GetInstance().GetDBStore(meta, watchers).first, GeneralError::E_SCREEN_LOCKED);
+    EXPECT_NE(AutoCache::GetInstance().GetDBStore(meta).first, GeneralError::E_SCREEN_LOCKED);
     meta.area = GeneralStore::EL5;
-    EXPECT_NE(AutoCache::GetInstance().GetDBStore(meta, watchers).first, GeneralError::E_SCREEN_LOCKED);
+    EXPECT_NE(AutoCache::GetInstance().GetDBStore(meta).first, GeneralError::E_SCREEN_LOCKED);
 
     mock_->isLocked_ = false;
     meta.area = GeneralStore::EL4;
-    EXPECT_NE(AutoCache::GetInstance().GetDBStore(meta, watchers).first, GeneralError::E_SCREEN_LOCKED);
+    EXPECT_NE(AutoCache::GetInstance().GetDBStore(meta).first, GeneralError::E_SCREEN_LOCKED);
     meta.area = GeneralStore::EL1;
-    EXPECT_NE(AutoCache::GetInstance().GetDBStore(meta, watchers).first, GeneralError::E_SCREEN_LOCKED);
+    EXPECT_NE(AutoCache::GetInstance().GetDBStore(meta).first, GeneralError::E_SCREEN_LOCKED);
     meta.area = GeneralStore::EL2;
-    EXPECT_NE(AutoCache::GetInstance().GetDBStore(meta, watchers).first, GeneralError::E_SCREEN_LOCKED);
+    EXPECT_NE(AutoCache::GetInstance().GetDBStore(meta).first, GeneralError::E_SCREEN_LOCKED);
     meta.area = GeneralStore::EL3;
-    EXPECT_NE(AutoCache::GetInstance().GetDBStore(meta, watchers).first, GeneralError::E_SCREEN_LOCKED);
+    EXPECT_NE(AutoCache::GetInstance().GetDBStore(meta).first, GeneralError::E_SCREEN_LOCKED);
     meta.area = GeneralStore::EL5;
-    EXPECT_NE(AutoCache::GetInstance().GetDBStore(meta, watchers).first, GeneralError::E_SCREEN_LOCKED);
+    EXPECT_NE(AutoCache::GetInstance().GetDBStore(meta).first, GeneralError::E_SCREEN_LOCKED);
 }
 
 /**

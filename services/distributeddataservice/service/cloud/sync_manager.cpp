@@ -754,7 +754,7 @@ std::pair<int32_t, AutoCache::Store> SyncManager::GetStore(const StoreMetaData &
     if (CloudServer::GetInstance() == nullptr) {
         return { E_NOT_SUPPORT, nullptr };
     }
-    auto [status, store] = AutoCache::GetInstance().GetDBStore(meta, {});
+    auto [status, store] = AutoCache::GetInstance().GetDBStore(meta);
     if (status == E_SCREEN_LOCKED) {
         return { E_SCREEN_LOCKED, nullptr };
     } else if (store == nullptr) {

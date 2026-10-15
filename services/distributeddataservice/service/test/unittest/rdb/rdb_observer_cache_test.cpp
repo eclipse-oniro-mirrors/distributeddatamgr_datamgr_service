@@ -53,7 +53,7 @@ public:
         service_ = std::make_unique<RdbServiceImpl>();
         param_.bundleName_ = "observer.test";
         param_.storeName_ = "observer_cache_test";
-        auto weakAgents = std::weak_ptr<RdbServiceImpl::SyncAgentMap>(service_->syncAgents_);
+        auto weakAgents = std::weak_ptr<RdbServiceImpl::SyncAgentMap>(service_->syncAgentsHolder_);
         fixture_ = std::make_unique<ObserverCache>(
             STORE_TYPE, IPCSkeleton::GetCallingTokenID(), [weakAgents](const StoreMetaData &meta) {
                 return std::make_shared<WatcherBridge>([weakAgents, tokenId = meta.tokenId]() {
@@ -70,8 +70,14 @@ public:
     // Inject only the notifier transport; subscriptions are always made through public APIs.
     void BindNotifier(const sptr<RdbNotifierProxy> &notifier, pid_t pid = IPCSkeleton::GetCallingPid())
     {
-        service_->syncAgents_->Compute(
-            IPCSkeleton::GetCallingTokenID(), [notifier, pid](auto, RdbServiceImpl::SyncAgents &agents) {
+        service_->syncAgents_.Compute(
+            IPCSkeleton::GetCallingTokenID(),
+            [notifier, pid](auto, std::shared_ptr<RdbServiceImpl::ClientAgent> &client) {
+                if (client == nullptr) {
+                    client = std::make_shared<RdbServiceImpl::ClientAgent>();
+                }
+                std::lock_guard<std::mutex> lock(client->mutex);
+                auto &agents = client->agents;
                 auto [it, inserted] = agents.try_emplace(pid, "observer.test");
                 it->second.SetNotifier(notifier);
                 return true;
@@ -92,7 +98,7 @@ public:
  */
 HWTEST_F(RdbObserverCacheTest, Subscribe_AfterOpenAndOff_UsesLatestSnapshot, TestSize.Level1)
 {
-    auto store = AutoCache::GetInstance().GetStore(fixture_->meta, {});
+    auto store = AutoCache::GetInstance().GetStore(fixture_->meta);
     ASSERT_NE(store, nullptr);
     ASSERT_NE(fixture_->watcher, nullptr);
     sptr<RdbObserverNotifierMock> notifier = new RdbObserverNotifierMock();
@@ -114,7 +120,7 @@ HWTEST_F(RdbObserverCacheTest, Subscribe_AfterOpenAndOff_UsesLatestSnapshot, Tes
  */
 HWTEST_F(RdbObserverCacheTest, Subscribe_CloseBlocked_ReturnsBeforeRelease, TestSize.Level1)
 {
-    auto store = AutoCache::GetInstance().GetStore(fixture_->meta, {});
+    auto store = AutoCache::GetInstance().GetStore(fixture_->meta);
     ASSERT_NE(store, nullptr);
     fixture_->StartClose();
     ASSERT_TRUE(fixture_->WaitCloseEntered());
@@ -138,14 +144,14 @@ HWTEST_F(RdbObserverCacheTest, Subscribe_CloseBlocked_ReturnsBeforeRelease, Test
  */
 HWTEST_F(RdbObserverCacheTest, OnChange_ServiceDestroyed_StopsForwarding, TestSize.Level2)
 {
-    auto store = AutoCache::GetInstance().GetStore(fixture_->meta, {});
+    auto store = AutoCache::GetInstance().GetStore(fixture_->meta);
     ASSERT_NE(store, nullptr);
     ASSERT_NE(fixture_->watcher, nullptr);
     sptr<RdbObserverNotifierMock> notifier = new RdbObserverNotifierMock();
     BindNotifier(notifier);
     EXPECT_CALL(*notifier, OnChange(_, _, _)).Times(0);
     EXPECT_EQ(service_->Subscribe(param_, option_, nullptr), RDB_OK);
-    auto syncAgents = service_->syncAgents_;
+    auto syncAgents = service_->syncAgentsHolder_;
     service_.reset();
     EXPECT_TRUE(syncAgents->Empty());
     EXPECT_EQ(fixture_->watcher->OnChange({}, GeneralWatcher::PRIFields{}, GeneralWatcher::ChangeInfo{}), E_OK);

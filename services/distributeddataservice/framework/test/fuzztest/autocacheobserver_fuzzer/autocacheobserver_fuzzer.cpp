@@ -51,13 +51,14 @@ void Verify(FuzzedDataProvider &fdp)
             factory = nullptr;
         }
         cache.RegCreator(type, creator, factory);
+        cache.RegWatcherFactory(type, fdp.ConsumeBool() ? factory : nullptr);
         StoreMetaData meta;
         meta.storeType = type;
         meta.tokenId = fdp.ConsumeIntegral<uint32_t>();
         meta.user = "0"; // Avoid account services; this target never creates a real delegate.
         meta.area = GeneralStore::EL1;
         meta.storeId = fdp.ConsumeRandomLengthString(MAX_STORE_ID_LENGTH);
-        cache.GetDBStore(meta, {});
+        cache.GetDBStore(meta);
     }
     cache.RegCreator(FUZZ_STORE_TYPE, nullptr, nullptr);
 }

@@ -60,7 +60,7 @@ public:
         ON_CALL(*token, GetTokenTypeFlag(_)).WillByDefault(Return(TOKEN_NATIVE));
         BAccessTokenKit::accessTokenkit = token;
         service_ = std::make_unique<KVDBServiceImpl>();
-        auto weakAgents = std::weak_ptr<KVDBServiceImpl::SyncAgentMap>(service_->syncAgents_);
+        auto weakAgents = std::weak_ptr<KVDBServiceImpl::SyncAgentMap>(service_->syncAgentsHolder_);
         fixture_ = std::make_unique<ObserverCache>(
             STORE_TYPE, IPCSkeleton::GetCallingTokenID(), [weakAgents](const StoreMetaData &meta) {
                 return std::make_shared<WatcherBridge>(
@@ -107,7 +107,7 @@ private:
  */
 HWTEST_F(KvObserverCacheTest, Subscribe_MultipleObservers_RemovesOnlyTarget, TestSize.Level1)
 {
-    auto store = AutoCache::GetInstance().GetStore(fixture_->meta, {});
+    auto store = AutoCache::GetInstance().GetStore(fixture_->meta);
     ASSERT_NE(store, nullptr);
     ASSERT_NE(fixture_->watcher, nullptr);
     sptr<KvObserverMock> first = new KvObserverMock();
@@ -133,7 +133,7 @@ HWTEST_F(KvObserverCacheTest, Subscribe_MultipleObservers_RemovesOnlyTarget, Tes
  */
 HWTEST_F(KvObserverCacheTest, Subscribe_CloseBlocked_ReturnsBeforeRelease, TestSize.Level1)
 {
-    auto store = AutoCache::GetInstance().GetStore(fixture_->meta, {});
+    auto store = AutoCache::GetInstance().GetStore(fixture_->meta);
     ASSERT_NE(store, nullptr);
     sptr<KvObserverMock> observer = new KvObserverMock();
     fixture_->StartClose();
@@ -159,7 +159,7 @@ HWTEST_F(KvObserverCacheTest, Subscribe_CloseBlocked_ReturnsBeforeRelease, TestS
  */
 HWTEST_F(KvObserverCacheTest, OnChange_DifferentUserOrDestroyedService_DoesNotNotify, TestSize.Level2)
 {
-    auto store = AutoCache::GetInstance().GetStore(fixture_->meta, {});
+    auto store = AutoCache::GetInstance().GetStore(fixture_->meta);
     ASSERT_NE(store, nullptr);
     ASSERT_NE(fixture_->watcher, nullptr);
     auto matchingWatcher = fixture_->watcher;
@@ -170,10 +170,10 @@ HWTEST_F(KvObserverCacheTest, OnChange_DifferentUserOrDestroyedService_DoesNotNo
     auto otherMeta = fixture_->meta;
     otherMeta.storeId = "different_store";
     otherMeta.user = "200";
-    auto otherStore = AutoCache::GetInstance().GetStore(otherMeta, {});
+    auto otherStore = AutoCache::GetInstance().GetStore(otherMeta);
     ASSERT_NE(otherStore, nullptr);
     EXPECT_EQ(Notify(), E_OK);
-    auto syncAgents = service_->syncAgents_;
+    auto syncAgents = service_->syncAgentsHolder_;
     service_.reset();
     EXPECT_TRUE(syncAgents->Empty());
     GeneralWatcher::Origin origin;

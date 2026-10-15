@@ -59,8 +59,7 @@ public:
         meta.storeId = "observer_cache_test";
         {
             auto &cache = AutoCache::GetInstance();
-            std::lock_guard<std::mutex> lock(cache.factoryMutex_);
-            saved_ = cache.factories_[type];
+            saved_ = cache.GetStoreFactory(type);
         }
         ON_CALL(store_, AddRef()).WillByDefault(testing::Return(1));
         ON_CALL(store_, Release()).WillByDefault(testing::Return(1));

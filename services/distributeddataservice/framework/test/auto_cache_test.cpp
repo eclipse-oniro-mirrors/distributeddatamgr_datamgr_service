@@ -159,12 +159,12 @@ HWTEST_F(AutoCacheTest, GetStore_IdenticalMetadata_CacheHit, TestSize.Level1)
     meta.storeType = 0;
 
     // First call to GetStore with specific metadata should create a new store instance
-    auto store1 = AutoCache::GetInstance().GetStore(meta, {});
+    auto store1 = AutoCache::GetInstance().GetStore(meta);
     ASSERT_NE(store1, nullptr);
     EXPECT_EQ(store1.get(), mock.get());
 
     // Second call with identical metadata should hit cache and return the same instance
-    auto store2 = AutoCache::GetInstance().GetStore(meta, {});
+    auto store2 = AutoCache::GetInstance().GetStore(meta);
     ASSERT_NE(store2, nullptr);
     EXPECT_EQ(store1.get(), store2.get());
     EXPECT_EQ(store2.get(), mock.get());
@@ -182,10 +182,10 @@ HWTEST_F(AutoCacheTest, AutoCache_GetStore_WithInvalidMetaData, TestSize.Level1)
 {
     StoreMetaData meta;
     meta.storeType = -1; // Invalid type
-    auto store = AutoCache::GetInstance().GetStore(meta, {});
+    auto store = AutoCache::GetInstance().GetStore(meta);
     EXPECT_EQ(store, nullptr);
     meta.storeType = AutoCache::MAX_CREATOR_NUM; // Invalid type
-    store = AutoCache::GetInstance().GetStore(meta, {});
+    store = AutoCache::GetInstance().GetStore(meta);
     EXPECT_EQ(store, nullptr);
 }
 
@@ -246,7 +246,7 @@ HWTEST_F(AutoCacheTest, AutoCache_GarbageCollection_StoreNotReleasedBeforeTimeou
     meta.storeType = 0;
 
     // First call to GetStore with specific metadata should create a new store instance
-    auto store = AutoCache::GetInstance().GetStore(meta, {});
+    auto store = AutoCache::GetInstance().GetStore(meta);
     ASSERT_NE(store, nullptr);
     EXPECT_EQ(store.get(), mock.get());
     EXPECT_EQ(creationCount, 1);
@@ -255,7 +255,7 @@ HWTEST_F(AutoCacheTest, AutoCache_GarbageCollection_StoreNotReleasedBeforeTimeou
     std::this_thread::sleep_for(std::chrono::milliseconds(garbageInterval / 2));
 
     // Get store again and verify it's still cached (not garbage collected)
-    store = AutoCache::GetInstance().GetStore(meta, {});
+    store = AutoCache::GetInstance().GetStore(meta);
     ASSERT_NE(store, nullptr);
     EXPECT_EQ(store.get(), mock.get());
 
@@ -263,7 +263,7 @@ HWTEST_F(AutoCacheTest, AutoCache_GarbageCollection_StoreNotReleasedBeforeTimeou
     std::this_thread::sleep_for(std::chrono::milliseconds(garbageInterval * 2));
 
     // Get store again - should create new instance after garbage collection
-    store = AutoCache::GetInstance().GetStore(meta, {});
+    store = AutoCache::GetInstance().GetStore(meta);
     ASSERT_NE(store, nullptr);
     EXPECT_EQ(store.get(), mock.get());
 
@@ -321,12 +321,12 @@ HWTEST_F(AutoCacheTest, AutoCache_GetStore_SameTypeDifferentDB_DifferentInstance
     meta2.storeType = 3;
 
     // Get first database instance
-    auto store1 = AutoCache::GetInstance().GetStore(meta1, {});
+    auto store1 = AutoCache::GetInstance().GetStore(meta1);
     ASSERT_NE(store1, nullptr);
     EXPECT_EQ(store1.get(), mock1.get());
 
     // Get second database instance
-    auto store2 = AutoCache::GetInstance().GetStore(meta2, {});
+    auto store2 = AutoCache::GetInstance().GetStore(meta2);
     ASSERT_NE(store2, nullptr);
     EXPECT_EQ(store2.get(), mock2.get());
 
@@ -334,11 +334,11 @@ HWTEST_F(AutoCacheTest, AutoCache_GetStore_SameTypeDifferentDB_DifferentInstance
     EXPECT_NE(store1.get(), store2.get());
 
     // Get the same databases again to test cache hit
-    auto store1Again = AutoCache::GetInstance().GetStore(meta1, {});
+    auto store1Again = AutoCache::GetInstance().GetStore(meta1);
     ASSERT_NE(store1Again, nullptr);
     EXPECT_EQ(store1.get(), store1Again.get());
 
-    auto store2Again = AutoCache::GetInstance().GetStore(meta2, {});
+    auto store2Again = AutoCache::GetInstance().GetStore(meta2);
     ASSERT_NE(store2Again, nullptr);
     EXPECT_EQ(store2.get(), store2Again.get());
 
@@ -394,12 +394,12 @@ HWTEST_F(AutoCacheTest, AutoCache_GetStore_MultipleStores_DifferentInstances, Te
     meta2.storeType = 2;
 
     // Get first database instance
-    auto store1 = AutoCache::GetInstance().GetStore(meta1, {});
+    auto store1 = AutoCache::GetInstance().GetStore(meta1);
     ASSERT_NE(store1, nullptr);
     EXPECT_EQ(store1.get(), mock1.get());
 
     // Get second database instance
-    auto store2 = AutoCache::GetInstance().GetStore(meta2, {});
+    auto store2 = AutoCache::GetInstance().GetStore(meta2);
     ASSERT_NE(store2, nullptr);
     EXPECT_EQ(store2.get(), mock2.get());
 
@@ -407,11 +407,11 @@ HWTEST_F(AutoCacheTest, AutoCache_GetStore_MultipleStores_DifferentInstances, Te
     EXPECT_NE(store1.get(), store2.get());
 
     // Get the same stores again to test cache hit
-    auto store1Again = AutoCache::GetInstance().GetStore(meta1, {});
+    auto store1Again = AutoCache::GetInstance().GetStore(meta1);
     ASSERT_NE(store1Again, nullptr);
     EXPECT_EQ(store1.get(), store1Again.get());
 
-    auto store2Again = AutoCache::GetInstance().GetStore(meta2, {});
+    auto store2Again = AutoCache::GetInstance().GetStore(meta2);
     ASSERT_NE(store2Again, nullptr);
     EXPECT_EQ(store2.get(), store2Again.get());
 
@@ -474,7 +474,7 @@ HWTEST_F(AutoCacheTest, AutoCache_GetStore_ConcurrentCalls_PerformanceTest, Test
         meta.storeType = 4;
         meta.tokenId = i;
         threads.emplace_back([meta, i, &stores, &mocks]() {
-            stores[i] = AutoCache::GetInstance().GetStore(meta, {});
+            stores[i] = AutoCache::GetInstance().GetStore(meta);
             EXPECT_EQ(stores[i].get(), mocks[i].get());
         });
     }
@@ -545,7 +545,7 @@ HWTEST_F(AutoCacheTest, AutoCache_CloseStore_SameTokenId_MultipleStores, TestSiz
         metas.push_back(meta);
 
         // Get store instance
-        auto store = AutoCache::GetInstance().GetStore(meta, {});
+        auto store = AutoCache::GetInstance().GetStore(meta);
         ASSERT_NE(store, nullptr);
         stores.push_back(store);
         EXPECT_EQ(store.get(), mocks[i].get());
@@ -554,7 +554,7 @@ HWTEST_F(AutoCacheTest, AutoCache_CloseStore_SameTokenId_MultipleStores, TestSiz
     // Verify all stores exist by getting them again
     for (int i = 0; i < numStores; i++) {
         auto meta = metas[i];
-        auto store = AutoCache::GetInstance().GetStore(meta, {});
+        auto store = AutoCache::GetInstance().GetStore(meta);
         ASSERT_NE(store, nullptr);
         EXPECT_EQ(store.get(), mocks[i].get());
     }
@@ -563,10 +563,10 @@ HWTEST_F(AutoCacheTest, AutoCache_CloseStore_SameTokenId_MultipleStores, TestSiz
     AutoCache::GetInstance().CloseStore(tokenId, "", "same_token_db0.db");
 
     // Verify first store is closed but others remain
-    auto closedStore = AutoCache::GetInstance().GetStore(metas[0], {});
+    auto closedStore = AutoCache::GetInstance().GetStore(metas[0]);
 
     for (int i = 1; i < numStores; i++) {
-        auto store = AutoCache::GetInstance().GetStore(metas[i], {});
+        auto store = AutoCache::GetInstance().GetStore(metas[i]);
         ASSERT_NE(store, nullptr);
         EXPECT_EQ(store.get(), mocks[i].get());
     }
@@ -626,7 +626,7 @@ HWTEST_F(AutoCacheTest, AutoCache_CloseStore_DifferentTokenIds_MultipleStores, T
         auto meta = GetStoreMetaData(storeId);
         meta.storeType = 6;
         meta.tokenId = i < storesPerToken ? tokenId1 : tokenId2;
-        auto store = AutoCache::GetInstance().GetStore(meta, {});
+        auto store = AutoCache::GetInstance().GetStore(meta);
         EXPECT_EQ(store.get(), mocks[storeId].get());
     }
 
@@ -696,7 +696,7 @@ HWTEST_F(AutoCacheTest, AutoCache_CloseStore_FilterBased_Closure, TestSize.Level
         metas.push_back(meta);
 
         // Get store instance
-        auto store = AutoCache::GetInstance().GetStore(meta, {});
+        auto store = AutoCache::GetInstance().GetStore(meta);
         EXPECT_EQ(store.get(), mocks[meta.storeId].get());
     }
 
@@ -751,7 +751,7 @@ HWTEST_F(AutoCacheTest, AutoCache_GetDBStore_DisableEnable_StoreAvailability, Te
     meta.tokenId = tokenId;
 
     // Initially, GetDBStore should succeed
-    auto [err, store] = AutoCache::GetInstance().GetDBStore(meta, {}, {});
+    auto [err, store] = AutoCache::GetInstance().GetDBStore(meta, {});
     EXPECT_EQ(err, E_OK);
     ASSERT_NE(store, nullptr);
     EXPECT_EQ(store.get(), mock.get());
@@ -761,7 +761,7 @@ HWTEST_F(AutoCacheTest, AutoCache_GetDBStore_DisableEnable_StoreAvailability, Te
     AutoCache::GetInstance().Disable(tokenId, "", storeId);
 
     // Now GetDBStore should fail because the store is in disables_ set
-    auto [err2, store2] = AutoCache::GetInstance().GetDBStore(meta, {}, {});
+    auto [err2, store2] = AutoCache::GetInstance().GetDBStore(meta, {});
     EXPECT_EQ(err2, E_ERROR);  // Should return error when store is disabled
     EXPECT_EQ(store2, nullptr);
 
@@ -769,7 +769,7 @@ HWTEST_F(AutoCacheTest, AutoCache_GetDBStore_DisableEnable_StoreAvailability, Te
     AutoCache::GetInstance().Enable(tokenId, "", storeId);
 
     // Now GetDBStore should succeed again
-    auto [err3, store3] = AutoCache::GetInstance().GetDBStore(meta, {}, {});
+    auto [err3, store3] = AutoCache::GetInstance().GetDBStore(meta, {});
     EXPECT_EQ(err3, E_OK);
     ASSERT_NE(store3, nullptr);
     EXPECT_EQ(store3.get(), mock.get());
@@ -817,7 +817,7 @@ HWTEST_F(AutoCacheTest, AutoCache_GetDBStore_CheckStatusBeforeOpen_EL4ScreenLock
     meta.area = GeneralStore::Area::EL4;  // This area checks for screen lock
 
     // Call GetDBStore and expect E_SCREEN_LOCKED error
-    auto [err, store] = AutoCache::GetInstance().GetDBStore(meta, {}, {});
+    auto [err, store] = AutoCache::GetInstance().GetDBStore(meta, {});
     EXPECT_EQ(err, E_SCREEN_LOCKED);
     EXPECT_EQ(store, nullptr);
 }
@@ -863,7 +863,7 @@ HWTEST_F(AutoCacheTest, AutoCache_GetDBStore_CheckStatusBeforeOpen_UserDeactivat
     meta.area = GeneralStore::Area::EL2;  // Not EL1, so will check account status
 
     // Call GetDBStore and expect E_USER_DEACTIVATING error
-    auto [err, store] = AutoCache::GetInstance().GetDBStore(meta, {}, {});
+    auto [err, store] = AutoCache::GetInstance().GetDBStore(meta, {});
     EXPECT_EQ(err, E_USER_DEACTIVATING);
     EXPECT_EQ(store, nullptr);
 }
@@ -912,7 +912,7 @@ HWTEST_F(AutoCacheTest, AutoCache_GetDBStore_CheckStatusBeforeOpen_UserNotVerifi
     meta.area = GeneralStore::Area::EL3;  // Not EL1, so will check account status
 
     // Call GetDBStore and expect E_USER_LOCKED error
-    auto [err, store] = AutoCache::GetInstance().GetDBStore(meta, {}, {});
+    auto [err, store] = AutoCache::GetInstance().GetDBStore(meta, {});
     EXPECT_EQ(err, E_USER_LOCKED);
     EXPECT_EQ(store, nullptr);
 }
@@ -962,7 +962,7 @@ HWTEST_F(AutoCacheTest, AutoCache_GetDBStore_CheckStatusBeforeOpen_EL4ScreenUnlo
     meta.user = "100";  // Non-zero user ID to test account verification too
 
     // This should succeed if the screen is unlocked
-    auto [err, store] = AutoCache::GetInstance().GetDBStore(meta, {}, {});
+    auto [err, store] = AutoCache::GetInstance().GetDBStore(meta, {});
     EXPECT_EQ(err, E_OK);
     ASSERT_NE(store, nullptr);
     EXPECT_EQ(store.get(), mock.get());
@@ -1016,7 +1016,7 @@ HWTEST_F(AutoCacheTest, AutoCache_GetDBStore_CheckStatusBeforeOpen_ValidUserVeri
     meta.area = GeneralStore::Area::EL2;  // Not EL1, so will check account status
 
     // This should succeed if the user is verified and not deactivating
-    auto [err, store] = AutoCache::GetInstance().GetDBStore(meta, {}, {});
+    auto [err, store] = AutoCache::GetInstance().GetDBStore(meta, {});
     EXPECT_EQ(err, E_OK);
     ASSERT_NE(store, nullptr);
     EXPECT_EQ(store.get(), mock.get());
@@ -1061,12 +1061,12 @@ HWTEST_F(AutoCacheTest, AutoCache_GenerateKey_NonEmptyPath_NonExistentPath, Test
     meta.tokenId = tokenId;
     meta.dataDir = invalidPath;
 
-    auto store = AutoCache::GetInstance().GetStore(meta, {});
+    auto store = AutoCache::GetInstance().GetStore(meta);
     ASSERT_NE(store, nullptr);
     EXPECT_EQ(store.get(), mock.get());
 
     // Cache hit
-    auto store2 = AutoCache::GetInstance().GetStore(meta, {});
+    auto store2 = AutoCache::GetInstance().GetStore(meta);
     ASSERT_NE(store2, nullptr);
     EXPECT_EQ(store.get(), store2.get());
 
@@ -1074,13 +1074,13 @@ HWTEST_F(AutoCacheTest, AutoCache_GenerateKey_NonEmptyPath_NonExistentPath, Test
     AutoCache::GetInstance().Disable(tokenId, invalidPath, storeId);
 
     // GetDBStore should fail because the store is disabled with key generated from invalid path
-    auto [err, disabledStore] = AutoCache::GetInstance().GetDBStore(meta, {}, {});
+    auto [err, disabledStore] = AutoCache::GetInstance().GetDBStore(meta, {});
     EXPECT_EQ(err, E_ERROR);
     EXPECT_EQ(disabledStore, nullptr);
 
     // Enable and verify
     AutoCache::GetInstance().Enable(tokenId, invalidPath, storeId);
-    auto [err2, enabledStore] = AutoCache::GetInstance().GetDBStore(meta, {}, {});
+    auto [err2, enabledStore] = AutoCache::GetInstance().GetDBStore(meta, {});
     EXPECT_EQ(err2, E_OK);
     ASSERT_NE(enabledStore, nullptr);
 }
@@ -1123,12 +1123,12 @@ HWTEST_F(AutoCacheTest, AutoCache_GenerateKey_NonEmptyPath_OverlongPathFallback,
     meta.tokenId = tokenId;
     meta.dataDir = overlongPath;
 
-    auto store = AutoCache::GetInstance().GetStore(meta, {});
+    auto store = AutoCache::GetInstance().GetStore(meta);
     ASSERT_NE(store, nullptr);
     EXPECT_EQ(store.get(), mock.get());
 
     // Cache hit proves the key is stable across calls
-    auto store2 = AutoCache::GetInstance().GetStore(meta, {});
+    auto store2 = AutoCache::GetInstance().GetStore(meta);
     ASSERT_NE(store2, nullptr);
     EXPECT_EQ(store.get(), store2.get());
 
@@ -1136,13 +1136,13 @@ HWTEST_F(AutoCacheTest, AutoCache_GenerateKey_NonEmptyPath_OverlongPathFallback,
     AutoCache::GetInstance().Disable(tokenId, overlongPath, storeId);
 
     // GetDBStore should fail because the store is disabled with the fallback key
-    auto [err, disabledStore] = AutoCache::GetInstance().GetDBStore(meta, {}, {});
+    auto [err, disabledStore] = AutoCache::GetInstance().GetDBStore(meta, {});
     EXPECT_EQ(err, E_ERROR);
     EXPECT_EQ(disabledStore, nullptr);
 
     // Enable and verify
     AutoCache::GetInstance().Enable(tokenId, overlongPath, storeId);
-    auto [err2, enabledStore] = AutoCache::GetInstance().GetDBStore(meta, {}, {});
+    auto [err2, enabledStore] = AutoCache::GetInstance().GetDBStore(meta, {});
     EXPECT_EQ(err2, E_OK);
     ASSERT_NE(enabledStore, nullptr);
 }
@@ -1183,25 +1183,25 @@ HWTEST_F(AutoCacheTest, AutoCache_GenerateKey_NonEmptyPath_ValidPath, TestSize.L
     meta.tokenId = tokenId;
     meta.dataDir = validPath;
 
-    auto store = AutoCache::GetInstance().GetStore(meta, {});
+    auto store = AutoCache::GetInstance().GetStore(meta);
     ASSERT_NE(store, nullptr);
     EXPECT_EQ(store.get(), mock.get());
 
     // Cache hit
-    auto store2 = AutoCache::GetInstance().GetStore(meta, {});
+    auto store2 = AutoCache::GetInstance().GetStore(meta);
     ASSERT_NE(store2, nullptr);
     EXPECT_EQ(store.get(), store2.get());
 
     // Disable using the same valid path - exercises GenerateKey with valid path in Disable
     AutoCache::GetInstance().Disable(tokenId, validPath, storeId);
 
-    auto [err, disabledStore] = AutoCache::GetInstance().GetDBStore(meta, {}, {});
+    auto [err, disabledStore] = AutoCache::GetInstance().GetDBStore(meta, {});
     EXPECT_EQ(err, E_ERROR);
     EXPECT_EQ(disabledStore, nullptr);
 
     // Enable and verify
     AutoCache::GetInstance().Enable(tokenId, validPath, storeId);
-    auto [err2, enabledStore] = AutoCache::GetInstance().GetDBStore(meta, {}, {});
+    auto [err2, enabledStore] = AutoCache::GetInstance().GetDBStore(meta, {});
     EXPECT_EQ(err2, E_OK);
     ASSERT_NE(enabledStore, nullptr);
 }
@@ -1243,7 +1243,7 @@ HWTEST_F(AutoCacheTest, AutoCache_GenerateKey_CloseStore_NonEmptyPath, TestSize.
     meta1.storeType = storeType;
     meta1.tokenId = tokenId;
     meta1.dataDir = invalidPath;
-    auto store1 = AutoCache::GetInstance().GetStore(meta1, {});
+    auto store1 = AutoCache::GetInstance().GetStore(meta1);
     ASSERT_NE(store1, nullptr);
 
     // Create store with valid path (same storeId but different path → different key)
@@ -1251,7 +1251,7 @@ HWTEST_F(AutoCacheTest, AutoCache_GenerateKey_CloseStore_NonEmptyPath, TestSize.
     meta2.storeType = storeType;
     meta2.tokenId = tokenId;
     meta2.dataDir = validPath;
-    auto store2 = AutoCache::GetInstance().GetStore(meta2, {});
+    auto store2 = AutoCache::GetInstance().GetStore(meta2);
     ASSERT_NE(store2, nullptr);
 
     // Both stores should be present
@@ -1306,10 +1306,10 @@ HWTEST_F(AutoCacheTest, GetStore_NonEmptyPath_ReusesCachedStore, TestSize.Level1
     meta.tokenId = tokenId;
     meta.dataDir = invalidPath;
 
-    auto store = AutoCache::GetInstance().GetStore(meta, {});
+    auto store = AutoCache::GetInstance().GetStore(meta);
     ASSERT_NE(store, nullptr);
 
-    auto cachedStore = AutoCache::GetInstance().GetStore(meta, {});
+    auto cachedStore = AutoCache::GetInstance().GetStore(meta);
     EXPECT_EQ(cachedStore.get(), store.get());
 
     // Verify the path resolves to the existing cache entry.
@@ -1352,7 +1352,7 @@ HWTEST_F(AutoCacheTest, AutoCache_GenerateKey_GetStoresIfPresent_NonEmptyPath, T
     meta1.storeType = storeType;
     meta1.tokenId = tokenId;
     meta1.dataDir = validPath;
-    auto store1 = AutoCache::GetInstance().GetStore(meta1, {});
+    auto store1 = AutoCache::GetInstance().GetStore(meta1);
     ASSERT_NE(store1, nullptr);
 
     // Verify match with the same valid path
@@ -1368,7 +1368,7 @@ HWTEST_F(AutoCacheTest, AutoCache_GenerateKey_GetStoresIfPresent_NonEmptyPath, T
     meta2.storeType = storeType;
     meta2.tokenId = tokenId;
     meta2.dataDir = "/nonexistent/get_stores/path";
-    auto store2 = AutoCache::GetInstance().GetStore(meta2, {});
+    auto store2 = AutoCache::GetInstance().GetStore(meta2);
     ASSERT_NE(store2, nullptr);
 
     // Verify match with the same invalid path

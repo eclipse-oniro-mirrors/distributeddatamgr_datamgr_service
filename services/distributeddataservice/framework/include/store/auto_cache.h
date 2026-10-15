@@ -17,7 +17,6 @@
 #define OHOS_DISTRIBUTED_DATA_SERVICES_FRAMEWORK_STORE_AUTO_CACHE_H
 #include <list>
 #include <memory>
-#include <mutex>
 #include <set>
 
 #include "concurrent_map.h"
@@ -57,12 +56,14 @@ public:
     // A null watcher fails opening; an empty factory means no client subscriptions.
     API_EXPORT int32_t RegCreator(int32_t type, Creator creator, WatcherFactory watcherFactory);
 
+    // Unbound cached delegates acquire the factory's watcher on their next change; bound delegates keep theirs.
+    API_EXPORT int32_t RegWatcherFactory(int32_t type, WatcherFactory watcherFactory);
+
     API_EXPORT void Bind(std::shared_ptr<Executor> executor);
 
-    // The watchers arguments are retained for source compatibility and ignored. Subscriptions come from WatcherFactory.
-    API_EXPORT Store GetStore(const StoreMetaData &meta, const Watchers &watchers);
+    API_EXPORT Store GetStore(const StoreMetaData &meta);
 
-    API_EXPORT std::pair<int32_t, Store> GetDBStore(const StoreMetaData &meta, const Watchers &watchers,
+    API_EXPORT std::pair<int32_t, Store> GetDBStore(const StoreMetaData &meta,
         const StoreOption &option = { false, false });
 
     API_EXPORT Stores GetStoresIfPresent(
@@ -104,9 +105,10 @@ private:
         void PostDataChange(const StoreMetaData &meta, const std::vector<std::string> &tables);
 
     private:
+        std::shared_ptr<GeneralWatcher> GetWatcher();
         mutable Time time_;
         GeneralStore *store_ = nullptr;
-        const std::shared_ptr<GeneralWatcher> watcher_;
+        std::shared_ptr<GeneralWatcher> watcher_;
         const StoreMetaData meta_;
         const uint32_t garbageInterval_;
     };
@@ -118,8 +120,7 @@ private:
     TaskId taskId_ = Executor::INVALID_TASK_ID;
     ConcurrentStripedMap<uint32_t, std::map<std::string, Delegate>> stores_;
     ConcurrentMap<uint32_t, std::set<std::string>> disables_;
-    std::mutex factoryMutex_;
-    StoreFactory factories_[MAX_CREATOR_NUM];
+    std::shared_ptr<const StoreFactory> factories_[MAX_CREATOR_NUM];
 };
 } // namespace OHOS::DistributedData
 #endif // OHOS_DISTRIBUTED_DATA_SERVICES_FRAMEWORK_STORE_AUTO_CACHE_H

@@ -403,7 +403,7 @@ ObjectServiceImpl::ObjectServiceImpl()
                 meta.GetStoreAlias().c_str());
             return;
         }
-        auto store = AutoCache::GetInstance().GetStore(meta, {});
+        auto store = AutoCache::GetInstance().GetStore(meta);
         if (store == nullptr) {
             ZLOGE("store null, storeId:%{public}s", meta.GetStoreAlias().c_str());
             return;

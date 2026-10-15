@@ -43,8 +43,28 @@ int32_t AutoCache::RegCreator(int32_t type, Creator creator, WatcherFactory watc
     if (type < 0 || type >= MAX_CREATOR_NUM) {
         return E_ERROR;
     }
-    std::lock_guard<std::mutex> lock(factoryMutex_);
-    factories_[type] = { std::move(creator), std::move(watcherFactory) };
+    std::shared_ptr<const StoreFactory> factory =
+        std::make_shared<StoreFactory>(StoreFactory{ std::move(creator), std::move(watcherFactory) });
+    std::atomic_store(&factories_[type], std::move(factory));
+    return E_OK;
+}
+
+int32_t AutoCache::RegWatcherFactory(int32_t type, WatcherFactory watcherFactory)
+{
+    if (type < 0 || type >= MAX_CREATOR_NUM) {
+        return E_ERROR;
+    }
+    auto factory = std::atomic_load(&factories_[type]);
+    do {
+        if (factory == nullptr || !factory->creator) {
+            return E_ERROR;
+        }
+        std::shared_ptr<const StoreFactory> updated =
+            std::make_shared<StoreFactory>(StoreFactory{ factory->creator, watcherFactory });
+        if (std::atomic_compare_exchange_weak(&factories_[type], &factory, std::move(updated))) {
+            break;
+        }
+    } while (true);
     return E_OK;
 }
 
@@ -110,8 +130,8 @@ AutoCache::StoreFactory AutoCache::GetStoreFactory(int32_t type)
     if (type < 0 || type >= MAX_CREATOR_NUM) {
         return {};
     }
-    std::lock_guard<std::mutex> lock(factoryMutex_);
-    return factories_[type];
+    auto factory = std::atomic_load(&factories_[type]);
+    return factory == nullptr ? StoreFactory{} : *factory;
 }
 
 std::pair<int32_t, GeneralStore *> AutoCache::OpenStore(const StoreMetaData &meta, const StoreFactory &factory,
@@ -133,7 +153,7 @@ std::pair<int32_t, GeneralStore *> AutoCache::OpenStore(const StoreMetaData &met
 }
 
 std::pair<int32_t, AutoCache::Store> AutoCache::GetDBStore(
-    const StoreMetaData &meta, const Watchers &, const StoreOption &option)
+    const StoreMetaData &meta, const StoreOption &option)
 {
     Store store;
     auto factory = GetStoreFactory(meta.storeType);
@@ -179,9 +199,9 @@ std::pair<int32_t, AutoCache::Store> AutoCache::GetDBStore(
     return { ret == E_OK && store == nullptr ? E_ERROR : ret, store };
 }
 
-AutoCache::Store AutoCache::GetStore(const StoreMetaData &meta, const Watchers &watchers)
+AutoCache::Store AutoCache::GetStore(const StoreMetaData &meta)
 {
-    return GetDBStore(meta, watchers).second;
+    return GetDBStore(meta).second;
 }
 
 AutoCache::Stores AutoCache::GetStoresIfPresent(uint32_t tokenId, const std::string &path, const std::string &storeName)
@@ -380,6 +400,24 @@ const StoreMetaData &AutoCache::Delegate::GetMeta() const
     return meta_;
 }
 
+std::shared_ptr<GeneralWatcher> AutoCache::Delegate::GetWatcher()
+{
+    auto watcher = std::atomic_load(&watcher_);
+    if (watcher != nullptr) {
+        return watcher;
+    }
+    // Cloud may open the store before the lazily constructed feature registers its watcher factory.
+    auto factory = AutoCache::GetInstance().GetStoreFactory(meta_.storeType);
+    if (!factory.watcherFactory) {
+        return nullptr;
+    }
+    auto created = factory.watcherFactory(meta_);
+    if (std::atomic_compare_exchange_strong(&watcher_, &watcher, created)) {
+        return created;
+    }
+    return watcher;
+}
+
 int32_t AutoCache::Delegate::OnChange(const Origin &origin, const PRIFields &primaryFields, ChangeInfo &&values)
 {
     std::vector<std::string> tables;
@@ -387,7 +425,7 @@ int32_t AutoCache::Delegate::OnChange(const Origin &origin, const PRIFields &pri
         tables.emplace_back(table);
     }
     PostDataChange(meta_, tables);
-    auto watcher = watcher_;
+    auto watcher = GetWatcher();
     if (watcher != nullptr) {
         watcher->OnChange(origin, primaryFields, std::move(values));
     }
@@ -401,7 +439,7 @@ int32_t AutoCache::Delegate::OnChange(const Origin &origin, const Fields &fields
         tables.emplace_back(table);
     }
     PostDataChange(meta_, tables);
-    auto watcher = watcher_;
+    auto watcher = GetWatcher();
     if (watcher != nullptr) {
         watcher->OnChange(origin, fields, std::move(datas));
     }

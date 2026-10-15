@@ -47,18 +47,16 @@ HWTEST_F(AutoCacheObserverTest, GetDBStore_WatcherBridge_TracksCurrentSubscripti
     });
     ASSERT_EQ(fixture.registration, E_OK);
     auto &cache = AutoCache::GetInstance();
-    auto [status, store] = cache.GetDBStore(fixture.meta, {});
+    auto [status, store] = cache.GetDBStore(fixture.meta);
     ASSERT_EQ(status, E_OK);
     ASSERT_NE(store, nullptr);
     ASSERT_NE(fixture.watcher, nullptr);
     auto client = std::make_shared<GeneralWatcherMock>();
-    auto ignored = std::make_shared<GeneralWatcherMock>();
     EXPECT_CALL(*client, OnChange(_, A<const GeneralWatcher::PRIFields &>(), _)).Times(2).WillRepeatedly(Return(E_OK));
-    EXPECT_CALL(*ignored, OnChange(_, A<const GeneralWatcher::PRIFields &>(), _)).Times(0);
     EXPECT_EQ(fixture.watcher->OnChange({}, GeneralWatcher::PRIFields{}, GeneralWatcher::ChangeInfo{}), E_OK);
     subscriptions->insert(client);
     EXPECT_EQ(fixture.watcher->OnChange({}, GeneralWatcher::PRIFields{}, GeneralWatcher::ChangeInfo{}), E_OK);
-    EXPECT_EQ(cache.GetDBStore(fixture.meta, { ignored }).second.get(), store.get());
+    EXPECT_EQ(cache.GetDBStore(fixture.meta).second.get(), store.get());
     subscriptions->clear();
     EXPECT_EQ(fixture.watcher->OnChange({}, GeneralWatcher::PRIFields{}, GeneralWatcher::ChangeInfo{}), E_OK);
     subscriptions->insert(client);
@@ -75,37 +73,33 @@ HWTEST_F(AutoCacheObserverTest, GetDBStore_NullForwarder_FailsBeforeOpening, Tes
 {
     ObserverCache fixture(
         STORE_TYPE, TOKEN_ID, [](const auto &) -> std::shared_ptr<GeneralWatcher> { return nullptr; });
-    auto [status, store] = AutoCache::GetInstance().GetDBStore(fixture.meta, {});
+    auto [status, store] = AutoCache::GetInstance().GetDBStore(fixture.meta);
     EXPECT_EQ(status, E_ERROR);
     EXPECT_EQ(store, nullptr);
     EXPECT_EQ(fixture.watcher, nullptr);
 }
 
 /**
- * @tc.name: RegCreator_EmptyWatcherFactory_IgnoresCallerSubscriptions
- * @tc.desc: An empty factory installs no client subscriptions, even when callers pass watchers.
+ * @tc.name: RegWatcherFactory_AfterOpen_BindsExistingDelegate
+ * @tc.desc: A factory registered after cloud opened a store binds the existing delegate on its next change.
  * @tc.type: FUNC
  * @tc.author: agent
  */
-HWTEST_F(AutoCacheObserverTest, RegCreator_EmptyWatcherFactory_IgnoresCallerSubscriptions, TestSize.Level1)
+HWTEST_F(AutoCacheObserverTest, RegWatcherFactory_AfterOpen_BindsExistingDelegate, TestSize.Level1)
 {
     ObserverCache fixture(STORE_TYPE, TOKEN_ID, [](const auto &) { return std::make_shared<WatcherBridge>(nullptr); });
     auto &cache = AutoCache::GetInstance();
-    AutoCache::Creator creator;
-    {
-        std::lock_guard<std::mutex> lock(cache.factoryMutex_);
-        creator = cache.factories_[STORE_TYPE].creator;
-    }
+    auto creator = cache.GetStoreFactory(STORE_TYPE).creator;
     EXPECT_EQ(cache.RegCreator(STORE_TYPE, creator, nullptr), E_OK);
-    auto first = std::make_shared<GeneralWatcherMock>();
-    auto second = std::make_shared<GeneralWatcherMock>();
-    auto store = cache.GetStore(fixture.meta, { first });
+    auto store = cache.GetStore(fixture.meta);
     ASSERT_NE(store, nullptr);
     ASSERT_NE(fixture.watcher, nullptr);
-    EXPECT_CALL(*first, OnChange(_, A<const GeneralWatcher::PRIFields &>(), _)).Times(0);
-    EXPECT_CALL(*second, OnChange(_, A<const GeneralWatcher::PRIFields &>(), _)).Times(0);
     EXPECT_EQ(fixture.watcher->OnChange({}, GeneralWatcher::PRIFields{}, GeneralWatcher::ChangeInfo{}), E_OK);
-    EXPECT_EQ(cache.GetStore(fixture.meta, { second }).get(), store.get());
+    auto client = std::make_shared<GeneralWatcherMock>();
+    EXPECT_CALL(*client, OnChange(_, A<const GeneralWatcher::PRIFields &>(), _)).Times(2).WillRepeatedly(Return(E_OK));
+    EXPECT_EQ(cache.RegWatcherFactory(STORE_TYPE, [client](const StoreMetaData &) { return client; }), E_OK);
+    EXPECT_EQ(cache.GetStore(fixture.meta).get(), store.get());
+    EXPECT_EQ(fixture.watcher->OnChange({}, GeneralWatcher::PRIFields{}, GeneralWatcher::ChangeInfo{}), E_OK);
     EXPECT_EQ(fixture.watcher->OnChange({}, GeneralWatcher::PRIFields{}, GeneralWatcher::ChangeInfo{}), E_OK);
 }
 
@@ -120,5 +114,7 @@ HWTEST_F(AutoCacheObserverTest, RegCreator_InvalidType_ReturnsError, TestSize.Le
     auto &cache = AutoCache::GetInstance();
     EXPECT_EQ(cache.RegCreator(-1, nullptr, nullptr), E_ERROR);
     EXPECT_EQ(cache.RegCreator(30, nullptr, nullptr), E_ERROR);
+    EXPECT_EQ(cache.RegWatcherFactory(-1, nullptr), E_ERROR);
+    EXPECT_EQ(cache.RegWatcherFactory(30, nullptr), E_ERROR);
 }
 } // namespace OHOS::Test

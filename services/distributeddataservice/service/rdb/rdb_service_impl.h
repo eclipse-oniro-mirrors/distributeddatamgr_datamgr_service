@@ -162,10 +162,13 @@ private:
     };
     using SyncAgents = std::map<int32_t, SyncAgent>;
 
-    using SyncAgentMap = ConcurrentMap<uint32_t, SyncAgents>;
+    struct ClientAgent {
+        std::mutex mutex;
+        SyncAgents agents;
+    };
+    using SyncAgentMap = ConcurrentMap<uint32_t, std::shared_ptr<ClientAgent>>;
     static Watchers GetWatchers(const std::shared_ptr<SyncAgentMap> &syncAgents, uint32_t tokenId);
     static void ClearSyncAgents(const std::shared_ptr<SyncAgentMap> &syncAgents);
-    explicit RdbServiceImpl(std::shared_ptr<SyncAgentMap> syncAgents);
 
     struct GlobalEvent {
         void AddEvent(const std::string& path, const DistributedData::DataChangeEvent::EventInfo& eventInfo);
@@ -193,9 +196,7 @@ private:
     class Factory {
     public:
         Factory();
-        ~Factory();
     private:
-        std::shared_ptr<SyncAgentMap> syncAgents_;
         std::shared_ptr<RdbServiceImpl> product_;
         std::shared_ptr<RdbStatic> staticActs_;
     };
@@ -349,7 +350,8 @@ private:
         const std::map<std::string, std::vector<std::string>> &retainDevices);
 
     static Factory factory_;
-    std::shared_ptr<SyncAgentMap> syncAgents_;
+    std::shared_ptr<SyncAgentMap> syncAgentsHolder_;
+    SyncAgentMap &syncAgents_;
     static std::shared_ptr<RdbFlowControlManager> rdbFlowControlManager_;
     std::shared_ptr<ExecutorPool> executors_;
     std::shared_ptr<GlobalEvent> eventContainer_;

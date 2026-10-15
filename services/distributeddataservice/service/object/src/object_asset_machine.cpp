@@ -367,7 +367,7 @@ static AutoCache::Store GetStore(const std::shared_ptr<ChangedAssetInfo>& change
             meta.GetStoreAlias().c_str());
         return nullptr;
     }
-    return AutoCache::GetInstance().GetStore(meta, {});
+    return AutoCache::GetInstance().GetStore(meta);
 }
 
 static int32_t CompensateTransferring(int32_t eventId, std::shared_ptr<ChangedAssetInfo> changedAsset, Asset& asset,
