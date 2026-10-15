@@ -53,13 +53,7 @@ public:
         service_ = std::make_unique<RdbServiceImpl>();
         param_.bundleName_ = "observer.test";
         param_.storeName_ = "observer_cache_test";
-        auto weakAgents = std::weak_ptr<RdbServiceImpl::SyncAgentMap>(service_->syncAgentsHolder_);
-        fixture_ = std::make_unique<ObserverCache>(
-            STORE_TYPE, IPCSkeleton::GetCallingTokenID(), [weakAgents](const StoreMetaData &meta) {
-                return [weakAgents, tokenId = meta.tokenId]() {
-                    return RdbServiceImpl::GetWatchers(weakAgents.lock(), tokenId);
-                };
-            });
+        fixture_ = CreateFixture(IPCSkeleton::GetCallingTokenID());
     }
     void TearDown() override
     {
@@ -67,18 +61,22 @@ public:
         service_.reset();
     }
 
-    // Inject only the notifier transport; subscriptions are always made through public APIs.
-    void BindNotifier(const sptr<RdbNotifierProxy> &notifier, pid_t pid = IPCSkeleton::GetCallingPid())
+    std::unique_ptr<ObserverCache> CreateFixture(uint32_t tokenId)
     {
-        service_->syncAgents_.Compute(
-            IPCSkeleton::GetCallingTokenID(),
-            [notifier, pid](auto, std::shared_ptr<RdbServiceImpl::ClientAgent> &client) {
-                if (client == nullptr) {
-                    client = std::make_shared<RdbServiceImpl::ClientAgent>();
-                }
-                client->SetNotifier(pid, "observer.test", notifier);
-                return true;
-            });
+        auto weakAgent = std::weak_ptr<RdbServiceImpl::ClientAgent>(service_->clientAgentHolder_);
+        return std::make_unique<ObserverCache>(STORE_TYPE, tokenId, [weakAgent](const StoreMetaData &meta) {
+            return [weakAgent, tokenId = meta.tokenId]() {
+                auto agent = weakAgent.lock();
+                return agent != nullptr ? agent->GetWatchers(tokenId) : AutoCache::Watchers{};
+            };
+        });
+    }
+
+    // Inject only the notifier transport; subscriptions are always made through public APIs.
+    void BindNotifier(const sptr<RdbNotifierProxy> &notifier, pid_t pid = IPCSkeleton::GetCallingPid(),
+        uint32_t tokenId = IPCSkeleton::GetCallingTokenID())
+    {
+        service_->clientAgent_.SetNotifier(tokenId, pid, "observer.test", notifier);
     }
 
     std::unique_ptr<RdbServiceImpl> service_;
@@ -125,19 +123,19 @@ HWTEST_F(RdbObserverCacheTest, OnChange_UnchangedSubscriptions_ReusesWatcherSnap
     EXPECT_CALL(*notifier, OnChange(_, _, _)).Times(3).WillRepeatedly(Return(RDB_OK));
     EXPECT_EQ(service_->Subscribe(param_, option_, nullptr), RDB_OK);
     EXPECT_EQ(fixture_->watcher->OnChange({}, GeneralWatcher::PRIFields{}, GeneralWatcher::ChangeInfo{}), E_OK);
-    auto [found, client] = service_->syncAgents_.Find(IPCSkeleton::GetCallingTokenID());
+    auto [found, state] = service_->clientAgent_.agents_.Find(IPCSkeleton::GetCallingTokenID());
     ASSERT_TRUE(found);
-    ASSERT_NE(client, nullptr);
-    auto snapshot = std::atomic_load(&client->watchers_);
+    ASSERT_NE(state, nullptr);
+    auto snapshot = std::atomic_load(&state->watchers);
     ASSERT_NE(snapshot, nullptr);
     ASSERT_EQ(snapshot->size(), 1);
     EXPECT_EQ(fixture_->watcher->OnChange({}, GeneralWatcher::PRIFields{}, GeneralWatcher::ChangeInfo{}), E_OK);
-    EXPECT_EQ(std::atomic_load(&client->watchers_), snapshot);
+    EXPECT_EQ(std::atomic_load(&state->watchers), snapshot);
     EXPECT_EQ(service_->Subscribe(param_, option_, nullptr), RDB_OK);
     EXPECT_EQ(service_->UnSubscribe(param_, option_, nullptr), RDB_OK);
-    EXPECT_EQ(std::atomic_load(&client->watchers_), snapshot);
+    EXPECT_EQ(std::atomic_load(&state->watchers), snapshot);
     EXPECT_EQ(fixture_->watcher->OnChange({}, GeneralWatcher::PRIFields{}, GeneralWatcher::ChangeInfo{}), E_OK);
-    EXPECT_EQ(std::atomic_load(&client->watchers_), snapshot);
+    EXPECT_EQ(std::atomic_load(&state->watchers), snapshot);
 }
 
 /**
@@ -156,11 +154,11 @@ HWTEST_F(RdbObserverCacheTest, OnChange_CachedSubscriptions_DoesNotWaitForClient
     EXPECT_CALL(*notifier, OnChange(_, _, _)).Times(2).WillRepeatedly(Return(RDB_OK));
     EXPECT_EQ(service_->Subscribe(param_, option_, nullptr), RDB_OK);
     EXPECT_EQ(fixture_->watcher->OnChange({}, GeneralWatcher::PRIFields{}, GeneralWatcher::ChangeInfo{}), E_OK);
-    auto [found, client] = service_->syncAgents_.Find(IPCSkeleton::GetCallingTokenID());
+    auto [found, state] = service_->clientAgent_.agents_.Find(IPCSkeleton::GetCallingTokenID());
     ASSERT_TRUE(found);
-    ASSERT_NE(client, nullptr);
-    ASSERT_NE(std::atomic_load(&client->watchers_), nullptr);
-    std::unique_lock<std::mutex> lock(client->mutex_);
+    ASSERT_NE(state, nullptr);
+    ASSERT_NE(std::atomic_load(&state->watchers), nullptr);
+    std::unique_lock<std::mutex> lock(state->mutex);
     auto notify = std::async(std::launch::async, [watcher = fixture_->watcher]() {
         return watcher->OnChange({}, GeneralWatcher::PRIFields{}, GeneralWatcher::ChangeInfo{});
     });
@@ -185,22 +183,22 @@ HWTEST_F(RdbObserverCacheTest, UnSubscribe_LastSubscription_InvalidatesWatcherSn
     EXPECT_CALL(*notifier, OnChange(_, _, _)).Times(2).WillRepeatedly(Return(RDB_OK));
     EXPECT_EQ(service_->Subscribe(param_, option_, nullptr), RDB_OK);
     EXPECT_EQ(fixture_->watcher->OnChange({}, GeneralWatcher::PRIFields{}, GeneralWatcher::ChangeInfo{}), E_OK);
-    auto [found, client] = service_->syncAgents_.Find(IPCSkeleton::GetCallingTokenID());
+    auto [found, state] = service_->clientAgent_.agents_.Find(IPCSkeleton::GetCallingTokenID());
     ASSERT_TRUE(found);
-    ASSERT_NE(client, nullptr);
-    auto snapshot = std::atomic_load(&client->watchers_);
+    ASSERT_NE(state, nullptr);
+    auto snapshot = std::atomic_load(&state->watchers);
     ASSERT_NE(snapshot, nullptr);
     EXPECT_EQ(service_->UnSubscribe(param_, option_, nullptr), RDB_OK);
-    EXPECT_EQ(std::atomic_load(&client->watchers_), nullptr);
+    EXPECT_EQ(std::atomic_load(&state->watchers), nullptr);
     EXPECT_EQ(fixture_->watcher->OnChange({}, GeneralWatcher::PRIFields{}, GeneralWatcher::ChangeInfo{}), E_OK);
-    auto emptySnapshot = std::atomic_load(&client->watchers_);
+    auto emptySnapshot = std::atomic_load(&state->watchers);
     ASSERT_NE(emptySnapshot, nullptr);
     EXPECT_TRUE(emptySnapshot->empty());
     EXPECT_NE(emptySnapshot, snapshot);
     EXPECT_EQ(service_->Subscribe(param_, option_, nullptr), RDB_OK);
-    EXPECT_EQ(std::atomic_load(&client->watchers_), nullptr);
+    EXPECT_EQ(std::atomic_load(&state->watchers), nullptr);
     EXPECT_EQ(fixture_->watcher->OnChange({}, GeneralWatcher::PRIFields{}, GeneralWatcher::ChangeInfo{}), E_OK);
-    auto renewedSnapshot = std::atomic_load(&client->watchers_);
+    auto renewedSnapshot = std::atomic_load(&state->watchers);
     ASSERT_NE(renewedSnapshot, nullptr);
     EXPECT_EQ(renewedSnapshot->size(), 1);
     EXPECT_NE(renewedSnapshot, snapshot);
@@ -224,15 +222,15 @@ HWTEST_F(RdbObserverCacheTest, OnChange_NotifierReplaced_ReusesSnapshotAndNotifi
     EXPECT_CALL(*second, OnChange(_, _, _)).Times(1).WillOnce(Return(RDB_OK));
     EXPECT_EQ(service_->Subscribe(param_, option_, nullptr), RDB_OK);
     EXPECT_EQ(fixture_->watcher->OnChange({}, GeneralWatcher::PRIFields{}, GeneralWatcher::ChangeInfo{}), E_OK);
-    auto [found, client] = service_->syncAgents_.Find(IPCSkeleton::GetCallingTokenID());
+    auto [found, state] = service_->clientAgent_.agents_.Find(IPCSkeleton::GetCallingTokenID());
     ASSERT_TRUE(found);
-    ASSERT_NE(client, nullptr);
-    auto snapshot = std::atomic_load(&client->watchers_);
+    ASSERT_NE(state, nullptr);
+    auto snapshot = std::atomic_load(&state->watchers);
     ASSERT_NE(snapshot, nullptr);
     BindNotifier(second);
-    EXPECT_EQ(std::atomic_load(&client->watchers_), snapshot);
+    EXPECT_EQ(std::atomic_load(&state->watchers), snapshot);
     EXPECT_EQ(fixture_->watcher->OnChange({}, GeneralWatcher::PRIFields{}, GeneralWatcher::ChangeInfo{}), E_OK);
-    EXPECT_EQ(std::atomic_load(&client->watchers_), snapshot);
+    EXPECT_EQ(std::atomic_load(&state->watchers), snapshot);
 }
 
 /**
@@ -252,13 +250,87 @@ HWTEST_F(RdbObserverCacheTest, OnAppExit_ActiveSubscription_InvalidatesWatcherSn
     EXPECT_EQ(service_->Subscribe(param_, option_, nullptr), RDB_OK);
     EXPECT_EQ(fixture_->watcher->OnChange({}, GeneralWatcher::PRIFields{}, GeneralWatcher::ChangeInfo{}), E_OK);
     auto tokenId = IPCSkeleton::GetCallingTokenID();
-    auto [found, client] = service_->syncAgents_.Find(tokenId);
+    auto [found, state] = service_->clientAgent_.agents_.Find(tokenId);
     ASSERT_TRUE(found);
-    ASSERT_NE(client, nullptr);
-    ASSERT_NE(std::atomic_load(&client->watchers_), nullptr);
+    ASSERT_NE(state, nullptr);
+    ASSERT_NE(std::atomic_load(&state->watchers), nullptr);
     EXPECT_EQ(service_->OnAppExit(0, IPCSkeleton::GetCallingPid(), tokenId, param_.bundleName_), E_OK);
-    EXPECT_EQ(std::atomic_load(&client->watchers_), nullptr);
-    EXPECT_FALSE(service_->syncAgents_.Contains(tokenId));
+    EXPECT_EQ(std::atomic_load(&state->watchers), nullptr);
+    EXPECT_FALSE(service_->clientAgent_.agents_.Contains(tokenId));
+    EXPECT_EQ(fixture_->watcher->OnChange({}, GeneralWatcher::PRIFields{}, GeneralWatcher::ChangeInfo{}), E_OK);
+}
+
+/**
+ * @tc.name: OnAppExit_OtherTokenSubscribed_LeavesOtherSnapshotIntact
+ * @tc.desc: Removing one token does not invalidate or forward notifications to another token's clients.
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(RdbObserverCacheTest, OnAppExit_OtherTokenSubscribed_LeavesOtherSnapshotIntact, TestSize.Level1)
+{
+    auto &cache = AutoCache::GetInstance();
+    auto store = cache.GetStore(fixture_->meta);
+    ASSERT_NE(store, nullptr);
+    ASSERT_NE(fixture_->watcher, nullptr);
+    auto tokenId = IPCSkeleton::GetCallingTokenID();
+    auto otherToken = ~tokenId;
+    auto otherFixture = CreateFixture(otherToken);
+    auto otherStore = cache.GetStore(otherFixture->meta);
+    ASSERT_NE(otherStore, nullptr);
+    ASSERT_NE(otherFixture->watcher, nullptr);
+    sptr<RdbObserverNotifierMock> first = new RdbObserverNotifierMock();
+    sptr<RdbObserverNotifierMock> second = new RdbObserverNotifierMock();
+    auto pid = IPCSkeleton::GetCallingPid();
+    BindNotifier(first);
+    BindNotifier(second, pid, otherToken);
+    EXPECT_CALL(*first, OnChange(_, _, _)).Times(1).WillOnce(Return(RDB_OK));
+    EXPECT_CALL(*second, OnChange(_, _, _)).Times(2).WillRepeatedly(Return(RDB_OK));
+    EXPECT_EQ(service_->Subscribe(param_, option_, nullptr), RDB_OK);
+    service_->clientAgent_.Subscribe(otherToken, pid, param_.bundleName_);
+    EXPECT_EQ(fixture_->watcher->OnChange({}, GeneralWatcher::PRIFields{}, GeneralWatcher::ChangeInfo{}), E_OK);
+    EXPECT_EQ(otherFixture->watcher->OnChange({}, GeneralWatcher::PRIFields{}, GeneralWatcher::ChangeInfo{}), E_OK);
+    auto [found, state] = service_->clientAgent_.agents_.Find(otherToken);
+    ASSERT_TRUE(found);
+    ASSERT_NE(state, nullptr);
+    auto snapshot = std::atomic_load(&state->watchers);
+    ASSERT_NE(snapshot, nullptr);
+    EXPECT_EQ(service_->OnAppExit(0, pid, tokenId, param_.bundleName_), E_OK);
+    EXPECT_FALSE(service_->clientAgent_.agents_.Contains(tokenId));
+    EXPECT_TRUE(service_->clientAgent_.agents_.Contains(otherToken));
+    EXPECT_EQ(std::atomic_load(&state->watchers), snapshot);
+    EXPECT_EQ(fixture_->watcher->OnChange({}, GeneralWatcher::PRIFields{}, GeneralWatcher::ChangeInfo{}), E_OK);
+    EXPECT_EQ(otherFixture->watcher->OnChange({}, GeneralWatcher::PRIFields{}, GeneralWatcher::ChangeInfo{}), E_OK);
+}
+
+/**
+ * @tc.name: OnAppExit_Resubscribe_CreatesFreshTokenState
+ * @tc.desc: Re-subscribing after the last PID exits creates indexed state even if the old state is retained.
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(RdbObserverCacheTest, OnAppExit_Resubscribe_CreatesFreshTokenState, TestSize.Level1)
+{
+    auto store = AutoCache::GetInstance().GetStore(fixture_->meta);
+    ASSERT_NE(store, nullptr);
+    ASSERT_NE(fixture_->watcher, nullptr);
+    sptr<RdbObserverNotifierMock> notifier = new RdbObserverNotifierMock();
+    BindNotifier(notifier);
+    EXPECT_CALL(*notifier, OnChange(_, _, _)).Times(2).WillRepeatedly(Return(RDB_OK));
+    EXPECT_EQ(service_->Subscribe(param_, option_, nullptr), RDB_OK);
+    EXPECT_EQ(fixture_->watcher->OnChange({}, GeneralWatcher::PRIFields{}, GeneralWatcher::ChangeInfo{}), E_OK);
+    auto tokenId = IPCSkeleton::GetCallingTokenID();
+    auto [found, oldState] = service_->clientAgent_.agents_.Find(tokenId);
+    ASSERT_TRUE(found);
+    ASSERT_NE(oldState, nullptr);
+    EXPECT_EQ(service_->OnAppExit(0, IPCSkeleton::GetCallingPid(), tokenId, param_.bundleName_), E_OK);
+    EXPECT_FALSE(service_->clientAgent_.agents_.Contains(tokenId));
+    BindNotifier(notifier);
+    EXPECT_EQ(service_->Subscribe(param_, option_, nullptr), RDB_OK);
+    auto [renewed, newState] = service_->clientAgent_.agents_.Find(tokenId);
+    ASSERT_TRUE(renewed);
+    ASSERT_NE(newState, nullptr);
+    EXPECT_NE(newState, oldState);
+    EXPECT_EQ(std::atomic_load(&oldState->watchers), nullptr);
     EXPECT_EQ(fixture_->watcher->OnChange({}, GeneralWatcher::PRIFields{}, GeneralWatcher::ChangeInfo{}), E_OK);
 }
 
@@ -288,7 +360,7 @@ HWTEST_F(RdbObserverCacheTest, Subscribe_CloseBlocked_ReturnsBeforeRelease, Test
 
 /**
  * @tc.name: OnChange_ServiceDestroyed_StopsForwarding
- * @tc.desc: A retained delegate safely handles a cleared or expired shared agent map after service destruction.
+ * @tc.desc: A retained delegate safely handles a cleared or expired ClientAgent after service destruction.
  * @tc.type: RELI
  * @tc.author: agent
  */
@@ -301,11 +373,11 @@ HWTEST_F(RdbObserverCacheTest, OnChange_ServiceDestroyed_StopsForwarding, TestSi
     BindNotifier(notifier);
     EXPECT_CALL(*notifier, OnChange(_, _, _)).Times(0);
     EXPECT_EQ(service_->Subscribe(param_, option_, nullptr), RDB_OK);
-    auto syncAgents = service_->syncAgentsHolder_;
+    auto agent = service_->clientAgentHolder_;
     service_.reset();
-    EXPECT_TRUE(syncAgents->Empty());
+    EXPECT_TRUE(agent->agents_.Empty());
     EXPECT_EQ(fixture_->watcher->OnChange({}, GeneralWatcher::PRIFields{}, GeneralWatcher::ChangeInfo{}), E_OK);
-    syncAgents.reset();
+    agent.reset();
     EXPECT_EQ(fixture_->watcher->OnChange({}, GeneralWatcher::PRIFields{}, GeneralWatcher::ChangeInfo{}), E_OK);
 }
 } // namespace OHOS::Test

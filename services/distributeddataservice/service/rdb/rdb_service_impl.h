@@ -151,19 +151,6 @@ private:
     using AutoCache = DistributedData::AutoCache;
     using CryptoManager = DistributedData::CryptoManager;
     using FlowControlManager = OHOS::DistributedData::FlowControlManager;
-    struct SyncAgent {
-        SyncAgent() = default;
-        explicit SyncAgent(const std::string &bundleName);
-        int32_t count_ = 0;
-        std::map<std::string, int> callBackStores_;
-        std::string bundleName_;
-        sptr<RdbNotifierProxy> notifier_ = nullptr;
-        std::shared_ptr<RdbWatcher> watcher_ = nullptr;
-        void SetNotifier(sptr<RdbNotifierProxy> notifier);
-        void SetWatcher(std::shared_ptr<RdbWatcher> watcher);
-    };
-    using SyncAgents = std::map<int32_t, SyncAgent>;
-
     class ClientAgent final {
     public:
         ClientAgent() = default;
@@ -171,25 +158,40 @@ private:
         ClientAgent &operator=(const ClientAgent &) = delete;
         ClientAgent(ClientAgent &&) = delete;
         ClientAgent &operator=(ClientAgent &&) = delete;
-        void SetNotifier(pid_t pid, const std::string &bundleName, const sptr<RdbNotifierProxy> &notifier);
-        sptr<RdbNotifierProxy> GetNotifier(pid_t pid) const;
-        bool Remove(pid_t pid);
-        void Subscribe(pid_t pid, const std::string &bundleName);
-        bool UnSubscribe(pid_t pid);
-        void RegisterCallback(pid_t pid, const std::string &bundleName, const std::string &storeName);
-        bool UnregisterCallback(pid_t pid, const std::string &storeName);
-        std::list<sptr<RdbNotifierProxy>> GetCallbacks(const std::string &storeName) const;
-        Watchers GetWatchers() const;
+        void SetNotifier(
+            uint32_t tokenId, pid_t pid, const std::string &bundleName, const sptr<RdbNotifierProxy> &notifier);
+        sptr<RdbNotifierProxy> GetNotifier(uint32_t tokenId, pid_t pid) const;
+        // Returns true when the token's last PID entry has been removed.
+        bool Remove(uint32_t tokenId, pid_t pid);
+        void Subscribe(uint32_t tokenId, pid_t pid, const std::string &bundleName);
+        void UnSubscribe(uint32_t tokenId, pid_t pid);
+        void RegisterCallback(uint32_t tokenId, pid_t pid, const std::string &bundleName, const std::string &storeName);
+        void UnregisterCallback(uint32_t tokenId, pid_t pid, const std::string &storeName);
+        std::list<sptr<RdbNotifierProxy>> GetCallbacks(uint32_t tokenId, const std::string &storeName) const;
+        Watchers GetWatchers(uint32_t tokenId) const;
+        void Clear();
 
     private:
-        mutable std::mutex mutex_;
-        SyncAgents agents_;
-        // Null means subscriptions changed; published snapshots are immutable.
-        mutable std::shared_ptr<const Watchers> watchers_ = std::make_shared<const Watchers>();
+        struct SyncAgent {
+            SyncAgent() = default;
+            explicit SyncAgent(const std::string &bundleName);
+            int32_t count_ = 0;
+            std::map<std::string, int> callBackStores_;
+            std::string bundleName_;
+            sptr<RdbNotifierProxy> notifier_ = nullptr;
+            std::shared_ptr<RdbWatcher> watcher_ = nullptr;
+            void SetNotifier(sptr<RdbNotifierProxy> notifier);
+            void SetWatcher(std::shared_ptr<RdbWatcher> watcher);
+        };
+        using SyncAgents = std::map<int32_t, SyncAgent>;
+        struct TokenState {
+            std::mutex mutex;
+            SyncAgents agents;
+            // Null means subscriptions changed; published snapshots are immutable.
+            std::shared_ptr<const Watchers> watchers = std::make_shared<const Watchers>();
+        };
+        ConcurrentMap<uint32_t, std::shared_ptr<TokenState>> agents_;
     };
-    using SyncAgentMap = ConcurrentMap<uint32_t, std::shared_ptr<ClientAgent>>;
-    static Watchers GetWatchers(const std::shared_ptr<SyncAgentMap> &syncAgents, uint32_t tokenId);
-    static void ClearSyncAgents(const std::shared_ptr<SyncAgentMap> &syncAgents);
 
     struct GlobalEvent {
         void AddEvent(const std::string& path, const DistributedData::DataChangeEvent::EventInfo& eventInfo);
@@ -371,8 +373,8 @@ private:
         const std::map<std::string, std::vector<std::string>> &retainDevices);
 
     static Factory factory_;
-    std::shared_ptr<SyncAgentMap> syncAgentsHolder_;
-    SyncAgentMap &syncAgents_;
+    std::shared_ptr<ClientAgent> clientAgentHolder_;
+    ClientAgent &clientAgent_;
     static std::shared_ptr<RdbFlowControlManager> rdbFlowControlManager_;
     std::shared_ptr<ExecutorPool> executors_;
     std::shared_ptr<GlobalEvent> eventContainer_;
