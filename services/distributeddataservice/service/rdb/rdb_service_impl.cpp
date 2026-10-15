@@ -1753,12 +1753,8 @@ void RdbServiceImpl::ClientAgent::SetNotifier(
     uint32_t tokenId, pid_t pid, const std::string &bundleName, const sptr<RdbNotifierProxy> &notifier)
 {
     sptr<RdbNotifierProxy> retired;
-    agents_.Compute(tokenId, [pid, &bundleName, &notifier, &retired](auto, std::shared_ptr<TokenState> &state) {
-        if (state == nullptr) {
-            state = std::make_shared<TokenState>();
-        }
-        std::lock_guard<std::mutex> lock(state->mutex);
-        auto it = state->agents.try_emplace(pid, bundleName).first;
+    agents_.Compute(tokenId, [pid, &bundleName, &notifier, &retired](auto, SyncAgents &agents) {
+        auto it = agents.try_emplace(pid, bundleName).first;
         retired = it->second.notifier_;
         it->second.SetNotifier(notifier);
         return true;
@@ -1767,16 +1763,15 @@ void RdbServiceImpl::ClientAgent::SetNotifier(
 
 sptr<RdbNotifierProxy> RdbServiceImpl::ClientAgent::GetNotifier(uint32_t tokenId, pid_t pid) const
 {
-    auto [found, state] = agents_.Find(tokenId);
-    if (!found || state == nullptr) {
-        return nullptr;
-    }
-    std::lock_guard<std::mutex> lock(state->mutex);
-    auto it = state->agents.find(pid);
-    if (it == state->agents.end()) {
-        return nullptr;
-    }
-    return it->second.notifier_;
+    sptr<RdbNotifierProxy> notifier;
+    agents_.ContainIf(tokenId, [pid, &notifier](const SyncAgents &agents) {
+        auto it = agents.find(pid);
+        if (it != agents.end()) {
+            notifier = it->second.notifier_;
+        }
+        return true;
+    });
+    return notifier;
 }
 
 bool RdbServiceImpl::ClientAgent::Remove(uint32_t tokenId, pid_t pid)
@@ -1784,42 +1779,34 @@ bool RdbServiceImpl::ClientAgent::Remove(uint32_t tokenId, pid_t pid)
     bool removed = false;
     SyncAgents::node_type retiredAgent;
     sptr<RdbNotifierProxy> retiredNotifier;
-    std::shared_ptr<const Watchers> retiredWatchers;
-    std::shared_ptr<TokenState> retiredState;
-    agents_.ComputeIfPresent(tokenId, [pid, &removed, &retiredAgent, &retiredNotifier, &retiredWatchers,
-                                          &retiredState](auto, std::shared_ptr<TokenState> &state) {
-        std::lock_guard<std::mutex> lock(state->mutex);
-        auto it = state->agents.find(pid);
-        if (it != state->agents.end()) {
-            retiredNotifier = it->second.notifier_;
-            it->second.SetNotifier(nullptr);
-            if (it->second.watcher_ != nullptr) {
-                retiredWatchers = std::atomic_exchange(&state->watchers, std::shared_ptr<const Watchers>{});
+    agents_.ComputeIfPresent(
+        tokenId, [this, tokenId, pid, &removed, &retiredAgent, &retiredNotifier](auto, SyncAgents &agents) {
+            auto it = agents.find(pid);
+            if (it != agents.end()) {
+                retiredNotifier = it->second.notifier_;
+                it->second.SetNotifier(nullptr);
+                if (it->second.watcher_ != nullptr) {
+                    InvalidateWatchers(tokenId);
+                }
+                retiredAgent = agents.extract(it);
             }
-            retiredAgent = state->agents.extract(it);
-        }
-        removed = state->agents.empty();
-        if (removed) {
-            retiredState = std::move(state);
-        }
-        return !removed;
-    });
+            removed = agents.empty();
+            if (removed) {
+                InvalidateWatchers(tokenId);
+            }
+            return !removed;
+        });
     return removed;
 }
 
 void RdbServiceImpl::ClientAgent::Subscribe(uint32_t tokenId, pid_t pid, const std::string &bundleName)
 {
-    std::shared_ptr<const Watchers> retiredWatchers;
-    agents_.Compute(tokenId, [pid, &bundleName, &retiredWatchers](auto, std::shared_ptr<TokenState> &state) {
-        if (state == nullptr) {
-            state = std::make_shared<TokenState>();
-        }
-        std::lock_guard<std::mutex> lock(state->mutex);
-        auto it = state->agents.try_emplace(pid, bundleName).first;
+    agents_.Compute(tokenId, [this, tokenId, pid, &bundleName](auto, SyncAgents &agents) {
+        auto it = agents.try_emplace(pid, bundleName).first;
         auto &agent = it->second;
         if (agent.watcher_ == nullptr) {
             agent.SetWatcher(std::make_shared<RdbWatcher>());
-            retiredWatchers = std::atomic_exchange(&state->watchers, std::shared_ptr<const Watchers>{});
+            InvalidateWatchers(tokenId);
         }
         agent.count_++;
         return true;
@@ -1828,35 +1815,28 @@ void RdbServiceImpl::ClientAgent::Subscribe(uint32_t tokenId, pid_t pid, const s
 
 void RdbServiceImpl::ClientAgent::UnSubscribe(uint32_t tokenId, pid_t pid)
 {
-    std::shared_ptr<const Watchers> retiredWatchers;
     std::shared_ptr<RdbWatcher> retiredWatcher;
-    agents_.ComputeIfPresent(
-        tokenId, [pid, &retiredWatchers, &retiredWatcher](auto, std::shared_ptr<TokenState> &state) {
-            std::lock_guard<std::mutex> lock(state->mutex);
-            auto it = state->agents.find(pid);
-            if (it == state->agents.end()) {
-                return !state->agents.empty();
-            }
-            auto &agent = it->second;
-            agent.count_--;
-            if (agent.count_ <= 0 && agent.watcher_ != nullptr) {
-                retiredWatchers = std::atomic_exchange(&state->watchers, std::shared_ptr<const Watchers>{});
-                retiredWatcher = agent.watcher_;
-                agent.SetWatcher(nullptr);
-            }
-            return true;
-        });
+    agents_.ComputeIfPresent(tokenId, [this, tokenId, pid, &retiredWatcher](auto, SyncAgents &agents) {
+        auto it = agents.find(pid);
+        if (it == agents.end()) {
+            return !agents.empty();
+        }
+        auto &agent = it->second;
+        agent.count_--;
+        if (agent.count_ <= 0 && agent.watcher_ != nullptr) {
+            retiredWatcher = agent.watcher_;
+            agent.SetWatcher(nullptr);
+            InvalidateWatchers(tokenId);
+        }
+        return true;
+    });
 }
 
 void RdbServiceImpl::ClientAgent::RegisterCallback(
     uint32_t tokenId, pid_t pid, const std::string &bundleName, const std::string &storeName)
 {
-    agents_.Compute(tokenId, [pid, &bundleName, &storeName](auto, std::shared_ptr<TokenState> &state) {
-        if (state == nullptr) {
-            state = std::make_shared<TokenState>();
-        }
-        std::lock_guard<std::mutex> lock(state->mutex);
-        auto it = state->agents.try_emplace(pid, bundleName).first;
+    agents_.Compute(tokenId, [pid, &bundleName, &storeName](auto, SyncAgents &agents) {
+        auto it = agents.try_emplace(pid, bundleName).first;
         it->second.callBackStores_[storeName]++;
         return true;
     });
@@ -1864,17 +1844,16 @@ void RdbServiceImpl::ClientAgent::RegisterCallback(
 
 void RdbServiceImpl::ClientAgent::UnregisterCallback(uint32_t tokenId, pid_t pid, const std::string &storeName)
 {
-    agents_.ComputeIfPresent(tokenId, [pid, &storeName](auto, std::shared_ptr<TokenState> &state) {
-        std::lock_guard<std::mutex> lock(state->mutex);
-        auto agent = state->agents.find(pid);
-        if (agent == state->agents.end()) {
-            return !state->agents.empty();
+    agents_.ComputeIfPresent(tokenId, [pid, &storeName](auto, SyncAgents &agents) {
+        auto agent = agents.find(pid);
+        if (agent == agents.end()) {
+            return !agents.empty();
         }
         auto it = agent->second.callBackStores_.find(storeName);
         if (it != agent->second.callBackStores_.end() && --it->second <= 0) {
             agent->second.callBackStores_.erase(it);
         }
-        return !state->agents.empty();
+        return !agents.empty();
     });
 }
 
@@ -1882,48 +1861,65 @@ std::list<sptr<RdbNotifierProxy>> RdbServiceImpl::ClientAgent::GetCallbacks(
     uint32_t tokenId, const std::string &storeName) const
 {
     std::list<sptr<RdbNotifierProxy>> notifiers;
-    auto [found, state] = agents_.Find(tokenId);
-    if (!found || state == nullptr) {
-        return notifiers;
-    }
-    std::lock_guard<std::mutex> lock(state->mutex);
-    for (const auto &[pid, agent] : state->agents) {
-        if (agent.callBackStores_.count(storeName) != 0) {
-            notifiers.push_back(agent.notifier_);
+    agents_.ContainIf(tokenId, [&storeName, &notifiers](const SyncAgents &agents) {
+        for (const auto &[pid, agent] : agents) {
+            if (agent.callBackStores_.count(storeName) != 0) {
+                notifiers.push_back(agent.notifier_);
+            }
         }
-    }
+        return true;
+    });
     return notifiers;
 }
 
 RdbServiceImpl::Watchers RdbServiceImpl::ClientAgent::GetWatchers(uint32_t tokenId) const
 {
-    auto [found, state] = agents_.Find(tokenId);
-    if (!found || state == nullptr) {
-        return {};
-    }
-    auto watchers = std::atomic_load(&state->watchers);
-    if (watchers == nullptr) {
-        std::lock_guard<std::mutex> lock(state->mutex);
-        watchers = std::atomic_load(&state->watchers);
-        if (watchers == nullptr) {
-            auto updated = std::make_shared<Watchers>();
-            for (const auto &[pid, agent] : state->agents) {
-                if (agent.watcher_ != nullptr) {
-                    updated->insert(agent.watcher_);
-                }
-            }
-            watchers = std::move(updated);
-            std::atomic_store(&state->watchers, watchers);
+    WeakWatchers snapshot;
+    bool cached = false;
+    {
+        std::shared_lock<std::shared_mutex> lock(mutex_);
+        auto it = watchers_.find(tokenId);
+        if (it != watchers_.end()) {
+            snapshot = it->second;
+            cached = true;
         }
     }
-    return *watchers;
+    if (!cached) {
+        agents_.ContainIf(tokenId, [this, tokenId, &snapshot](const SyncAgents &agents) {
+            std::unique_lock<std::shared_mutex> lock(mutex_);
+            auto [it, inserted] = watchers_.try_emplace(tokenId);
+            if (inserted) {
+                for (const auto &[pid, agent] : agents) {
+                    if (agent.watcher_ != nullptr) {
+                        it->second.emplace_back(agent.watcher_);
+                    }
+                }
+            }
+            snapshot = it->second;
+            return true;
+        });
+    }
+    Watchers watchers;
+    for (const auto &weakWatcher : snapshot) {
+        if (auto watcher = weakWatcher.lock(); watcher != nullptr) {
+            watchers.insert(std::move(watcher));
+        }
+    }
+    return watchers;
+}
+
+void RdbServiceImpl::ClientAgent::InvalidateWatchers(uint32_t tokenId)
+{
+    std::unique_lock<std::shared_mutex> lock(mutex_);
+    watchers_.erase(tokenId);
 }
 
 void RdbServiceImpl::ClientAgent::Clear()
 {
-    std::vector<std::shared_ptr<TokenState>> retired;
-    agents_.EraseIf([&retired](auto, std::shared_ptr<TokenState> &state) {
-        retired.emplace_back(std::move(state));
+    std::vector<SyncAgents> retired;
+    agents_.EraseIf([this, &retired](auto tokenId, SyncAgents &agents) {
+        InvalidateWatchers(tokenId);
+        retired.emplace_back(std::move(agents));
         return true;
     });
 }

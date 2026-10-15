@@ -108,6 +108,32 @@ HWTEST_F(AutoCacheObserverTest, RegWatcherFactory_BeforeOpen_InstallsFixedWatche
 }
 
 /**
+ * @tc.name: RegWatcherFactory_AfterOpen_DoesNotReplaceDelegateGetter
+ * @tc.desc: An open delegate retains its injected getter when a different factory is registered later.
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(AutoCacheObserverTest, RegWatcherFactory_AfterOpen_DoesNotReplaceDelegateGetter, TestSize.Level1)
+{
+    auto first = std::make_shared<GeneralWatcherMock>();
+    auto second = std::make_shared<GeneralWatcherMock>();
+    ObserverCache fixture(
+        STORE_TYPE, TOKEN_ID, [first](const auto &) { return [first]() { return AutoCache::Watchers{ first }; }; });
+    EXPECT_CALL(*first, OnChange(_, A<const GeneralWatcher::PRIFields &>(), _)).Times(2).WillRepeatedly(Return(E_OK));
+    EXPECT_CALL(*second, OnChange(_, A<const GeneralWatcher::PRIFields &>(), _)).Times(0);
+    auto &cache = AutoCache::GetInstance();
+    auto store = cache.GetStore(fixture.meta);
+    ASSERT_NE(store, nullptr);
+    ASSERT_NE(fixture.watcher, nullptr);
+    EXPECT_EQ(fixture.watcher->OnChange({}, GeneralWatcher::PRIFields{}, GeneralWatcher::ChangeInfo{}), E_OK);
+    EXPECT_EQ(cache.RegWatcherFactory(
+                  STORE_TYPE, [second](const auto &) { return [second]() { return AutoCache::Watchers{ second }; }; }),
+        E_OK);
+    EXPECT_EQ(cache.GetStore(fixture.meta).get(), store.get());
+    EXPECT_EQ(fixture.watcher->OnChange({}, GeneralWatcher::PRIFields{}, GeneralWatcher::ChangeInfo{}), E_OK);
+}
+
+/**
  * @tc.name: RegCreator_InvalidType_ReturnsError
  * @tc.desc: Creator and watcher factory registration validate both index boundaries.
  * @tc.type: FUNC

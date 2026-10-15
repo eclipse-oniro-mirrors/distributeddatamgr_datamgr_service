@@ -20,8 +20,10 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <shared_mutex>
 #include <string>
 #include <variant>
+#include <vector>
 
 #include "cloud/cloud_event.h"
 #include "commonevent/data_change_event.h"
@@ -184,13 +186,12 @@ private:
             void SetWatcher(std::shared_ptr<RdbWatcher> watcher);
         };
         using SyncAgents = std::map<int32_t, SyncAgent>;
-        struct TokenState {
-            std::mutex mutex;
-            SyncAgents agents;
-            // Null means subscriptions changed; published snapshots are immutable.
-            std::shared_ptr<const Watchers> watchers = std::make_shared<const Watchers>();
-        };
-        ConcurrentMap<uint32_t, std::shared_ptr<TokenState>> agents_;
+        using WeakWatchers = std::vector<std::weak_ptr<DistributedData::GeneralWatcher>>;
+        void InvalidateWatchers(uint32_t tokenId);
+        ConcurrentMap<uint32_t, SyncAgents> agents_;
+        // Lock order for updates/rebuilds: agents_ first, then mutex_. Cache hits only take mutex_.
+        mutable std::shared_mutex mutex_;
+        mutable std::map<uint32_t, WeakWatchers> watchers_;
     };
 
     struct GlobalEvent {
