@@ -59,7 +59,9 @@ public:
         meta.storeId = "observer_cache_test";
         {
             auto &cache = AutoCache::GetInstance();
-            saved_ = cache.GetStoreFactory(type);
+            savedCreator_ = cache.creators_[type];
+            std::shared_lock<std::shared_mutex> lock(cache.watcherMutex_);
+            savedWatcherFactory_ = cache.watcherFactories_[type];
         }
         ON_CALL(store_, AddRef()).WillByDefault(testing::Return(1));
         ON_CALL(store_, Release()).WillByDefault(testing::Return(1));
@@ -92,8 +94,8 @@ public:
         AutoCache::GetInstance().CloseStore([meta = meta](const StoreMetaData &value) {
             return value.tokenId == meta.tokenId && value.storeType == meta.storeType;
         });
-        AutoCache::GetInstance().RegCreator(meta.storeType, saved_.creator);
-        AutoCache::GetInstance().RegWatcherFactory(meta.storeType, saved_.watcherFactory);
+        AutoCache::GetInstance().RegCreator(meta.storeType, savedCreator_);
+        AutoCache::GetInstance().RegWatcherFactory(meta.storeType, savedWatcherFactory_);
     }
 
     void StartClose()
@@ -125,7 +127,8 @@ public:
     int32_t registration = GeneralError::E_ERROR;
 
 private:
-    AutoCache::StoreFactory saved_;
+    AutoCache::Creator savedCreator_;
+    AutoCache::WatcherFactory savedWatcherFactory_;
     testing::NiceMock<StoreMock> store_;
     std::shared_ptr<CloseGate> gate_ = std::make_shared<CloseGate>();
     std::thread closeThread_;

@@ -42,9 +42,8 @@ public:
 HWTEST_F(AutoCacheObserverTest, GetDBStore_WatcherBridge_TracksCurrentSubscriptions, TestSize.Level1)
 {
     auto subscriptions = std::make_shared<AutoCache::Watchers>();
-    ObserverCache fixture(STORE_TYPE, TOKEN_ID, [subscriptions](const auto &) {
-        return std::make_shared<WatcherBridge>([subscriptions]() { return *subscriptions; });
-    });
+    ObserverCache fixture(
+        STORE_TYPE, TOKEN_ID, [subscriptions](const auto &) { return [subscriptions]() { return *subscriptions; }; });
     ASSERT_EQ(fixture.registration, E_OK);
     auto &cache = AutoCache::GetInstance();
     auto [status, store] = cache.GetDBStore(fixture.meta);
@@ -64,19 +63,19 @@ HWTEST_F(AutoCacheObserverTest, GetDBStore_WatcherBridge_TracksCurrentSubscripti
 }
 
 /**
- * @tc.name: GetDBStore_NullForwarder_FailsBeforeOpening
- * @tc.desc: A broken watcher factory must not silently open an unobserved store.
+ * @tc.name: GetDBStore_EmptyGetter_OpensWithoutClientSubscriptions
+ * @tc.desc: A delegate with an empty getter safely handles changes without client subscriptions.
  * @tc.type: FUNC
  * @tc.author: agent
  */
-HWTEST_F(AutoCacheObserverTest, GetDBStore_NullForwarder_FailsBeforeOpening, TestSize.Level2)
+HWTEST_F(AutoCacheObserverTest, GetDBStore_EmptyGetter_OpensWithoutClientSubscriptions, TestSize.Level2)
 {
-    ObserverCache fixture(
-        STORE_TYPE, TOKEN_ID, [](const auto &) -> std::shared_ptr<GeneralWatcher> { return nullptr; });
+    ObserverCache fixture(STORE_TYPE, TOKEN_ID, [](const auto &) { return WatcherBridge::Getter{}; });
     auto [status, store] = AutoCache::GetInstance().GetDBStore(fixture.meta);
-    EXPECT_EQ(status, E_ERROR);
-    EXPECT_EQ(store, nullptr);
-    EXPECT_EQ(fixture.watcher, nullptr);
+    EXPECT_EQ(status, E_OK);
+    ASSERT_NE(store, nullptr);
+    ASSERT_NE(fixture.watcher, nullptr);
+    EXPECT_EQ(fixture.watcher->OnChange({}, GeneralWatcher::PRIFields{}, GeneralWatcher::ChangeInfo{}), E_OK);
 }
 
 /**
@@ -90,19 +89,27 @@ HWTEST_F(AutoCacheObserverTest, RegWatcherFactory_BeforeOpen_InstallsFixedWatche
     ObserverCache fixture(STORE_TYPE, TOKEN_ID, nullptr);
     auto &cache = AutoCache::GetInstance();
     auto client = std::make_shared<GeneralWatcherMock>();
+    auto factoryCalls = std::make_shared<size_t>(0);
     EXPECT_CALL(*client, OnChange(_, A<const GeneralWatcher::PRIFields &>(), _)).Times(2).WillRepeatedly(Return(E_OK));
-    EXPECT_EQ(cache.RegWatcherFactory(STORE_TYPE, [client](const StoreMetaData &) { return client; }), E_OK);
+    EXPECT_EQ(cache.RegWatcherFactory(STORE_TYPE,
+                  [client, factoryCalls](const StoreMetaData &) {
+                      ++(*factoryCalls);
+                      return [client]() { return AutoCache::Watchers{ client }; };
+                  }),
+        E_OK);
     auto store = cache.GetStore(fixture.meta);
     ASSERT_NE(store, nullptr);
     ASSERT_NE(fixture.watcher, nullptr);
     EXPECT_EQ(cache.GetStore(fixture.meta).get(), store.get());
+    EXPECT_EQ(*factoryCalls, 1);
     EXPECT_EQ(fixture.watcher->OnChange({}, GeneralWatcher::PRIFields{}, GeneralWatcher::ChangeInfo{}), E_OK);
+    EXPECT_EQ(*factoryCalls, 1);
     EXPECT_EQ(fixture.watcher->OnChange({}, GeneralWatcher::PRIFields{}, GeneralWatcher::ChangeInfo{}), E_OK);
 }
 
 /**
  * @tc.name: RegCreator_InvalidType_ReturnsError
- * @tc.desc: The new overload validates both index boundaries.
+ * @tc.desc: Creator and watcher factory registration validate both index boundaries.
  * @tc.type: FUNC
  * @tc.author: agent
  */

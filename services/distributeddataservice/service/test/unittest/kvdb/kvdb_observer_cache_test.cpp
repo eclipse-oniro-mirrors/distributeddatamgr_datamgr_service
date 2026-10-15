@@ -63,10 +63,9 @@ public:
         auto weakAgents = std::weak_ptr<KVDBServiceImpl::SyncAgentMap>(service_->syncAgentsHolder_);
         fixture_ = std::make_unique<ObserverCache>(
             STORE_TYPE, IPCSkeleton::GetCallingTokenID(), [weakAgents](const StoreMetaData &meta) {
-                return std::make_shared<WatcherBridge>(
-                    [weakAgents, tokenId = meta.tokenId, key = meta.user + "###" + meta.storeId]() {
-                        return KVDBServiceImpl::GetWatchers(weakAgents.lock(), tokenId, key);
-                    });
+                return [weakAgents, tokenId = meta.tokenId, key = meta.user + "###" + meta.storeId]() {
+                    return KVDBServiceImpl::GetWatchers(weakAgents.lock(), tokenId, key);
+                };
             });
     }
     void TearDown() override
