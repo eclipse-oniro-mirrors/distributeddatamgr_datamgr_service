@@ -92,11 +92,10 @@ HWTEST_F(AutoCacheObserverTest, RegWatcherFactory_BeforeOpen_InstallsFixedWatche
     auto factoryCalls = std::make_shared<size_t>(0);
     EXPECT_CALL(*client, OnChange(_, A<const GeneralWatcher::PRIFields &>(), _)).Times(2).WillRepeatedly(Return(E_OK));
     EXPECT_EQ(cache.RegWatcherFactory(STORE_TYPE,
-                  [client, factoryCalls](const StoreMetaData &) {
-                      ++(*factoryCalls);
-                      return [client]() { return AutoCache::Watchers{ client }; };
-                  }),
-        E_OK);
+        [client, factoryCalls](const StoreMetaData &) {
+            ++(*factoryCalls);
+            return [client]() { return AutoCache::Watchers{ client }; };
+        }), E_OK);
     auto store = cache.GetStore(fixture.meta);
     ASSERT_NE(store, nullptr);
     ASSERT_NE(fixture.watcher, nullptr);
