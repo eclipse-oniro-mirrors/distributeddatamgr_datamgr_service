@@ -56,9 +56,9 @@ public:
         auto weakAgents = std::weak_ptr<RdbServiceImpl::SyncAgentMap>(service_->syncAgentsHolder_);
         fixture_ = std::make_unique<ObserverCache>(
             STORE_TYPE, IPCSkeleton::GetCallingTokenID(), [weakAgents](const StoreMetaData &meta) {
-                return std::make_shared<WatcherBridge>([weakAgents, tokenId = meta.tokenId]() {
+                return [weakAgents, tokenId = meta.tokenId]() {
                     return RdbServiceImpl::GetWatchers(weakAgents.lock(), tokenId);
-                });
+                };
             });
     }
     void TearDown() override
@@ -76,10 +76,7 @@ public:
                 if (client == nullptr) {
                     client = std::make_shared<RdbServiceImpl::ClientAgent>();
                 }
-                std::lock_guard<std::mutex> lock(client->mutex);
-                auto &agents = client->agents;
-                auto [it, inserted] = agents.try_emplace(pid, "observer.test");
-                it->second.SetNotifier(notifier);
+                client->SetNotifier(pid, "observer.test", notifier);
                 return true;
             });
     }
@@ -109,6 +106,159 @@ HWTEST_F(RdbObserverCacheTest, Subscribe_AfterOpenAndOff_UsesLatestSnapshot, Tes
     EXPECT_EQ(service_->UnSubscribe(param_, option_, nullptr), RDB_OK);
     EXPECT_EQ(fixture_->watcher->OnChange({}, GeneralWatcher::PRIFields{}, GeneralWatcher::ChangeInfo{}), E_OK);
     EXPECT_EQ(service_->Subscribe(param_, option_, nullptr), RDB_OK);
+    EXPECT_EQ(fixture_->watcher->OnChange({}, GeneralWatcher::PRIFields{}, GeneralWatcher::ChangeInfo{}), E_OK);
+}
+
+/**
+ * @tc.name: OnChange_UnchangedSubscriptions_ReusesWatcherSnapshot
+ * @tc.desc: Repeated notifications and non-final unsubscribe reuse the same immutable watcher snapshot.
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(RdbObserverCacheTest, OnChange_UnchangedSubscriptions_ReusesWatcherSnapshot, TestSize.Level1)
+{
+    auto store = AutoCache::GetInstance().GetStore(fixture_->meta);
+    ASSERT_NE(store, nullptr);
+    ASSERT_NE(fixture_->watcher, nullptr);
+    sptr<RdbObserverNotifierMock> notifier = new RdbObserverNotifierMock();
+    BindNotifier(notifier);
+    EXPECT_CALL(*notifier, OnChange(_, _, _)).Times(3).WillRepeatedly(Return(RDB_OK));
+    EXPECT_EQ(service_->Subscribe(param_, option_, nullptr), RDB_OK);
+    EXPECT_EQ(fixture_->watcher->OnChange({}, GeneralWatcher::PRIFields{}, GeneralWatcher::ChangeInfo{}), E_OK);
+    auto [found, client] = service_->syncAgents_.Find(IPCSkeleton::GetCallingTokenID());
+    ASSERT_TRUE(found);
+    ASSERT_NE(client, nullptr);
+    auto snapshot = std::atomic_load(&client->watchers_);
+    ASSERT_NE(snapshot, nullptr);
+    ASSERT_EQ(snapshot->size(), 1);
+    EXPECT_EQ(fixture_->watcher->OnChange({}, GeneralWatcher::PRIFields{}, GeneralWatcher::ChangeInfo{}), E_OK);
+    EXPECT_EQ(std::atomic_load(&client->watchers_), snapshot);
+    EXPECT_EQ(service_->Subscribe(param_, option_, nullptr), RDB_OK);
+    EXPECT_EQ(service_->UnSubscribe(param_, option_, nullptr), RDB_OK);
+    EXPECT_EQ(std::atomic_load(&client->watchers_), snapshot);
+    EXPECT_EQ(fixture_->watcher->OnChange({}, GeneralWatcher::PRIFields{}, GeneralWatcher::ChangeInfo{}), E_OK);
+    EXPECT_EQ(std::atomic_load(&client->watchers_), snapshot);
+}
+
+/**
+ * @tc.name: OnChange_CachedSubscriptions_DoesNotWaitForClientMutex
+ * @tc.desc: A warm watcher cache forwards notifications while the ClientAgent mutex is held.
+ * @tc.type: RELI
+ * @tc.author: agent
+ */
+HWTEST_F(RdbObserverCacheTest, OnChange_CachedSubscriptions_DoesNotWaitForClientMutex, TestSize.Level1)
+{
+    auto store = AutoCache::GetInstance().GetStore(fixture_->meta);
+    ASSERT_NE(store, nullptr);
+    ASSERT_NE(fixture_->watcher, nullptr);
+    sptr<RdbObserverNotifierMock> notifier = new RdbObserverNotifierMock();
+    BindNotifier(notifier);
+    EXPECT_CALL(*notifier, OnChange(_, _, _)).Times(2).WillRepeatedly(Return(RDB_OK));
+    EXPECT_EQ(service_->Subscribe(param_, option_, nullptr), RDB_OK);
+    EXPECT_EQ(fixture_->watcher->OnChange({}, GeneralWatcher::PRIFields{}, GeneralWatcher::ChangeInfo{}), E_OK);
+    auto [found, client] = service_->syncAgents_.Find(IPCSkeleton::GetCallingTokenID());
+    ASSERT_TRUE(found);
+    ASSERT_NE(client, nullptr);
+    ASSERT_NE(std::atomic_load(&client->watchers_), nullptr);
+    std::unique_lock<std::mutex> lock(client->mutex_);
+    auto notify = std::async(std::launch::async, [watcher = fixture_->watcher]() {
+        return watcher->OnChange({}, GeneralWatcher::PRIFields{}, GeneralWatcher::ChangeInfo{});
+    });
+    EXPECT_EQ(notify.wait_for(std::chrono::seconds(CloseGate::WAIT_SECONDS)), std::future_status::ready);
+    lock.unlock();
+    EXPECT_EQ(notify.get(), E_OK);
+}
+
+/**
+ * @tc.name: UnSubscribe_LastSubscription_InvalidatesWatcherSnapshot
+ * @tc.desc: Last unsubscribe drops the cache, and the next notification rebuilds an empty snapshot.
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(RdbObserverCacheTest, UnSubscribe_LastSubscription_InvalidatesWatcherSnapshot, TestSize.Level1)
+{
+    auto store = AutoCache::GetInstance().GetStore(fixture_->meta);
+    ASSERT_NE(store, nullptr);
+    ASSERT_NE(fixture_->watcher, nullptr);
+    sptr<RdbObserverNotifierMock> notifier = new RdbObserverNotifierMock();
+    BindNotifier(notifier);
+    EXPECT_CALL(*notifier, OnChange(_, _, _)).Times(2).WillRepeatedly(Return(RDB_OK));
+    EXPECT_EQ(service_->Subscribe(param_, option_, nullptr), RDB_OK);
+    EXPECT_EQ(fixture_->watcher->OnChange({}, GeneralWatcher::PRIFields{}, GeneralWatcher::ChangeInfo{}), E_OK);
+    auto [found, client] = service_->syncAgents_.Find(IPCSkeleton::GetCallingTokenID());
+    ASSERT_TRUE(found);
+    ASSERT_NE(client, nullptr);
+    auto snapshot = std::atomic_load(&client->watchers_);
+    ASSERT_NE(snapshot, nullptr);
+    EXPECT_EQ(service_->UnSubscribe(param_, option_, nullptr), RDB_OK);
+    EXPECT_EQ(std::atomic_load(&client->watchers_), nullptr);
+    EXPECT_EQ(fixture_->watcher->OnChange({}, GeneralWatcher::PRIFields{}, GeneralWatcher::ChangeInfo{}), E_OK);
+    auto emptySnapshot = std::atomic_load(&client->watchers_);
+    ASSERT_NE(emptySnapshot, nullptr);
+    EXPECT_TRUE(emptySnapshot->empty());
+    EXPECT_NE(emptySnapshot, snapshot);
+    EXPECT_EQ(service_->Subscribe(param_, option_, nullptr), RDB_OK);
+    EXPECT_EQ(std::atomic_load(&client->watchers_), nullptr);
+    EXPECT_EQ(fixture_->watcher->OnChange({}, GeneralWatcher::PRIFields{}, GeneralWatcher::ChangeInfo{}), E_OK);
+    auto renewedSnapshot = std::atomic_load(&client->watchers_);
+    ASSERT_NE(renewedSnapshot, nullptr);
+    EXPECT_EQ(renewedSnapshot->size(), 1);
+    EXPECT_NE(renewedSnapshot, snapshot);
+}
+
+/**
+ * @tc.name: OnChange_NotifierReplaced_ReusesSnapshotAndNotifiesLatestClient
+ * @tc.desc: Updating a PID's notifier keeps its watcher snapshot but routes changes to the new notifier.
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(RdbObserverCacheTest, OnChange_NotifierReplaced_ReusesSnapshotAndNotifiesLatestClient, TestSize.Level1)
+{
+    auto store = AutoCache::GetInstance().GetStore(fixture_->meta);
+    ASSERT_NE(store, nullptr);
+    ASSERT_NE(fixture_->watcher, nullptr);
+    sptr<RdbObserverNotifierMock> first = new RdbObserverNotifierMock();
+    sptr<RdbObserverNotifierMock> second = new RdbObserverNotifierMock();
+    BindNotifier(first);
+    EXPECT_CALL(*first, OnChange(_, _, _)).Times(1).WillOnce(Return(RDB_OK));
+    EXPECT_CALL(*second, OnChange(_, _, _)).Times(1).WillOnce(Return(RDB_OK));
+    EXPECT_EQ(service_->Subscribe(param_, option_, nullptr), RDB_OK);
+    EXPECT_EQ(fixture_->watcher->OnChange({}, GeneralWatcher::PRIFields{}, GeneralWatcher::ChangeInfo{}), E_OK);
+    auto [found, client] = service_->syncAgents_.Find(IPCSkeleton::GetCallingTokenID());
+    ASSERT_TRUE(found);
+    ASSERT_NE(client, nullptr);
+    auto snapshot = std::atomic_load(&client->watchers_);
+    ASSERT_NE(snapshot, nullptr);
+    BindNotifier(second);
+    EXPECT_EQ(std::atomic_load(&client->watchers_), snapshot);
+    EXPECT_EQ(fixture_->watcher->OnChange({}, GeneralWatcher::PRIFields{}, GeneralWatcher::ChangeInfo{}), E_OK);
+    EXPECT_EQ(std::atomic_load(&client->watchers_), snapshot);
+}
+
+/**
+ * @tc.name: OnAppExit_ActiveSubscription_InvalidatesWatcherSnapshot
+ * @tc.desc: Client exit clears the notifier and retires the cached subscription before later changes.
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(RdbObserverCacheTest, OnAppExit_ActiveSubscription_InvalidatesWatcherSnapshot, TestSize.Level1)
+{
+    auto store = AutoCache::GetInstance().GetStore(fixture_->meta);
+    ASSERT_NE(store, nullptr);
+    ASSERT_NE(fixture_->watcher, nullptr);
+    sptr<RdbObserverNotifierMock> notifier = new RdbObserverNotifierMock();
+    BindNotifier(notifier);
+    EXPECT_CALL(*notifier, OnChange(_, _, _)).Times(1).WillOnce(Return(RDB_OK));
+    EXPECT_EQ(service_->Subscribe(param_, option_, nullptr), RDB_OK);
+    EXPECT_EQ(fixture_->watcher->OnChange({}, GeneralWatcher::PRIFields{}, GeneralWatcher::ChangeInfo{}), E_OK);
+    auto tokenId = IPCSkeleton::GetCallingTokenID();
+    auto [found, client] = service_->syncAgents_.Find(tokenId);
+    ASSERT_TRUE(found);
+    ASSERT_NE(client, nullptr);
+    ASSERT_NE(std::atomic_load(&client->watchers_), nullptr);
+    EXPECT_EQ(service_->OnAppExit(0, IPCSkeleton::GetCallingPid(), tokenId, param_.bundleName_), E_OK);
+    EXPECT_EQ(std::atomic_load(&client->watchers_), nullptr);
+    EXPECT_FALSE(service_->syncAgents_.Contains(tokenId));
     EXPECT_EQ(fixture_->watcher->OnChange({}, GeneralWatcher::PRIFields{}, GeneralWatcher::ChangeInfo{}), E_OK);
 }
 

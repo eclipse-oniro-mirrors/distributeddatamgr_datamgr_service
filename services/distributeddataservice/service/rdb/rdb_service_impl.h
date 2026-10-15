@@ -16,7 +16,9 @@
 #ifndef DISTRIBUTEDDATASERVICE_RDB_SERVICE_H
 #define DISTRIBUTEDDATASERVICE_RDB_SERVICE_H
 
+#include <list>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <variant>
@@ -162,9 +164,28 @@ private:
     };
     using SyncAgents = std::map<int32_t, SyncAgent>;
 
-    struct ClientAgent {
-        std::mutex mutex;
-        SyncAgents agents;
+    class ClientAgent final {
+    public:
+        ClientAgent() = default;
+        ClientAgent(const ClientAgent &) = delete;
+        ClientAgent &operator=(const ClientAgent &) = delete;
+        ClientAgent(ClientAgent &&) = delete;
+        ClientAgent &operator=(ClientAgent &&) = delete;
+        void SetNotifier(pid_t pid, const std::string &bundleName, const sptr<RdbNotifierProxy> &notifier);
+        sptr<RdbNotifierProxy> GetNotifier(pid_t pid) const;
+        bool Remove(pid_t pid);
+        void Subscribe(pid_t pid, const std::string &bundleName);
+        bool UnSubscribe(pid_t pid);
+        void RegisterCallback(pid_t pid, const std::string &bundleName, const std::string &storeName);
+        bool UnregisterCallback(pid_t pid, const std::string &storeName);
+        std::list<sptr<RdbNotifierProxy>> GetCallbacks(const std::string &storeName) const;
+        Watchers GetWatchers() const;
+
+    private:
+        mutable std::mutex mutex_;
+        SyncAgents agents_;
+        // Null means subscriptions changed; published snapshots are immutable.
+        mutable std::shared_ptr<const Watchers> watchers_ = std::make_shared<const Watchers>();
     };
     using SyncAgentMap = ConcurrentMap<uint32_t, std::shared_ptr<ClientAgent>>;
     static Watchers GetWatchers(const std::shared_ptr<SyncAgentMap> &syncAgents, uint32_t tokenId);

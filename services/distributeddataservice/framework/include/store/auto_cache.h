@@ -18,6 +18,7 @@
 #include <list>
 #include <memory>
 #include <set>
+#include <shared_mutex>
 
 #include "concurrent_map.h"
 #include "concurrent_striped_map.h"
@@ -27,6 +28,7 @@
 #include "store/general_store.h"
 #include "store/general_value.h"
 #include "store/general_watcher.h"
+#include "store/watcher_bridge.h"
 #include "visibility.h"
 namespace OHOS::DistributedData {
 class SchemaMeta;
@@ -45,7 +47,7 @@ public:
     using Executor = ExecutorPool;
     using TaskId = ExecutorPool::TaskId;
     using Creator = std::function<std::pair<int32_t, GeneralStore *>(const StoreMetaData &, const StoreOption &)>;
-    using WatcherFactory = std::function<std::shared_ptr<GeneralWatcher>(const StoreMetaData &)>;
+    using WatcherFactory = std::function<WatcherBridge::Getter(const StoreMetaData &)>;
     using Filter = std::function<bool(const StoreMetaData &)>;
 
     API_EXPORT static AutoCache &GetInstance();
@@ -54,9 +56,8 @@ public:
 
     API_EXPORT int32_t RegCreator(int32_t type, Creator creator);
 
-    // Factories are registered during process initialization and remain read-only afterwards.
-    // The factory creates a fixed forwarding watcher without querying subscriptions or opening a store.
-    // A null watcher fails opening; an empty factory means no client subscriptions.
+    // The factory creates a getter without querying subscriptions or opening a store.
+    // Delegate owns the forwarding bridge; an empty getter means no client subscriptions.
     API_EXPORT int32_t RegWatcherFactory(int32_t type, WatcherFactory watcherFactory);
 
     API_EXPORT void Bind(std::shared_ptr<Executor> executor);
@@ -78,22 +79,15 @@ public:
     API_EXPORT void Disable(uint32_t tokenId, const std::string &path = "", const std::string &storeId = "");
 
 private:
-    struct StoreFactory {
-        Creator creator;
-        WatcherFactory watcherFactory;
-    };
     AutoCache();
     ~AutoCache();
     std::string GenerateKey(const std::string &path, const std::string &storeId) const;
     void GarbageCollect(bool isForce);
     void StartTimer();
     static int32_t CheckStatusBeforeOpen(const StoreMetaData &meta);
-    StoreFactory GetStoreFactory(int32_t type) const;
-    std::pair<int32_t, GeneralStore *> OpenStore(const StoreMetaData &meta, const StoreFactory &factory,
-        const StoreOption &option, std::shared_ptr<GeneralWatcher> &watcher);
+    WatcherBridge::Getter GetWatcher(const StoreMetaData &meta) const;
     struct Delegate : public GeneralWatcher {
-        Delegate(GeneralStore *delegate, std::shared_ptr<GeneralWatcher> watcher, const StoreMetaData &meta,
-            uint32_t garbageInterval = DEFAULT_INTERVAL);
+        Delegate(GeneralStore *delegate, const StoreMetaData &meta, uint32_t garbageInterval = DEFAULT_INTERVAL);
         ~Delegate();
         operator Store();
         bool operator<(const Time &time) const;
@@ -107,7 +101,7 @@ private:
     private:
         mutable Time time_;
         GeneralStore *store_ = nullptr;
-        const std::shared_ptr<GeneralWatcher> watcher_;
+        WatcherBridge watcher_;
         const StoreMetaData meta_;
         const uint32_t garbageInterval_;
     };
@@ -120,6 +114,7 @@ private:
     ConcurrentStripedMap<uint32_t, std::map<std::string, Delegate>> stores_;
     ConcurrentMap<uint32_t, std::set<std::string>> disables_;
     Creator creators_[MAX_CREATOR_NUM];
+    mutable std::shared_mutex watcherMutex_;
     WatcherFactory watcherFactories_[MAX_CREATOR_NUM];
 };
 } // namespace OHOS::DistributedData

@@ -48,7 +48,6 @@
 #include "permit_delegate.h"
 #include "query_helper.h"
 #include "store/store_info.h"
-#include "store/watcher_bridge.h"
 #include "sync_mgr/sync_mgr.h"
 #include "upgrade.h"
 #include "utils/anonymous.h"
@@ -104,10 +103,9 @@ KVDBServiceImpl::KVDBServiceImpl()
     : syncAgentsHolder_(std::make_shared<SyncAgentMap>()), syncAgents_(*syncAgentsHolder_)
 {
     auto watcherFactory = [weakAgents = std::weak_ptr<SyncAgentMap>(syncAgentsHolder_)](const StoreMetaData &meta) {
-        return std::shared_ptr<GeneralWatcher>(new (std::nothrow)
-                WatcherBridge([weakAgents, tokenId = meta.tokenId, key = GenerateKey(meta.user, meta.storeId)]() {
-                    return GetWatchers(weakAgents.lock(), tokenId, key);
-                }));
+        return [weakAgents, tokenId = meta.tokenId, key = GenerateKey(meta.user, meta.storeId)]() {
+            return GetWatchers(weakAgents.lock(), tokenId, key);
+        };
     };
     AutoCache::GetInstance().RegWatcherFactory(KvStoreType::SINGLE_VERSION, watcherFactory);
     AutoCache::GetInstance().RegWatcherFactory(KvStoreType::DEVICE_COLLABORATION, watcherFactory);

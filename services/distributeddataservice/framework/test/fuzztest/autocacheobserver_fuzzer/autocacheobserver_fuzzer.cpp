@@ -37,12 +37,12 @@ void Verify(FuzzedDataProvider &fdp)
             type = FUZZ_STORE_TYPE;
         }
         int32_t status = fdp.ConsumeIntegral<int32_t>();
-        bool nullWatcher = fdp.ConsumeBool();
+        bool emptyGetter = fdp.ConsumeBool();
         AutoCache::Creator creator = [status](const StoreMetaData &, const AutoCache::StoreOption &) {
             return std::pair<int32_t, GeneralStore *>{ status, nullptr };
         };
-        AutoCache::WatcherFactory factory = [nullWatcher](const StoreMetaData &) -> std::shared_ptr<GeneralWatcher> {
-            return nullWatcher ? nullptr : std::make_shared<WatcherBridge>(nullptr);
+        AutoCache::WatcherFactory factory = [emptyGetter](const StoreMetaData &) -> WatcherBridge::Getter {
+            return emptyGetter ? WatcherBridge::Getter{} : []() { return AutoCache::Watchers{}; };
         };
         if (fdp.ConsumeBool()) {
             creator = nullptr;
