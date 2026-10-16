@@ -823,7 +823,16 @@ void KVDBGeneralStore::ObserverProxy::OnChange(DBOrigin origin, const std::strin
 
 void KVDBGeneralStore::ObserverProxy::OnChange(const DistributedDB::KvStoreChangedData &data)
 {
-    if (!HasWatcher() || store_ == nullptr) {
+    if (store_ == nullptr) {
+        return;
+    }
+    if (store_->isCacheWatcher_.load()) {
+        ZLOGI("cache mode, save change data. storeId:%{public}s", storeId_.c_str());
+        SaveChangeData(data);
+        store_->PostDataChange();
+        return;
+    }
+    if (!HasWatcher()) {
         return;
     }
     store_->PostDataChange();
