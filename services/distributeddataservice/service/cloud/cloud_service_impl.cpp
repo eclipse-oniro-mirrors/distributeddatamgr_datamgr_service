@@ -1775,7 +1775,8 @@ int32_t CloudServiceImpl::CloudSync(const std::string &bundleName, const std::st
         };
         auto highMode = GeneralStore::MANUAL_SYNC_MODE;
         auto mixMode = static_cast<int32_t>(GeneralStore::MixMode(option.syncMode, highMode));
-        SyncParam syncParam = { .mode = mixMode, .wait = 0, .isDownloadOnly = option.isDownloadOnly };
+        SyncParam syncParam = { .mode = mixMode, .wait = 0, .isDownloadOnly = option.isDownloadOnly,
+            .isFullSync = option.isFullSync };
         auto info = ChangeEvent::EventInfo(syncParam, false, nullptr, asyncCallback);
         auto evt = std::make_unique<ChangeEvent>(std::move(storeInfo), std::move(info));
         EventCenter::GetInstance().PostEvent(std::move(evt));
