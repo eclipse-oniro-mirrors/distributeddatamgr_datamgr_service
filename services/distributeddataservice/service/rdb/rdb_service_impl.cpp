@@ -35,9 +35,11 @@
 #include "dump/dump_manager.h"
 #include "dfx/xcollie.h"
 #include "eventcenter/event_center.h"
+#include "hmfs_tag_util.h"
 #include "rdb_flow_control_manager.h"
 #include "ipc_skeleton.h"
 #include "log_print.h"
+#include "unistd.h"
 #include "metadata/appid_meta_data.h"
 #include "metadata/auto_launch_meta_data.h"
 #include "metadata/bundle_version_meta_data.h"
@@ -1284,6 +1286,9 @@ int32_t RdbServiceImpl::AfterOpen(const RdbSyncerParam &param)
     meta.customSwitch = isCreated ? old.customSwitch : meta.customSwitch;
     meta.autoSyncSwitch = isCreated ? old.autoSyncSwitch : meta.autoSyncSwitch;
     SaveOpenedMeta(param, meta, old, isCreated);
+    if (param.dumpStackOnFileDel_) {
+        SetDumpStackTags(meta);
+    }
     GetCloudSchema(meta);
     return RDB_OK;
 }
@@ -2370,7 +2375,11 @@ int32_t RdbServiceImpl::Enable(const RdbSyncerParam &param)
 {
     auto tokenId = IPCSkeleton::GetCallingTokenID();
     auto storeId = RemoveSuffix(param.storeName_);
-    AutoCache::GetInstance().Enable(tokenId, GetStoreMetaData(param).dataDir, storeId);
+    auto meta = GetStoreMetaData(param);
+    AutoCache::GetInstance().Enable(tokenId, meta.dataDir, storeId);
+    if (param.dumpStackOnFileDel_) {
+        SetDumpStackTags(meta);
+    }
     return RDB_OK;
 }
 
