@@ -830,6 +830,7 @@ void KVDBGeneralStore::ObserverProxy::OnChange(const DistributedDB::KvStoreChang
         ZLOGI("cache mode, save change data. storeId:%{public}s", Anonymous::Change(storeId_).c_str());
         SaveChangeData(data);
         store_->PostDataChange();
+        return;
     }
     if (!HasWatcher()) {
         return;
