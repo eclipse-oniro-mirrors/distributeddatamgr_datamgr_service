@@ -45,6 +45,7 @@
 #include "dump/dump_manager.h"
 #include "extension_ability_manager.h"
 #include "hap_token_info.h"
+#include "native_token_info.h"
 #include "hiview_adapter.h"
 #include "freq_log_manager.h"
 #include "if_system_ability_manager.h"
@@ -398,6 +399,11 @@ std::string DataShareServiceImpl::GetCallerBundleNameForStat()
     auto tokenId = IPCSkeleton::GetCallingTokenID();
     auto type = Security::AccessToken::AccessTokenKit::GetTokenTypeFlag(tokenId);
     if (type == Security::AccessToken::TOKEN_NATIVE || type == Security::AccessToken::TOKEN_SHELL) {
+        Security::AccessToken::NativeTokenInfo tokenInfo;
+        if (Security::AccessToken::AccessTokenKit::GetNativeTokenInfo(tokenId, tokenInfo) ==
+            Security::AccessToken::RET_SUCCESS && !tokenInfo.processName.empty()) {
+            return tokenInfo.processName;
+        }
         return "system";
     }
     if (type == Security::AccessToken::TOKEN_HAP) {

@@ -38,6 +38,7 @@ constexpr const uint32_t MAX_KEY_COUNT = 5000;
 constexpr const int32_t MIN_REPORT_INTERVAL_HOURS = 1;
 constexpr const int32_t MAX_REPORT_INTERVAL_HOURS = 48;
 constexpr const int32_t DEFAULT_REPORT_INTERVAL_HOURS = 24;
+constexpr const int32_t OVERFLOW_BACKOFF_FACTOR = 2;
 constexpr const int64_t MILLISECONDS_PER_HOUR = 3600LL * 1000;
 constexpr const size_t ACCESS_PARAMS_SIZE = 5;
 constexpr const int32_t URI_KEEP_LENGTH = 10;
@@ -289,7 +290,7 @@ void DataShareAccessReporter::FlushDueEntries(bool forceAll)
             return false;
         });
         overflowFactor_ = (due.size() > MAX_KEY_COUNT)
-            ? std::min(overflowFactor_ * 2, MAX_REPORT_INTERVAL_HOURS) : 1;
+            ? std::min(overflowFactor_ * OVERFLOW_BACKOFF_FACTOR, MAX_REPORT_INTERVAL_HOURS) : 1;
         int64_t nextFire = std::numeric_limits<int64_t>::max();
         stats_.ForEach([&nextFire, this](const std::string &, AccessStatInfo &value) {
             nextFire = std::min(nextFire, DueTimeMsLocked(value));
