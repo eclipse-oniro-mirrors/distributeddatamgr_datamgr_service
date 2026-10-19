@@ -17,6 +17,10 @@
 #define DATASHARESERVICE_HIVIEW_ADAPTER_H
 
 
+#include <map>
+#include <mutex>
+#include <string>
+
 #include "hiview_base_adapter.h"
 #include "concurrent_map.h"
 #include "data_share_service_stub.h"
@@ -51,6 +55,8 @@ struct AccessStatInfo {
     std::string callerBundleName;
     uint32_t funcId = 0;
     uint64_t count = 0;
+    int64_t windowStartTime = 0;
+    int32_t reportIntervalHours = 24;
 };
 
 class HiViewAdapter : public HiViewBaseAdapter {
@@ -80,14 +86,23 @@ public:
     void Record(const std::string &uri, const std::string &providerBundleName, const std::string &callerBundleName,
         uint32_t funcId, int32_t reportIntervalHours);
     void Init(std::shared_ptr<ExecutorPool> executors);
+    void FlushAll();
+    size_t GetStatsCount();
+    bool GetAccessStatInfo(const std::string &uri, const std::string &providerBundleName,
+        const std::string &callerBundleName, uint32_t funcId, AccessStatInfo &info);
+    static std::string AnonymousUri(const std::string &uri);
 
 private:
     ConcurrentMap<std::string, AccessStatInfo> stats_;
-    std::atomic<int32_t> reportIntervalHours_{ 24 };
-    std::atomic<bool> extendInterval_{ false };
-    void ScheduleNext();
+    std::mutex flushMutex_;
+    ExecutorPool::TaskId nextTaskId_ = ExecutorPool::INVALID_TASK_ID;
+    int64_t nextFireTimeMs_ = 0;
+    int32_t overflowFactor_ = 1;
+    void FlushDueEntries(bool forceAll);
+    void ScheduleLocked(int64_t fireAtMs);
+    int64_t DueTimeMsLocked(const AccessStatInfo &info) const;
+    void ReportInBatches(std::vector<AccessStatInfo> &stats);
     void ReportBatch(std::vector<AccessStatInfo> &batch);
-    size_t FlushAll();
     static std::string MakeKey(const std::string &uri, const std::string &providerBundleName,
         const std::string &callerBundleName, uint32_t funcId);
 };

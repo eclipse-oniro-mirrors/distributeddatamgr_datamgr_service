@@ -50,28 +50,6 @@ bool DataShareSilentConfig::IsSilentProxyEnable(uint32_t callerTokenId, int32_t 
     return true;
 }
 
-bool DataShareSilentConfig::GetAccessStatistics(uint32_t callerTokenId, int32_t currentUserId,
-    const std::string &calledBundleName, const std::string &originUriStr, AccessStatisticsConfig &config)
-{
-    config.enable = false;
-    std::string uri = originUriStr;
-    URIUtils::FormatUri(uri);
-    std::map<std::string, ProfileInfo> profileInfos;
-    if (!DataShareProfileConfig::GetProfileInfo(calledBundleName, currentUserId, profileInfos)) {
-        return false;
-    }
-    for (const auto &[key, value] : profileInfos) {
-        if (!uri.empty() && key.find(uri) == std::string::npos && uri.find(key) == std::string::npos) {
-            continue;
-        }
-        if (value.accessStatistics.enable) {
-            config = value.accessStatistics;
-            return true;
-        }
-    }
-    return false;
-}
-
 bool DataShareSilentConfig::EnableSilentProxy(uint32_t callerTokenId, const std::string &originUriStr, bool enable)
 {
     std::string uri = originUriStr;

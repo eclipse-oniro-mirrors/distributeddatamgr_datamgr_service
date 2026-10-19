@@ -17,7 +17,9 @@
 #include "hiview_adapter.h"
 
 #include <algorithm>
+#include <limits>
 
+#include "common_utils.h"
 #include "hiview_fault_adapter.h"
 #include "log_print.h"
 #include "utils.h"
@@ -36,9 +38,10 @@ constexpr const uint32_t MAX_KEY_COUNT = 5000;
 constexpr const int32_t MIN_REPORT_INTERVAL_HOURS = 1;
 constexpr const int32_t MAX_REPORT_INTERVAL_HOURS = 48;
 constexpr const int32_t DEFAULT_REPORT_INTERVAL_HOURS = 24;
-constexpr const int32_t INTERVAL_EXTEND_FACTOR = 2;
-constexpr const int32_t SECONDS_PER_HOUR = 3600;
+constexpr const int64_t MILLISECONDS_PER_HOUR = 3600LL * 1000;
 constexpr const size_t ACCESS_PARAMS_SIZE = 5;
+constexpr const int32_t URI_KEEP_LENGTH = 10;
+constexpr const char *URI_ANONYMOUS_MARK = "******";
 
 std::string GetInterfaceName(uint32_t funcId)
 {
@@ -163,77 +166,170 @@ DataShareAccessReporter &DataShareAccessReporter::GetInstance()
     return instance;
 }
 
+std::string DataShareAccessReporter::AnonymousUri(const std::string &uri)
+{
+    // Keep only the bundleName and the last URI_KEEP_LENGTH chars of the rest,
+    // so the reported uri keeps the provider identity while user-related fields stay anonymized.
+    size_t schemePos = uri.find("://");
+    if (schemePos == std::string::npos) {
+        return URIUtils::Anonymous(uri);
+    }
+    size_t authorityStart = schemePos + strlen("://");
+    size_t authorityEnd = uri.find('/', authorityStart);
+    if (authorityEnd == std::string::npos) {
+        return uri.substr(authorityStart);
+    }
+    std::string authority = uri.substr(authorityStart, authorityEnd - authorityStart);
+    std::string suffix = uri.substr(authorityEnd);
+    if (suffix.length() <= URI_KEEP_LENGTH) {
+        return authority + suffix;
+    }
+    return authority + URI_ANONYMOUS_MARK +
+        suffix.substr(suffix.length() - URI_KEEP_LENGTH, URI_KEEP_LENGTH);
+}
+
 std::string DataShareAccessReporter::MakeKey(const std::string &uri, const std::string &providerBundleName,
     const std::string &callerBundleName, uint32_t funcId)
 {
-    return URIUtils::Anonymous(uri) + "|" + providerBundleName + "|" + callerBundleName + "|" + std::to_string(funcId);
+    return AnonymousUri(uri) + "|" + providerBundleName + "|" + callerBundleName + "|" + std::to_string(funcId);
 }
 
 void DataShareAccessReporter::Record(const std::string &uri, const std::string &providerBundleName,
     const std::string &callerBundleName, uint32_t funcId, int32_t reportIntervalHours)
 {
-    if (reportIntervalHours >= MIN_REPORT_INTERVAL_HOURS) {
-        reportIntervalHours_.store(reportIntervalHours);
-    }
+    int64_t now = GetSystemTime();
     std::string key = MakeKey(uri, providerBundleName, callerBundleName, funcId);
-    stats_.Compute(
-        key, [&uri, &providerBundleName, &callerBundleName, &funcId](const std::string &, AccessStatInfo &value) {
-            if (value.count == 0) {
-                value.uri = uri;
-                value.providerBundleName = providerBundleName;
-                value.callerBundleName = callerBundleName;
-                value.funcId = funcId;
+    int64_t windowStart = 0;
+    int32_t interval = DEFAULT_REPORT_INTERVAL_HOURS;
+    stats_.Compute(key, [&uri, &providerBundleName, &callerBundleName, &funcId, &reportIntervalHours, &now,
+        &windowStart, &interval](const std::string &, AccessStatInfo &value) {
+        if (value.count == 0) {
+            value.uri = uri;
+            value.providerBundleName = providerBundleName;
+            value.callerBundleName = callerBundleName;
+            value.funcId = funcId;
+            value.windowStartTime = now;
+        }
+        // Each provider's configured interval is kept by its own entry, later callers
+        // never override other providers' intervals.
+        if (reportIntervalHours >= MIN_REPORT_INTERVAL_HOURS) {
+            value.reportIntervalHours = reportIntervalHours;
+        }
+        value.count += 1;
+        windowStart = value.windowStartTime;
+        interval = value.reportIntervalHours;
+        return true;
+    });
+    {
+        std::lock_guard<std::mutex> lock(flushMutex_);
+        if (executors_ != nullptr) {
+            int64_t due = windowStart + static_cast<int64_t>(std::min(interval * overflowFactor_,
+                MAX_REPORT_INTERVAL_HOURS)) * MILLISECONDS_PER_HOUR;
+            if (nextTaskId_ == ExecutorPool::INVALID_TASK_ID || due < nextFireTimeMs_) {
+                ScheduleLocked(due);
             }
-            value.count += 1;
-            return true;
-        });
+        }
+    }
     if (stats_.Size() > MAX_KEY_COUNT) {
-        FlushAll();
+        if (executors_ != nullptr) {
+            // Flush asynchronously to avoid blocking the calling binder thread.
+            executors_->Execute([this]() { FlushDueEntries(true); });
+        } else {
+            FlushDueEntries(true);
+        }
     }
 }
 
 void DataShareAccessReporter::Init(std::shared_ptr<ExecutorPool> executors)
 {
     executors_ = executors;
-    ScheduleNext();
 }
 
-void DataShareAccessReporter::ScheduleNext()
+void DataShareAccessReporter::FlushAll()
 {
-    if (executors_ == nullptr) {
-        return;
-    }
-    int32_t hours = reportIntervalHours_.load();
-    if (hours < MIN_REPORT_INTERVAL_HOURS) {
-        hours = DEFAULT_REPORT_INTERVAL_HOURS;
-    }
-    if (extendInterval_.load()) {
-        hours = std::min(hours * INTERVAL_EXTEND_FACTOR, MAX_REPORT_INTERVAL_HOURS);
-    }
-    auto interval = std::chrono::seconds(hours * SECONDS_PER_HOUR);
-    executors_->Schedule([this]() { InvokeData(); }, interval);
+    FlushDueEntries(true);
+}
+
+size_t DataShareAccessReporter::GetStatsCount()
+{
+    return stats_.Size();
+}
+
+bool DataShareAccessReporter::GetAccessStatInfo(const std::string &uri, const std::string &providerBundleName,
+    const std::string &callerBundleName, uint32_t funcId, AccessStatInfo &info)
+{
+    std::string key = MakeKey(uri, providerBundleName, callerBundleName, funcId);
+    bool found = false;
+    stats_.ComputeIfPresent(key, [&info, &found](const std::string &, AccessStatInfo &value) {
+        info = value;
+        found = true;
+        return true;
+    });
+    return found;
 }
 
 void DataShareAccessReporter::InvokeData()
 {
-    if (stats_.Size() == 0) {
-        ScheduleNext();
-        return;
-    }
-    size_t flushed = FlushAll();
-    extendInterval_.store(flushed > MAX_KEY_COUNT);
-    ScheduleNext();
+    FlushDueEntries(false);
 }
 
-size_t DataShareAccessReporter::FlushAll()
+void DataShareAccessReporter::FlushDueEntries(bool forceAll)
 {
-    std::vector<AccessStatInfo> snapshot;
-    stats_.EraseIf([&snapshot](const std::string &, AccessStatInfo &info) {
-        snapshot.push_back(info);
-        return true;
-    });
+    std::vector<AccessStatInfo> due;
+    {
+        // Serialize flushes: concurrent timer/overflow flushes must not split one
+        // reporting round into several partial ReportBatch calls.
+        std::lock_guard<std::mutex> lock(flushMutex_);
+        int64_t now = GetSystemTime();
+        stats_.EraseIf([&due, forceAll, now, this](const std::string &, AccessStatInfo &value) {
+            if (forceAll || DueTimeMsLocked(value) <= now) {
+                due.push_back(value);
+                return true;
+            }
+            return false;
+        });
+        overflowFactor_ = (due.size() > MAX_KEY_COUNT)
+            ? std::min(overflowFactor_ * 2, MAX_REPORT_INTERVAL_HOURS) : 1;
+        int64_t nextFire = std::numeric_limits<int64_t>::max();
+        stats_.ForEach([&nextFire, this](const std::string &, AccessStatInfo &value) {
+            nextFire = std::min(nextFire, DueTimeMsLocked(value));
+            return false;
+        });
+        if (nextFire == std::numeric_limits<int64_t>::max()) {
+            nextTaskId_ = ExecutorPool::INVALID_TASK_ID;
+            nextFireTimeMs_ = 0;
+        } else {
+            ScheduleLocked(nextFire);
+        }
+    }
+    ReportInBatches(due);
+}
+
+void DataShareAccessReporter::ScheduleLocked(int64_t fireAtMs)
+{
+    if (executors_ == nullptr) {
+        return;
+    }
+    if (nextTaskId_ != ExecutorPool::INVALID_TASK_ID) {
+        executors_->Remove(nextTaskId_);
+    }
+    int64_t delayMs = std::max(fireAtMs - GetSystemTime(), static_cast<int64_t>(0));
+    nextFireTimeMs_ = fireAtMs;
+    // One-shot form (delay first); the next round is scheduled in FlushDueEntries,
+    // so no repeated task leaks and the fire time always follows entry due times.
+    nextTaskId_ = executors_->Schedule(std::chrono::milliseconds(delayMs), [this]() { InvokeData(); });
+}
+
+int64_t DataShareAccessReporter::DueTimeMsLocked(const AccessStatInfo &info) const
+{
+    int32_t hours = std::min(info.reportIntervalHours * overflowFactor_, MAX_REPORT_INTERVAL_HOURS);
+    return info.windowStartTime + static_cast<int64_t>(hours) * MILLISECONDS_PER_HOUR;
+}
+
+void DataShareAccessReporter::ReportInBatches(std::vector<AccessStatInfo> &stats)
+{
     std::vector<AccessStatInfo> batch;
-    for (auto &info : snapshot) {
+    for (auto &info : stats) {
         batch.push_back(info);
         if (batch.size() >= MAX_REPORT_BATCH) {
             ReportBatch(batch);
@@ -243,7 +339,6 @@ size_t DataShareAccessReporter::FlushAll()
     if (!batch.empty()) {
         ReportBatch(batch);
     }
-    return snapshot.size();
 }
 
 void DataShareAccessReporter::ReportBatch(std::vector<AccessStatInfo> &batch)
@@ -259,7 +354,7 @@ void DataShareAccessReporter::ReportBatch(std::vector<AccessStatInfo> &batch)
     std::vector<char *> callers(count);
     std::vector<char *> interfaces(count);
     for (uint32_t i = 0; i < count; i++) {
-        uriHolder[i] = URIUtils::Anonymous(batch[i].uri);
+        uriHolder[i] = AnonymousUri(batch[i].uri);
         providerHolder[i] = batch[i].providerBundleName;
         callerHolder[i] = batch[i].callerBundleName;
         interfaceHolder[i] = GetInterfaceName(batch[i].funcId);

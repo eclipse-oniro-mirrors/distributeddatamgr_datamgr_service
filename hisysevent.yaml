@@ -127,7 +127,7 @@ ARKDATA_CLOUD_SYNC_FAULT:
   APPENDIX: {type: STRING, desc: such as uid/tokenid }
 
 DATA_SHARE_ACCESS_STATISTIC:
-  __BASE: {type: STATISTIC, level: MINOR, desc: The event is data share silent access statistic }
+  __BASE: {type: STATISTIC, level: CRITICAL, desc: The event is data share silent access statistic }
   URI: {type: STRING, desc: anonymous uri }
   PROVIDER_BUNDLE_NAME: {type: STRING, desc: provider bundle name }
   CALLER_BUNDLE_NAME: {type: STRING, desc: caller bundle name }
