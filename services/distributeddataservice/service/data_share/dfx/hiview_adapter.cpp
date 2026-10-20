@@ -234,6 +234,8 @@ void DataShareAccessReporter::Record(const std::string &uri, const std::string &
         }
     }
     if (rowCount_.load() > MAX_KEY_COUNT && TryDispatchOverflowFlush()) {
+        ZLOGW("access stats overflow, rowCount:%{public}zu, entries:%{public}zu, uri:%{public}s",
+            rowCount_.load(), entries_.Size(), uriKey.c_str());
         if (executors_ != nullptr) {
             // Flush asynchronously to avoid blocking the calling binder thread.
             // Only due entries are flushed: a forced full flush would report undue
