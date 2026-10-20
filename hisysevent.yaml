@@ -130,5 +130,5 @@ DATA_SHARE_ACCESS_STATISTIC:
   __BASE: {type: STATISTIC, level: CRITICAL, desc: The event is data share silent access statistic }
   URI: {type: STRING, desc: anonymous uri }
   PROVIDER_BUNDLE_NAME: {type: STRING, desc: provider bundle name }
-  CALLER_BUNDLE_NAME: {type: STRING, desc: caller bundle name array }
-  API_CALL_COUNT: {type: STRING, desc: api call count per caller, format insert:N;update:N;delete:N;query:N }
+  CALLER_BUNDLE_NAME: {type: STRING, arrsize: 100, desc: caller bundle name array }
+  API_CALL_COUNT: {type: STRING, arrsize: 100, desc: api call count per caller }
