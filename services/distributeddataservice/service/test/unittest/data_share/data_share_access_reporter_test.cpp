@@ -129,24 +129,61 @@ HWTEST_F(DataShareAccessReporterTest, FlushAll_AggregatedStats_FlushesAll, TestS
 }
 
 /**
- * @tc.name: InvokeData_NotDueStats_KeepsEntries
- * @tc.desc: test InvokeData keeps entries whose report interval has not elapsed
+ * @tc.name: FlushDue_NotDueStats_KeepsEntries
+ * @tc.desc: test FlushDue keeps entries whose report interval has not elapsed
  * @tc.type: FUNC
  * @tc.author: agent
  */
-HWTEST_F(DataShareAccessReporterTest, InvokeData_NotDueStats_KeepsEntries, TestSize.Level1)
+HWTEST_F(DataShareAccessReporterTest, FlushDue_NotDueStats_KeepsEntries, TestSize.Level1)
 {
-    ZLOGI("DataShareAccessReporterTest::InvokeData_NotDueStats_KeepsEntries start");
+    ZLOGI("DataShareAccessReporterTest::FlushDue_NotDueStats_KeepsEntries start");
     auto &reporter = DataShareAccessReporter::GetInstance();
     reporter.FlushAll();
     reporter.Record(TEST_URI, PROVIDER_NAME, CALLER_NAME, FUNC_ID_QUERY, 24);
-    EXPECT_NO_FATAL_FAILURE(reporter.InvokeData());
+    EXPECT_NO_FATAL_FAILURE(reporter.FlushDue());
     EXPECT_EQ(reporter.GetStatsCount(), 1U);
     AccessStatInfo info;
     EXPECT_TRUE(reporter.GetAccessStatInfo(TEST_URI, PROVIDER_NAME, CALLER_NAME, FUNC_ID_QUERY, info));
     EXPECT_EQ(info.count, 1U);
     reporter.FlushAll();
-    ZLOGI("DataShareAccessReporterTest::InvokeData_NotDueStats_KeepsEntries end");
+    ZLOGI("DataShareAccessReporterTest::FlushDue_NotDueStats_KeepsEntries end");
+}
+
+/**
+ * @tc.name: Record_SameUriMultipleCallers_SingleWindowFlush
+ * @tc.desc: test rows of the same uri share one window and are flushed together
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(DataShareAccessReporterTest, Record_SameUriMultipleCallers_SingleWindowFlush, TestSize.Level1)
+{
+    ZLOGI("DataShareAccessReporterTest::Record_SameUriMultipleCallers_SingleWindowFlush start");
+    auto &reporter = DataShareAccessReporter::GetInstance();
+    reporter.FlushAll();
+    std::string callerA = "com.example.caller.a";
+    std::string callerB = "com.example.caller.b";
+    reporter.Record(TEST_URI, PROVIDER_NAME, callerA, FUNC_ID_QUERY, 24);
+    reporter.Record(TEST_URI, PROVIDER_NAME, callerB, FUNC_ID_INSERT, 24);
+    EXPECT_EQ(reporter.GetStatsCount(), 2U);
+    AccessStatInfo first;
+    AccessStatInfo second;
+    EXPECT_TRUE(reporter.GetAccessStatInfo(TEST_URI, PROVIDER_NAME, callerA, FUNC_ID_QUERY, first));
+    EXPECT_TRUE(reporter.GetAccessStatInfo(TEST_URI, PROVIDER_NAME, callerB, FUNC_ID_INSERT, second));
+    // Both rows share the same uri window: identical start time and interval.
+    EXPECT_GT(first.windowStartTime, 0);
+    EXPECT_EQ(first.windowStartTime, second.windowStartTime);
+    EXPECT_EQ(first.reportIntervalHours, 24);
+    EXPECT_EQ(second.reportIntervalHours, 24);
+    // A later interval change of this uri is visible to all rows of the shared window.
+    reporter.Record(TEST_URI, PROVIDER_NAME, callerA, FUNC_ID_QUERY, 2);
+    EXPECT_TRUE(reporter.GetAccessStatInfo(TEST_URI, PROVIDER_NAME, callerB, FUNC_ID_INSERT, second));
+    EXPECT_EQ(second.reportIntervalHours, 2);
+    // All rows of the uri are flushed in one round.
+    reporter.FlushAll();
+    EXPECT_EQ(reporter.GetStatsCount(), 0U);
+    EXPECT_FALSE(reporter.GetAccessStatInfo(TEST_URI, PROVIDER_NAME, callerA, FUNC_ID_QUERY, first));
+    EXPECT_FALSE(reporter.GetAccessStatInfo(TEST_URI, PROVIDER_NAME, callerB, FUNC_ID_INSERT, second));
+    ZLOGI("DataShareAccessReporterTest::Record_SameUriMultipleCallers_SingleWindowFlush end");
 }
 
 /**
@@ -219,22 +256,25 @@ HWTEST_F(DataShareAccessReporterTest, Record_InvalidInterval_KeepsEntryInterval,
 }
 
 /**
- * @tc.name: Record_ExceedsMaxKeyCount_TriggersImmediateFlush
- * @tc.desc: test Record beyond the max key count triggers an immediate flush without executor
+ * @tc.name: Record_ExceedsMaxKeyCount_KeepsUndueEntries
+ * @tc.desc: test overflow flush only flushes due entries and keeps undue ones beyond the key cap
  * @tc.type: FUNC
  * @tc.author: agent
  */
-HWTEST_F(DataShareAccessReporterTest, Record_ExceedsMaxKeyCount_TriggersImmediateFlush, TestSize.Level1)
+HWTEST_F(DataShareAccessReporterTest, Record_ExceedsMaxKeyCount_KeepsUndueEntries, TestSize.Level1)
 {
-    ZLOGI("DataShareAccessReporterTest::Record_ExceedsMaxKeyCount_TriggersImmediateFlush start");
+    ZLOGI("DataShareAccessReporterTest::Record_ExceedsMaxKeyCount_KeepsUndueEntries start");
     auto &reporter = DataShareAccessReporter::GetInstance();
     reporter.FlushAll();
     for (uint32_t i = 0; i <= MAX_KEY_COUNT_FOR_TEST; i++) {
         std::string uri = TEST_URI + "/" + std::to_string(i);
-        reporter.Record(uri, PROVIDER_NAME, CALLER_NAME, FUNC_ID_QUERY, 24);
+        EXPECT_NO_FATAL_FAILURE(reporter.Record(uri, PROVIDER_NAME, CALLER_NAME, FUNC_ID_QUERY, 24));
     }
+    // The overflow flush only flushes due entries, undue ones are kept for their own windows.
+    EXPECT_EQ(reporter.GetStatsCount(), MAX_KEY_COUNT_FOR_TEST + 1U);
+    reporter.FlushAll();
     EXPECT_EQ(reporter.GetStatsCount(), 0U);
-    ZLOGI("DataShareAccessReporterTest::Record_ExceedsMaxKeyCount_TriggersImmediateFlush end");
+    ZLOGI("DataShareAccessReporterTest::Record_ExceedsMaxKeyCount_KeepsUndueEntries end");
 }
 
 /**
@@ -252,75 +292,75 @@ HWTEST_F(DataShareAccessReporterTest, Init_NullptrExecutor_NoFatal, TestSize.Lev
 }
 
 /**
- * @tc.name: InvokeData_EmptyStats_NoFatal
- * @tc.desc: test InvokeData with empty stats does not crash
+ * @tc.name: FlushDue_EmptyStats_NoFatal
+ * @tc.desc: test FlushDue with empty stats does not crash
  * @tc.type: FUNC
  * @tc.author: agent
  */
-HWTEST_F(DataShareAccessReporterTest, InvokeData_EmptyStats_NoFatal, TestSize.Level1)
+HWTEST_F(DataShareAccessReporterTest, FlushDue_EmptyStats_NoFatal, TestSize.Level1)
 {
-    ZLOGI("DataShareAccessReporterTest::InvokeData_EmptyStats_NoFatal start");
+    ZLOGI("DataShareAccessReporterTest::FlushDue_EmptyStats_NoFatal start");
     auto &reporter = DataShareAccessReporter::GetInstance();
     reporter.FlushAll();
     EXPECT_EQ(reporter.GetStatsCount(), 0U);
-    EXPECT_NO_FATAL_FAILURE(reporter.InvokeData());
-    ZLOGI("DataShareAccessReporterTest::InvokeData_EmptyStats_NoFatal end");
+    EXPECT_NO_FATAL_FAILURE(reporter.FlushDue());
+    ZLOGI("DataShareAccessReporterTest::FlushDue_EmptyStats_NoFatal end");
 }
 /**
- * @tc.name: AnonymousUri_LongPath_KeepsBundleNameAndTail
- * @tc.desc: test AnonymousUri keeps bundleName and last 10 chars of the rest without scheme prefix
+ * @tc.name: AnonymousUri_NoQuery_KeepsUriTail
+ * @tc.desc: test AnonymousUri keeps the last 10 chars of the uri when there is no query
  * @tc.type: FUNC
  * @tc.author: agent
  */
-HWTEST_F(DataShareAccessReporterTest, AnonymousUri_LongPath_KeepsBundleNameAndTail, TestSize.Level1)
+HWTEST_F(DataShareAccessReporterTest, AnonymousUri_NoQuery_KeepsUriTail, TestSize.Level1)
 {
-    ZLOGI("DataShareAccessReporterTest::AnonymousUri_LongPath_KeepsBundleNameAndTail start");
+    ZLOGI("DataShareAccessReporterTest::AnonymousUri_NoQuery_KeepsUriTail start");
     std::string uri = "datashare://com.example.provider/aaaabbbbccccdddd";
-    EXPECT_EQ(DataShareAccessReporter::AnonymousUri(uri), "com.example.provider******bbccccdddd");
+    EXPECT_EQ(DataShareAccessReporter::AnonymousUri(uri), "******bbccccdddd");
     std::string longUri = "datashare://com.example.provider/store/table_weather";
-    EXPECT_EQ(DataShareAccessReporter::AnonymousUri(longUri), "com.example.provider******le_weather");
-    ZLOGI("DataShareAccessReporterTest::AnonymousUri_LongPath_KeepsBundleNameAndTail end");
+    EXPECT_EQ(DataShareAccessReporter::AnonymousUri(longUri), "******le_weather");
+    ZLOGI("DataShareAccessReporterTest::AnonymousUri_NoQuery_KeepsUriTail end");
 }
 
 /**
- * @tc.name: AnonymousUri_ShortPath_ReturnsBundleNameAndPath
- * @tc.desc: test AnonymousUri returns bundleName and original path when the path is not longer than 10 chars
+ * @tc.name: AnonymousUri_WithQuery_KeepsTailBeforeQueryToEnd
+ * @tc.desc: test AnonymousUri keeps from 10 chars before '?' to the uri end when a query exists
  * @tc.type: FUNC
  * @tc.author: agent
  */
-HWTEST_F(DataShareAccessReporterTest, AnonymousUri_ShortPath_ReturnsBundleNameAndPath, TestSize.Level1)
+HWTEST_F(DataShareAccessReporterTest, AnonymousUri_WithQuery_KeepsTailBeforeQueryToEnd, TestSize.Level1)
 {
-    ZLOGI("DataShareAccessReporterTest::AnonymousUri_ShortPath_ReturnsBundleNameAndPath start");
-    std::string uri = "datashare://com.example.provider/tbl";
-    EXPECT_EQ(DataShareAccessReporter::AnonymousUri(uri), "com.example.provider/tbl");
-    std::string uriWithoutPath = "datashare://com.example.provider";
-    EXPECT_EQ(DataShareAccessReporter::AnonymousUri(uriWithoutPath), "com.example.provider");
-    ZLOGI("DataShareAccessReporterTest::AnonymousUri_ShortPath_ReturnsBundleNameAndPath end");
+    ZLOGI("DataShareAccessReporterTest::AnonymousUri_WithQuery_KeepsTailBeforeQueryToEnd start");
+    std::string uri = "datashare:///settings/data?Proxy=true";
+    EXPECT_EQ(DataShareAccessReporter::AnonymousUri(uri), "******tings/data?Proxy=true");
+    ZLOGI("DataShareAccessReporterTest::AnonymousUri_WithQuery_KeepsTailBeforeQueryToEnd end");
 }
 
 /**
- * @tc.name: AnonymousUri_NoScheme_FallsBackToDefaultAnonymous
- * @tc.desc: test AnonymousUri falls back to URIUtils::Anonymous for uri without scheme
+ * @tc.name: AnonymousUri_Edges_ClampToUriStart
+ * @tc.desc: test AnonymousUri clamps to the uri start when the cut point is within the first 10 chars
  * @tc.type: FUNC
  * @tc.author: agent
  */
-HWTEST_F(DataShareAccessReporterTest, AnonymousUri_NoScheme_FallsBackToDefaultAnonymous, TestSize.Level1)
+HWTEST_F(DataShareAccessReporterTest, AnonymousUri_Edges_ClampToUriStart, TestSize.Level1)
 {
-    ZLOGI("DataShareAccessReporterTest::AnonymousUri_NoScheme_FallsBackToDefaultAnonymous start");
-    std::string uri = "abcdefghijklmnopqrstuvwxyz";
-    EXPECT_EQ(DataShareAccessReporter::AnonymousUri(uri), "******qrstuvwxyz");
-    ZLOGI("DataShareAccessReporterTest::AnonymousUri_NoScheme_FallsBackToDefaultAnonymous end");
+    ZLOGI("DataShareAccessReporterTest::AnonymousUri_Edges_ClampToUriStart start");
+    std::string shortUri = "datashare:///tbl";
+    EXPECT_EQ(DataShareAccessReporter::AnonymousUri(shortUri), "******are:///tbl");
+    std::string earlyQuery = "short?Proxy=true";
+    EXPECT_EQ(DataShareAccessReporter::AnonymousUri(earlyQuery), "******short?Proxy=true");
+    ZLOGI("DataShareAccessReporterTest::AnonymousUri_Edges_ClampToUriStart end");
 }
 
 /**
- * @tc.name: Record_UsesAnonymousUriKey_KeepsBundleNamePrefix
+ * @tc.name: Record_AnonymizedKey_ConsistentLookup
  * @tc.desc: test Record aggregates keys with the bundleName prefix kept by AnonymousUri
  * @tc.type: FUNC
  * @tc.author: agent
  */
-HWTEST_F(DataShareAccessReporterTest, Record_UsesAnonymousUriKey_KeepsBundleNamePrefix, TestSize.Level1)
+HWTEST_F(DataShareAccessReporterTest, Record_AnonymizedKey_ConsistentLookup, TestSize.Level1)
 {
-    ZLOGI("DataShareAccessReporterTest::Record_UsesAnonymousUriKey_KeepsBundleNamePrefix start");
+    ZLOGI("DataShareAccessReporterTest::Record_AnonymizedKey_ConsistentLookup start");
     auto &reporter = DataShareAccessReporter::GetInstance();
     reporter.FlushAll();
     reporter.Record("datashare://com.example.provider/aaaabbbbccccdddd", PROVIDER_NAME, CALLER_NAME,
@@ -329,6 +369,52 @@ HWTEST_F(DataShareAccessReporterTest, Record_UsesAnonymousUriKey_KeepsBundleName
     EXPECT_TRUE(reporter.GetAccessStatInfo("datashare://com.example.provider/aaaabbbbccccdddd", PROVIDER_NAME,
         CALLER_NAME, FUNC_ID_QUERY, info));
     EXPECT_EQ(info.count, 1U);
-    ZLOGI("DataShareAccessReporterTest::Record_UsesAnonymousUriKey_KeepsBundleNamePrefix end");
+    ZLOGI("DataShareAccessReporterTest::Record_AnonymizedKey_ConsistentLookup end");
+}
+/**
+ * @tc.name: FormatApiCounts_EmptyMap_ReturnsAllZeroCounts
+ * @tc.desc: test FormatApiCounts returns fixed four items with zero values for an empty map
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(DataShareAccessReporterTest, FormatApiCounts_EmptyMap_ReturnsAllZeroCounts, TestSize.Level1)
+{
+    ZLOGI("DataShareAccessReporterTest::FormatApiCounts_EmptyMap_ReturnsAllZeroCounts start");
+    std::map<uint32_t, uint64_t> apiCounts;
+    EXPECT_EQ(DataShareAccessReporter::FormatApiCounts(apiCounts), "insert:0;update:0;delete:0;query:0");
+    ZLOGI("DataShareAccessReporterTest::FormatApiCounts_EmptyMap_ReturnsAllZeroCounts end");
+}
+
+/**
+ * @tc.name: FormatApiCounts_PartialApis_FillsZeroAndKeepsOrder
+ * @tc.desc: test FormatApiCounts fills zero for missing apis and keeps the fixed order
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(DataShareAccessReporterTest, FormatApiCounts_PartialApis_FillsZeroAndKeepsOrder, TestSize.Level1)
+{
+    ZLOGI("DataShareAccessReporterTest::FormatApiCounts_PartialApis_FillsZeroAndKeepsOrder start");
+    std::map<uint32_t, uint64_t> apiCounts;
+    apiCounts[static_cast<uint32_t>(IDataShareService::DATA_SHARE_SERVICE_CMD_QUERY)] = 20;
+    EXPECT_EQ(DataShareAccessReporter::FormatApiCounts(apiCounts), "insert:0;update:0;delete:0;query:20");
+    ZLOGI("DataShareAccessReporterTest::FormatApiCounts_PartialApis_FillsZeroAndKeepsOrder end");
+}
+
+/**
+ * @tc.name: FormatApiCounts_AllApis_FormatsFixedOrder
+ * @tc.desc: test FormatApiCounts formats all four apis in the fixed order
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(DataShareAccessReporterTest, FormatApiCounts_AllApis_FormatsFixedOrder, TestSize.Level1)
+{
+    ZLOGI("DataShareAccessReporterTest::FormatApiCounts_AllApis_FormatsFixedOrder start");
+    std::map<uint32_t, uint64_t> apiCounts;
+    apiCounts[static_cast<uint32_t>(IDataShareService::DATA_SHARE_SERVICE_CMD_INSERTEX)] = 10;
+    apiCounts[static_cast<uint32_t>(IDataShareService::DATA_SHARE_SERVICE_CMD_UPDATEEX)] = 20;
+    apiCounts[static_cast<uint32_t>(IDataShareService::DATA_SHARE_SERVICE_CMD_DELETEEX)] = 1;
+    apiCounts[static_cast<uint32_t>(IDataShareService::DATA_SHARE_SERVICE_CMD_QUERY)] = 20;
+    EXPECT_EQ(DataShareAccessReporter::FormatApiCounts(apiCounts), "insert:10;update:20;delete:1;query:20");
+    ZLOGI("DataShareAccessReporterTest::FormatApiCounts_AllApis_FormatsFixedOrder end");
 }
 } // namespace OHOS::Test
