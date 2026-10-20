@@ -155,14 +155,14 @@ DataShareAccessReporter &DataShareAccessReporter::GetInstance()
 std::string DataShareAccessReporter::AnonymousUri(const std::string &uri)
 {
     // The event carries the provider bundleName as a dedicated field, so the uri only
-    // keeps the last URI_KEEP_LENGTH chars before the query: no query means the uri
-    // tail, a query means from 10 chars before '?' to the end (query included).
+    // keeps 10 chars: the uri tail when there is no query, or the 10 chars right
+    // before '?' when a query exists (the query itself is dropped).
     size_t cut = uri.find('?');
     if (cut == std::string::npos) {
         cut = uri.length();
     }
-    cut = (cut >= URI_KEEP_LENGTH) ? cut - URI_KEEP_LENGTH : 0;
-    return URI_ANONYMOUS_MARK + uri.substr(cut);
+    size_t start = (cut >= URI_KEEP_LENGTH) ? cut - URI_KEEP_LENGTH : 0;
+    return URI_ANONYMOUS_MARK + uri.substr(start, cut - start);
 }
 
 std::string DataShareAccessReporter::FormatApiCounts(const std::map<uint32_t, uint64_t> &apiCounts)

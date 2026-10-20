@@ -323,17 +323,17 @@ HWTEST_F(DataShareAccessReporterTest, AnonymousUri_NoQuery_KeepsUriTail, TestSiz
 }
 
 /**
- * @tc.name: AnonymousUri_WithQuery_KeepsTailBeforeQueryToEnd
- * @tc.desc: test AnonymousUri keeps from 10 chars before '?' to the uri end when a query exists
+ * @tc.name: AnonymousUri_WithQuery_KeepsTenCharsBeforeQuery
+ * @tc.desc: test AnonymousUri keeps only the 10 chars before '?' and drops the query
  * @tc.type: FUNC
  * @tc.author: agent
  */
-HWTEST_F(DataShareAccessReporterTest, AnonymousUri_WithQuery_KeepsTailBeforeQueryToEnd, TestSize.Level1)
+HWTEST_F(DataShareAccessReporterTest, AnonymousUri_WithQuery_KeepsTenCharsBeforeQuery, TestSize.Level1)
 {
-    ZLOGI("DataShareAccessReporterTest::AnonymousUri_WithQuery_KeepsTailBeforeQueryToEnd start");
+    ZLOGI("DataShareAccessReporterTest::AnonymousUri_WithQuery_KeepsTenCharsBeforeQuery start");
     std::string uri = "datashare:///settings/data?Proxy=true";
-    EXPECT_EQ(DataShareAccessReporter::AnonymousUri(uri), "******tings/data?Proxy=true");
-    ZLOGI("DataShareAccessReporterTest::AnonymousUri_WithQuery_KeepsTailBeforeQueryToEnd end");
+    EXPECT_EQ(DataShareAccessReporter::AnonymousUri(uri), "******tings/data");
+    ZLOGI("DataShareAccessReporterTest::AnonymousUri_WithQuery_KeepsTenCharsBeforeQuery end");
 }
 
 /**
@@ -348,7 +348,7 @@ HWTEST_F(DataShareAccessReporterTest, AnonymousUri_Edges_ClampToUriStart, TestSi
     std::string shortUri = "datashare:///tbl";
     EXPECT_EQ(DataShareAccessReporter::AnonymousUri(shortUri), "******are:///tbl");
     std::string earlyQuery = "short?Proxy=true";
-    EXPECT_EQ(DataShareAccessReporter::AnonymousUri(earlyQuery), "******short?Proxy=true");
+    EXPECT_EQ(DataShareAccessReporter::AnonymousUri(earlyQuery), "******short");
     ZLOGI("DataShareAccessReporterTest::AnonymousUri_Edges_ClampToUriStart end");
 }
 
