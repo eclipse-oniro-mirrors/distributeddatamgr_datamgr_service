@@ -243,7 +243,7 @@ void PublishedDataSubscriberManager::SetObserversNotifiedOnEnabled(const std::ve
     });
 }
 
-PublishedDataKey::PublishedDataKey(const std::string &key, const std::string &bundle, const int64_t subscriberId,
+PublishedDataKey::PublishedDataKey(const std::string &key, const std::string &bundle, int64_t subscriberId,
     uint32_t tokenId)
     : key(key), bundleName(bundle), subscriberId(subscriberId), tokenId(tokenId)
 {
