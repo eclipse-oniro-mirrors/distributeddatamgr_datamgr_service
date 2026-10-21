@@ -96,4 +96,11 @@ group("fuzztest") {
       "utdservicetypedescriptors_fuzzer:fuzztest"
     ]
   }
+
+  if (datamgr_service_data_fabric_address) {
+    deps += [
+      "datafabricaddresssubscribe_fuzzer:fuzztest",
+      "datafabricaddressunsubscribe_fuzzer:fuzztest",
+    ]
+  }
 }

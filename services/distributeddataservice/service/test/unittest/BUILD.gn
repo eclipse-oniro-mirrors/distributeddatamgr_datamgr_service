@@ -53,6 +53,10 @@ group("unittest") {
     deps += [ "rdb:unittests" ]
   }
 
+  if (datamgr_service_data_fabric_address) {
+    deps += [ "data_fabric_address:unittests" ]
+  }
+
   if (datamgr_service_udmf) {
     deps += [
       "udmf:unittests",

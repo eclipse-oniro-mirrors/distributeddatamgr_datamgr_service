@@ -46,7 +46,8 @@
             "datamgr_service_kvdb",
             "datamgr_service_object",
             "datamgr_service_data_share",
-            "datamgr_service_distributed"
+            "datamgr_service_distributed",
+            "datamgr_service_data_fabric_address"
         ],
         "adapted_system_type": [
             "standard"
@@ -100,7 +101,11 @@
                 "json",
                 "dmsfwk",
                 "data_object",
-                "icu"
+                "icu",
+                "distributed_notification_service",
+                "location",
+                "preferences",
+                "init"
             ],
             "third_party": [
                 "libuv",

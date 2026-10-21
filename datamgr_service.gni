@@ -106,6 +106,8 @@ declare_args() {
   datamgr_service_data_share = true
 
   datamgr_service_distributed = true
+
+  datamgr_service_data_fabric_address = true
 }
 
 if (current_cpu == "arm64" || current_cpu == "x64") {
