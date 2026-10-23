@@ -212,9 +212,11 @@ void DataShareAccessReporter::Record(const std::string &uri, const std::string &
                 entry.providerBundleName = providerBundleName;
             }
             // The interval is configured at uri granularity: the latest configuration
-            // of this uri wins (clamped to [MIN, MAX]), other uris are never affected.
+            // of this uri wins (below the minimum is ignored, above the maximum falls
+            // back to the default), other uris are never affected.
             if (reportIntervalHours >= MIN_REPORT_INTERVAL_HOURS) {
-                entry.reportIntervalHours = std::min(reportIntervalHours, MAX_REPORT_INTERVAL_HOURS);
+                entry.reportIntervalHours = (reportIntervalHours > MAX_REPORT_INTERVAL_HOURS)
+                    ? DEFAULT_REPORT_INTERVAL_HOURS : reportIntervalHours;
             }
             // rowCount_ bounds the caller count across all entries (memory cap metric).
             std::map<uint32_t, uint64_t> &apiCounts = entry.callers[callerBundleName];

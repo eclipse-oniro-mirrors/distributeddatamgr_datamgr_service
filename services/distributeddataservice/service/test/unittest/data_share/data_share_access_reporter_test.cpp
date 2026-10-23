@@ -16,7 +16,9 @@
 
 #include <gtest/gtest.h>
 
+#include <chrono>
 #include <string>
+#include <thread>
 
 #include "hiview_adapter.h"
 #include "log_print.h"
@@ -37,10 +39,31 @@ namespace {
 const std::string TEST_URI = "datashare:///com.example.provider/store/table";
 const std::string PROVIDER_NAME = "com.example.provider";
 const std::string CALLER_NAME = "com.example.caller";
+const std::string OTHER_URI = "datashare://com.example.other/store/table";
+const std::string OTHER_PROVIDER = "com.example.other";
 constexpr uint32_t FUNC_ID_QUERY = 1;
 constexpr uint32_t FUNC_ID_INSERT = 2;
 // Same value as MAX_KEY_COUNT defined in hiview_adapter.cpp
 constexpr uint32_t MAX_KEY_COUNT_FOR_TEST = 5000;
+// Same value as MAX_REPORT_INTERVAL_HOURS defined in hiview_adapter.cpp
+constexpr int32_t MAX_INTERVAL_HOURS_FOR_TEST = 48;
+constexpr int64_t TWO_HOURS_MS = 2LL * 3600 * 1000;
+constexpr int64_t THROTTLE_WINDOW_MS = 60LL * 1000;
+// Time for the asynchronous overflow flush task to complete on the executor.
+constexpr int ASYNC_FLUSH_WAIT_MS = 200;
+// Same value as MAX_CALLERS_PER_EVENT defined in hiview_adapter.cpp
+constexpr uint32_t MAX_CALLERS_PER_EVENT_FOR_TEST = 100;
+
+// Makes the uri entry's window look 2 hours old so it is due for flush. The interval
+// floor is 1 hour so time passage cannot be awaited in tests.
+void MakeEntryDue(DataShareAccessReporter &reporter, const std::string &uri, const std::string &provider)
+{
+    reporter.entries_.Compute(DataShareAccessReporter::MakeUriKey(uri, provider),
+        [](const std::string &, UriEntry &entry) {
+            entry.windowStartTime -= TWO_HOURS_MS;
+            return true;
+        });
+}
 } // namespace
 
 /**
@@ -87,7 +110,7 @@ HWTEST_F(DataShareAccessReporterTest, Record_SameKeyMultipleTimes_AggregatesCoun
 
 /**
  * @tc.name: Record_DifferentFuncId_CreatesSeparateEntry
- * @tc.desc: test Record with a different funcId creates a separate statistics entry
+ * @tc.desc: test Record with a different funcId creates a separate api count within the same caller
  * @tc.type: FUNC
  * @tc.author: agent
  */
@@ -98,7 +121,8 @@ HWTEST_F(DataShareAccessReporterTest, Record_DifferentFuncId_CreatesSeparateEntr
     reporter.FlushAll();
     reporter.Record(TEST_URI, PROVIDER_NAME, CALLER_NAME, FUNC_ID_QUERY, 24);
     reporter.Record(TEST_URI, PROVIDER_NAME, CALLER_NAME, FUNC_ID_INSERT, 24);
-    EXPECT_EQ(reporter.GetStatsCount(), 2U);
+    // rowCount counts callers: two funcIds of the same caller share one caller count.
+    EXPECT_EQ(reporter.GetStatsCount(), 1U);
     AccessStatInfo queryInfo;
     AccessStatInfo insertInfo;
     EXPECT_TRUE(reporter.GetAccessStatInfo(TEST_URI, PROVIDER_NAME, CALLER_NAME, FUNC_ID_QUERY, queryInfo));
@@ -253,6 +277,25 @@ HWTEST_F(DataShareAccessReporterTest, Record_InvalidInterval_KeepsEntryInterval,
     EXPECT_EQ(info.reportIntervalHours, 24);
     reporter.FlushAll();
     ZLOGI("DataShareAccessReporterTest::Record_InvalidInterval_KeepsEntryInterval end");
+}
+
+/**
+ * @tc.name: Record_IntervalAboveMax_FallsBackToDefault
+ * @tc.desc: test Record with interval above the maximum falls back to the default interval
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(DataShareAccessReporterTest, Record_IntervalAboveMax_FallsBackToDefault, TestSize.Level1)
+{
+    ZLOGI("DataShareAccessReporterTest::Record_IntervalAboveMax_FallsBackToDefault start");
+    auto &reporter = DataShareAccessReporter::GetInstance();
+    reporter.FlushAll();
+    reporter.Record(TEST_URI, PROVIDER_NAME, CALLER_NAME, FUNC_ID_QUERY, MAX_INTERVAL_HOURS_FOR_TEST + 1);
+    AccessStatInfo info;
+    EXPECT_TRUE(reporter.GetAccessStatInfo(TEST_URI, PROVIDER_NAME, CALLER_NAME, FUNC_ID_QUERY, info));
+    EXPECT_EQ(info.reportIntervalHours, 24);
+    reporter.FlushAll();
+    ZLOGI("DataShareAccessReporterTest::Record_IntervalAboveMax_FallsBackToDefault end");
 }
 
 /**
@@ -416,5 +459,199 @@ HWTEST_F(DataShareAccessReporterTest, FormatApiCounts_AllApis_FormatsFixedOrder,
     apiCounts[static_cast<uint32_t>(IDataShareService::DATA_SHARE_SERVICE_CMD_QUERY)] = 20;
     EXPECT_EQ(DataShareAccessReporter::FormatApiCounts(apiCounts), "insert:10;update:20;delete:1;query:20");
     ZLOGI("DataShareAccessReporterTest::FormatApiCounts_AllApis_FormatsFixedOrder end");
+}
+/**
+ * @tc.name: GetAccessStatInfo_UnknownCallerOrFunc_ReturnsFalse
+ * @tc.desc: test GetAccessStatInfo returns false for an unrecorded caller or funcId
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(DataShareAccessReporterTest, GetAccessStatInfo_UnknownCallerOrFunc_ReturnsFalse, TestSize.Level1)
+{
+    ZLOGI("DataShareAccessReporterTest::GetAccessStatInfo_UnknownCallerOrFunc_ReturnsFalse start");
+    auto &reporter = DataShareAccessReporter::GetInstance();
+    reporter.FlushAll();
+    reporter.Record(TEST_URI, PROVIDER_NAME, CALLER_NAME, FUNC_ID_QUERY, 24);
+    AccessStatInfo info;
+    EXPECT_FALSE(reporter.GetAccessStatInfo(TEST_URI, PROVIDER_NAME, "com.example.unknown.caller",
+        FUNC_ID_QUERY, info));
+    EXPECT_FALSE(reporter.GetAccessStatInfo(TEST_URI, PROVIDER_NAME, CALLER_NAME, FUNC_ID_INSERT, info));
+    EXPECT_TRUE(reporter.GetAccessStatInfo(TEST_URI, PROVIDER_NAME, CALLER_NAME, FUNC_ID_QUERY, info));
+    reporter.FlushAll();
+    ZLOGI("DataShareAccessReporterTest::GetAccessStatInfo_UnknownCallerOrFunc_ReturnsFalse end");
+}
+
+/**
+ * @tc.name: FlushDue_DueEntry_IsFlushedAndReported
+ * @tc.desc: test FlushDue flushes the entry whose report interval has elapsed
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(DataShareAccessReporterTest, FlushDue_DueEntry_IsFlushedAndReported, TestSize.Level1)
+{
+    ZLOGI("DataShareAccessReporterTest::FlushDue_DueEntry_IsFlushedAndReported start");
+    auto &reporter = DataShareAccessReporter::GetInstance();
+    reporter.FlushAll();
+    reporter.Record(TEST_URI, PROVIDER_NAME, CALLER_NAME, FUNC_ID_QUERY, 24);
+    MakeEntryDue(reporter, TEST_URI, PROVIDER_NAME);
+    EXPECT_NO_FATAL_FAILURE(reporter.FlushDue());
+    EXPECT_EQ(reporter.GetStatsCount(), 0U);
+    AccessStatInfo info;
+    EXPECT_FALSE(reporter.GetAccessStatInfo(TEST_URI, PROVIDER_NAME, CALLER_NAME, FUNC_ID_QUERY, info));
+    ZLOGI("DataShareAccessReporterTest::FlushDue_DueEntry_IsFlushedAndReported end");
+}
+
+/**
+ * @tc.name: Record_OverflowThrottled_RejectsDispatch
+ * @tc.desc: test overflow dispatch is rejected when the last dispatch is within the throttle window
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(DataShareAccessReporterTest, Record_OverflowThrottled_RejectsDispatch, TestSize.Level1)
+{
+    ZLOGI("DataShareAccessReporterTest::Record_OverflowThrottled_RejectsDispatch start");
+    auto &reporter = DataShareAccessReporter::GetInstance();
+    reporter.FlushAll();
+    reporter.Record(TEST_URI, PROVIDER_NAME, CALLER_NAME, FUNC_ID_QUERY, 24);
+    MakeEntryDue(reporter, TEST_URI, PROVIDER_NAME);
+    reporter.rowCount_.store(MAX_KEY_COUNT_FOR_TEST + 1);
+    reporter.lastOverflowFlushMs_.store(reporter.NowMs() - THROTTLE_WINDOW_MS / 2);
+    reporter.Record(OTHER_URI, OTHER_PROVIDER, CALLER_NAME, FUNC_ID_QUERY, 24);
+    // Throttled: no flush is dispatched, the due entry is kept.
+    EXPECT_FALSE(reporter.overflowFlushPending_.load());
+    AccessStatInfo info;
+    EXPECT_TRUE(reporter.GetAccessStatInfo(TEST_URI, PROVIDER_NAME, CALLER_NAME, FUNC_ID_QUERY, info));
+    reporter.FlushAll();
+    reporter.rowCount_.store(0);
+    reporter.lastOverflowFlushMs_.store(0);
+    ZLOGI("DataShareAccessReporterTest::Record_OverflowThrottled_RejectsDispatch end");
+}
+
+/**
+ * @tc.name: Record_OverflowPendingOccupied_RejectsDispatch
+ * @tc.desc: test overflow dispatch is rejected when another overflow flush is still pending
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(DataShareAccessReporterTest, Record_OverflowPendingOccupied_RejectsDispatch, TestSize.Level1)
+{
+    ZLOGI("DataShareAccessReporterTest::Record_OverflowPendingOccupied_RejectsDispatch start");
+    auto &reporter = DataShareAccessReporter::GetInstance();
+    reporter.FlushAll();
+    reporter.Record(TEST_URI, PROVIDER_NAME, CALLER_NAME, FUNC_ID_QUERY, 24);
+    MakeEntryDue(reporter, TEST_URI, PROVIDER_NAME);
+    reporter.rowCount_.store(MAX_KEY_COUNT_FOR_TEST + 1);
+    reporter.lastOverflowFlushMs_.store(0);
+    reporter.overflowFlushPending_.store(true);
+    reporter.Record(OTHER_URI, OTHER_PROVIDER, CALLER_NAME, FUNC_ID_QUERY, 24);
+    // Pending flag occupied: no flush is dispatched, the due entry is kept.
+    EXPECT_TRUE(reporter.overflowFlushPending_.load());
+    AccessStatInfo info;
+    EXPECT_TRUE(reporter.GetAccessStatInfo(TEST_URI, PROVIDER_NAME, CALLER_NAME, FUNC_ID_QUERY, info));
+    reporter.FlushAll();
+    reporter.rowCount_.store(0);
+    reporter.overflowFlushPending_.store(false);
+    ZLOGI("DataShareAccessReporterTest::Record_OverflowPendingOccupied_RejectsDispatch end");
+}
+
+/**
+ * @tc.name: Record_OverflowThrottleExpired_AllowsDispatch
+ * @tc.desc: test overflow dispatch is allowed again once the throttle window has elapsed
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(DataShareAccessReporterTest, Record_OverflowThrottleExpired_AllowsDispatch, TestSize.Level1)
+{
+    ZLOGI("DataShareAccessReporterTest::Record_OverflowThrottleExpired_AllowsDispatch start");
+    auto &reporter = DataShareAccessReporter::GetInstance();
+    reporter.FlushAll();
+    reporter.Record(TEST_URI, PROVIDER_NAME, CALLER_NAME, FUNC_ID_QUERY, 24);
+    MakeEntryDue(reporter, TEST_URI, PROVIDER_NAME);
+    reporter.rowCount_.store(MAX_KEY_COUNT_FOR_TEST + 1);
+    reporter.lastOverflowFlushMs_.store(reporter.NowMs() - THROTTLE_WINDOW_MS - 1000);
+    reporter.Record(OTHER_URI, OTHER_PROVIDER, CALLER_NAME, FUNC_ID_QUERY, 24);
+    // Throttle expired: the dispatch runs synchronously without an executor and the
+    // due entry is flushed; the pending flag is reset when the flush completes.
+    EXPECT_FALSE(reporter.overflowFlushPending_.load());
+    AccessStatInfo info;
+    EXPECT_FALSE(reporter.GetAccessStatInfo(TEST_URI, PROVIDER_NAME, CALLER_NAME, FUNC_ID_QUERY, info));
+    EXPECT_TRUE(reporter.GetAccessStatInfo(OTHER_URI, OTHER_PROVIDER, CALLER_NAME, FUNC_ID_QUERY, info));
+    reporter.FlushAll();
+    reporter.rowCount_.store(0);
+    reporter.lastOverflowFlushMs_.store(0);
+    ZLOGI("DataShareAccessReporterTest::Record_OverflowThrottleExpired_AllowsDispatch end");
+}
+
+/**
+ * @tc.name: Record_ManyCallers_ShardedIntoMultipleEvents
+ * @tc.desc: test FlushAll shards the caller array into multiple events beyond the per-event cap
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(DataShareAccessReporterTest, Record_ManyCallers_ShardedIntoMultipleEvents, TestSize.Level1)
+{
+    ZLOGI("DataShareAccessReporterTest::Record_ManyCallers_ShardedIntoMultipleEvents start");
+    auto &reporter = DataShareAccessReporter::GetInstance();
+    reporter.FlushAll();
+    for (uint32_t i = 0; i <= MAX_CALLERS_PER_EVENT_FOR_TEST; i++) {
+        reporter.Record(TEST_URI, PROVIDER_NAME, "com.example.caller." + std::to_string(i), FUNC_ID_QUERY, 24);
+    }
+    EXPECT_EQ(reporter.GetStatsCount(), MAX_CALLERS_PER_EVENT_FOR_TEST + 1U);
+    EXPECT_NO_FATAL_FAILURE(reporter.FlushAll());
+    EXPECT_EQ(reporter.GetStatsCount(), 0U);
+    ZLOGI("DataShareAccessReporterTest::Record_ManyCallers_ShardedIntoMultipleEvents end");
+}
+
+/**
+ * @tc.name: Record_WithExecutor_SchedulesAndReschedulesTimer
+ * @tc.desc: test Record schedules the one-shot timer with a real executor and reschedules earlier
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(DataShareAccessReporterTest, Record_WithExecutor_SchedulesAndReschedulesTimer, TestSize.Level1)
+{
+    ZLOGI("DataShareAccessReporterTest::Record_WithExecutor_SchedulesAndReschedulesTimer start");
+    auto &reporter = DataShareAccessReporter::GetInstance();
+    reporter.Init(std::make_shared<ExecutorPool>(2, 1));
+    reporter.FlushAll();
+    EXPECT_EQ(reporter.nextTaskId_, ExecutorPool::INVALID_TASK_ID);
+    // First record schedules the one-shot timer at its due time.
+    reporter.Record(TEST_URI, PROVIDER_NAME, CALLER_NAME, FUNC_ID_QUERY, 48);
+    EXPECT_NE(reporter.nextTaskId_, ExecutorPool::INVALID_TASK_ID);
+    // A uri due earlier removes the pending task and reschedules earlier.
+    reporter.Record(OTHER_URI, OTHER_PROVIDER, CALLER_NAME, FUNC_ID_QUERY, 1);
+    EXPECT_NE(reporter.nextTaskId_, ExecutorPool::INVALID_TASK_ID);
+    // A record of an existing window whose due is not earlier keeps the pending task.
+    reporter.Record(TEST_URI, PROVIDER_NAME, CALLER_NAME, FUNC_ID_INSERT, 48);
+    // Flushing everything cancels the timer by removing the real pending task.
+    reporter.FlushAll();
+    EXPECT_EQ(reporter.nextTaskId_, ExecutorPool::INVALID_TASK_ID);
+    EXPECT_EQ(reporter.GetStatsCount(), 0U);
+    ZLOGI("DataShareAccessReporterTest::Record_WithExecutor_SchedulesAndReschedulesTimer end");
+}
+
+/**
+ * @tc.name: Record_OverflowAsyncDispatch_WithExecutor
+ * @tc.desc: test overflow flush is dispatched asynchronously to the executor when available
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(DataShareAccessReporterTest, Record_OverflowAsyncDispatch_WithExecutor, TestSize.Level1)
+{
+    ZLOGI("DataShareAccessReporterTest::Record_OverflowAsyncDispatch_WithExecutor start");
+    auto &reporter = DataShareAccessReporter::GetInstance();
+    reporter.FlushAll();
+    EXPECT_EQ(reporter.GetStatsCount(), 0U);
+    reporter.rowCount_.store(MAX_KEY_COUNT_FOR_TEST + 1);
+    reporter.lastOverflowFlushMs_.store(0);
+    reporter.Record(TEST_URI, PROVIDER_NAME, CALLER_NAME, FUNC_ID_QUERY, 24);
+    // The overflow flush runs on the executor; wait for it to complete and reset the flag.
+    std::this_thread::sleep_for(std::chrono::milliseconds(ASYNC_FLUSH_WAIT_MS));
+    EXPECT_FALSE(reporter.overflowFlushPending_.load());
+    // Undue entries are kept by the overflow flush.
+    EXPECT_EQ(reporter.GetStatsCount(), MAX_KEY_COUNT_FOR_TEST + 2U);
+    reporter.FlushAll();
+    reporter.rowCount_.store(0);
+    ZLOGI("DataShareAccessReporterTest::Record_OverflowAsyncDispatch_WithExecutor end");
 }
 } // namespace OHOS::Test
