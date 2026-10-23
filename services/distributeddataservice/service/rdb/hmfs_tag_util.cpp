@@ -44,7 +44,7 @@ struct HmfsKeyFileArgs {
 };
 
 constexpr unsigned long HMFS_IOC_KEY_FILE_SETFLAGS = _IOW(HMFS_IOCTL_MAGIC, 72, HmfsKeyFileArgs);
-constexpr unsigned long HMFS_IOC_KEY_FILE_GETFLAGS = _IOR(HMFS_IOCTL_MAGIC, 73, HmfsKeyFileArgs);
+constexpr unsigned long HMFS_IOC_KEY_FILE_GETFLAGS = _IOWR(HMFS_IOCTL_MAGIC, 73, HmfsKeyFileArgs);
 constexpr unsigned long HMFS_IOC_KEY_FILE_CLEARFLAGS = _IOW(HMFS_IOCTL_MAGIC, 74, HmfsKeyFileArgs);
 } // namespace
 
