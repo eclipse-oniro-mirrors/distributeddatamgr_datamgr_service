@@ -823,10 +823,18 @@ void KVDBGeneralStore::ObserverProxy::OnChange(DBOrigin origin, const std::strin
 
 void KVDBGeneralStore::ObserverProxy::OnChange(const DistributedDB::KvStoreChangedData &data)
 {
-    if (!HasWatcher() || store_ == nullptr) {
+    if (store_ == nullptr) {
         return;
     }
-    store_->PostDataChange();
+    if (store_->isCacheWatcher_.load()) {
+        ZLOGI("cache mode, save change data. storeId:%{public}s", Anonymous::Change(storeId_).c_str());
+        SaveChangeData(data);
+        store_->PostDataChange();
+        return;
+    }
+    if (!HasWatcher()) {
+        return;
+    }
     const auto &inserts = data.GetEntriesInserted();
     const auto &deletes = data.GetEntriesDeleted();
     const auto &updates = data.GetEntriesUpdated();

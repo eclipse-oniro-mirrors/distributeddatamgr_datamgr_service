@@ -1,4 +1,4 @@
-# Copyright (c) 2022 Huawei Device Co., Ltd.
+# Copyright (c) 2022-2026 Huawei Device Co., Ltd.
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -213,6 +213,7 @@ ohos_unittest("KvdbServiceImplTest") {
     "${data_service_path}/app/src/kvstore_meta_manager.cpp",
     "${data_service_path}/framework/test/mock/account_delegate_mock.cpp",
     "kvdb_service_impl_test.cpp",
+    "kvdb_observer_cache_test.cpp",
     "kvdb_service_stub_unittest.cpp",
     "kvdb_service_test.cpp",
     "../../mock/access_token_mock.cpp",
@@ -229,6 +230,7 @@ ohos_unittest("KvdbServiceImplTest") {
     "${data_service_path}/framework/include",
     "${data_service_path}/service/test",
     "${data_service_path}/service/test/mock",
+    "${data_service_path}/framework/test",
     "${data_service_path}/adapter/include/communicator",
   ]
 

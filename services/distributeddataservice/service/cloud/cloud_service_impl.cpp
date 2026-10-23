@@ -375,7 +375,7 @@ void CloudServiceImpl::ExecuteTableLevelClean(const StoreMetaData &meta, const D
 void CloudServiceImpl::ExecuteDatabaseClean(const StoreMetaData &meta, int32_t action,
     const std::vector<std::string> &tableList)
 {
-    auto store = AutoCache::GetInstance().GetStore(meta, {});
+    auto store = AutoCache::GetInstance().GetStore(meta);
     if (store == nullptr) {
         ZLOGW("get store failed, user:%{public}s, bundleName:%{public}s, storeId:%{public}s", meta.user.c_str(),
             meta.bundleName.c_str(), meta.GetStoreAlias().c_str());
@@ -771,7 +771,7 @@ StatisticInfos CloudServiceImpl::QueryStatistics(const StoreMetaData &storeMetaD
     const DistributedData::Database &database)
 {
     std::vector<StatisticInfo> infos;
-    auto store = AutoCache::GetInstance().GetStore(storeMetaData, {});
+    auto store = AutoCache::GetInstance().GetStore(storeMetaData);
     if (store == nullptr) {
         ZLOGE("store failed, store is nullptr,bundleName:%{public}s",
             Anonymous::Change(storeMetaData.bundleName).c_str());

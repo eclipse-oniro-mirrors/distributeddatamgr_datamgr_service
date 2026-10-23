@@ -195,4 +195,102 @@ HWTEST_F(DataShareServiceImplMockTest, GetCallerBundleNameForStat_InvalidToken_R
     SetSelfTokenID(selfToken);
     ZLOGI("DataShareServiceImplMockTest GetCallerBundleNameForStat_InvalidToken_ReturnsUnknown end");
 }
+
+/**
+ * @tc.name: VerifyColumns001
+ * @tc.desc: Verify DataShareServiceImpl::VerifyColumns rejects SQL injection columns before query
+ * @tc.type: FUNC
+ * @tc.precon: DataShareServiceImpl and MockNativeToken are initialized
+ * @tc.step:
+ *   1. Construct ProviderInfo used for fault report
+ *   2. Call VerifyColumns with comment injection column, expect rejected
+ *   3. Call VerifyColumns with subquery column, expect rejected
+ *   4. Call VerifyColumns with stacked statement column, expect rejected
+ *   5. Call VerifyColumns with one malicious column among normal columns, expect rejected
+ * @tc.expect:
+ *   1. All verifications return false, so Query callback returns E_ERROR without executing sql
+ */
+HWTEST_F(DataShareServiceImplMockTest, VerifyColumns001, TestSize.Level1)
+{
+    ZLOGI("DataShareServiceImplMockTest VerifyColumns001 start");
+    MockNativeToken mock(STORAGE_MANAGER_PROCE_NAME);
+    DataShareServiceImpl dataShareServiceImpl;
+    DataProviderConfig::ProviderInfo providerInfo;
+    providerInfo.bundleName = "com.acts.ohos.data.datasharetest";
+    providerInfo.moduleName = "entry";
+    providerInfo.storeName = "testStore";
+    // testTokenId just for log
+    uint32_t testTokenId = 0;
+    std::string func = "Query";
+
+    // comment injection closing the rest of the generated select sql
+    std::vector<std::string> columns = { "* FROM sqlite_master --" };
+    auto result = dataShareServiceImpl.VerifyColumns(columns, testTokenId, providerInfo, func);
+    EXPECT_FALSE(result);
+
+    // subquery exfiltration
+    columns = { "(SELECT group_concat(name) FROM sqlite_master) AS leak" };
+    result = dataShareServiceImpl.VerifyColumns(columns, testTokenId, providerInfo, func);
+    EXPECT_FALSE(result);
+
+    // stacked statement
+    columns = { "name; DROP TABLE t" };
+    result = dataShareServiceImpl.VerifyColumns(columns, testTokenId, providerInfo, func);
+    EXPECT_FALSE(result);
+
+    // one malicious column among normal columns
+    columns = { "name", "age", "* FROM t --" };
+    result = dataShareServiceImpl.VerifyColumns(columns, testTokenId, providerInfo, func);
+    EXPECT_FALSE(result);
+    ZLOGI("DataShareServiceImplMockTest VerifyColumns001 end");
+}
+
+/**
+ * @tc.name: VerifyColumns002
+ * @tc.desc: Verify DataShareServiceImpl::VerifyColumns accepts legitimate query columns
+ * @tc.type: FUNC
+ * @tc.precon: DataShareServiceImpl and MockNativeToken are initialized
+ * @tc.step:
+ *   1. Construct ProviderInfo used for fault report
+ *   2. Call VerifyColumns with empty column list, expect accepted
+ *   3. Call VerifyColumns with plain column names, expect accepted
+ *   4. Call VerifyColumns with tableName.columnName and quoted formats, expect accepted
+ *   5. Call VerifyColumns with $.columnName format, expect accepted
+ * @tc.expect:
+ *   1. All verifications return true, so Query is executed as before
+ */
+HWTEST_F(DataShareServiceImplMockTest, VerifyColumns002, TestSize.Level1)
+{
+    ZLOGI("DataShareServiceImplMockTest VerifyColumns002 start");
+    MockNativeToken mock(STORAGE_MANAGER_PROCE_NAME);
+    DataShareServiceImpl dataShareServiceImpl;
+    DataProviderConfig::ProviderInfo providerInfo;
+    providerInfo.bundleName = "com.acts.ohos.data.datasharetest";
+    providerInfo.moduleName = "entry";
+    providerInfo.storeName = "testStore";
+    // testTokenId just for log
+    uint32_t testTokenId = 0;
+    std::string func = "Query";
+
+    // empty column list means select all
+    std::vector<std::string> columns = {};
+    auto result = dataShareServiceImpl.VerifyColumns(columns, testTokenId, providerInfo, func);
+    EXPECT_TRUE(result);
+
+    // plain column names
+    columns = { "name", "age_", "col2" };
+    result = dataShareServiceImpl.VerifyColumns(columns, testTokenId, providerInfo, func);
+    EXPECT_TRUE(result);
+
+    // tableName.columnName and quoted column name
+    columns = { "t1.name", "\"name\"" };
+    result = dataShareServiceImpl.VerifyColumns(columns, testTokenId, providerInfo, func);
+    EXPECT_TRUE(result);
+
+    // $.columnName for kv store
+    columns = { "$.field" };
+    result = dataShareServiceImpl.VerifyColumns(columns, testTokenId, providerInfo, func);
+    EXPECT_TRUE(result);
+    ZLOGI("DataShareServiceImplMockTest VerifyColumns002 end");
+}
 } // namespace OHOS::Test

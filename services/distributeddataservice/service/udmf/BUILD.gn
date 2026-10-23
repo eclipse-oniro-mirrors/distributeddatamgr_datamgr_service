@@ -95,6 +95,7 @@ ohos_source_set("udmf_server") {
     "image_framework:image",
     "kv_store:datamgr_common",
     "kv_store:distributeddb",
+    "samgr:samgr_proxy",
     "udmf:udmf_core",
     "udmf:utd_client",
   ]
