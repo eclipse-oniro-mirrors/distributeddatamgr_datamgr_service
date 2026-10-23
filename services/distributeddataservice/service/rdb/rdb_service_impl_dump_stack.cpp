@@ -13,7 +13,7 @@
  * limitations under the License.
  */
 
-#define LOG_TAG "RdbServiceImpl"
+#define LOG_TAG "RdbDumpStack"
 #include "rdb_service_impl.h"
 
 #include "hmfs_tag_util.h"
