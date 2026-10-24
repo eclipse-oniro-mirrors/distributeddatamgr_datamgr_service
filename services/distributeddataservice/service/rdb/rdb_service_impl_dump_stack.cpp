@@ -16,18 +16,33 @@
 #define LOG_TAG "RdbDumpStack"
 #include "rdb_service_impl.h"
 
+#include "accesstoken_kit.h"
 #include "hmfs_tag_util.h"
+#include "ipc_skeleton.h"
 #include "log_print.h"
 #include "metadata/store_meta_data.h"
+#include "tokenid_kit.h"
 #include "unistd.h"
 #include "utils/anonymous.h"
 
 namespace OHOS {
 namespace DistributedRdb {
 using namespace OHOS::DistributedData;
+using namespace OHOS::Security::AccessToken;
 
 void RdbServiceImpl::SetDumpStackTags(const StoreMetaData &meta)
 {
+    // BR-7: only system apps and SAs may enable dump-stack tagging; silently skip
+    // for other callers (the systemapi field is compile-time hidden from third-party
+    // apps, and native callers are trusted SAs).
+    auto tokenId = IPCSkeleton::GetCallingTokenID();
+    auto tokenType = AccessTokenKit::GetTokenTypeFlag(tokenId);
+    if (tokenType != Security::AccessToken::TOKEN_NATIVE &&
+        !TokenIdKit::IsSystemAppByFullTokenID(IPCSkeleton::GetCallingFullTokenID())) {
+        ZLOGW("dumpStackOnFileDel is only for system apps and SAs, bundleName:%{public}s",
+            meta.bundleName.c_str());
+        return;
+    }
     // BR-1/BR-3: tag only db/wal/shm on both the primary path and the replica path;
     // journal/binlog/dwr are out of scope.
     std::vector<std::string> tagPaths = { meta.dataDir, meta.dataDir + "-wal", meta.dataDir + "-shm" };
