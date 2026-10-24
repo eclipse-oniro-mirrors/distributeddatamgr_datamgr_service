@@ -17,6 +17,12 @@
 #define DATASHARESERVICE_HIVIEW_ADAPTER_H
 
 
+#include <atomic>
+#include <map>
+#include <mutex>
+#include <string>
+#include <utility>
+
 #include "hiview_base_adapter.h"
 #include "concurrent_map.h"
 #include "data_share_service_stub.h"
@@ -45,6 +51,29 @@ struct CallerTotalInfo {
     std::map<std::string, uint64_t> funcCounts;
 };
 
+struct AccessStatInfo {
+    std::string uri;
+    std::string providerBundleName;
+    std::string callerBundleName;
+    uint32_t funcId = 0;
+    uint64_t count = 0;
+    // Backfilled from the owning UriEntry on query, not stored per row.
+    int64_t windowStartTime = 0;
+    int32_t reportIntervalHours = 24;
+};
+
+// One statistics entry per uri: the report window and all caller statistics live
+// in a single entry, so flushing the entry atomically reports one complete snapshot
+// of that uri's configured interval. The enable flag and report interval are
+// configured at uri granularity in the provider profile.
+struct UriEntry {
+    int64_t windowStartTime = 0;
+    int32_t reportIntervalHours = 24;
+    std::string uri;
+    std::string providerBundleName;
+    std::map<std::string, std::map<uint32_t, uint64_t>> callers;  // caller → (funcId → count)
+};
+
 class HiViewAdapter : public HiViewBaseAdapter {
 public:
     static HiViewAdapter &GetInstance();
@@ -63,6 +92,39 @@ private:
             "OnGetSilentProxyStatus"}
     };
     void GetCallerTotalInfoVec(std::vector<CallerTotalInfo> &callerTotalInfos);
+};
+
+class DataShareAccessReporter {
+public:
+    static DataShareAccessReporter &GetInstance();
+    void Record(const std::string &uri, const std::string &providerBundleName,
+        const std::string &callerBundleName, uint32_t funcId, int32_t reportIntervalHours);
+    void Init(std::shared_ptr<ExecutorPool> executors);
+    void FlushAll();
+    void FlushDue();
+    size_t GetStatsCount();
+    bool GetAccessStatInfo(const std::string &uri, const std::string &providerBundleName,
+        const std::string &callerBundleName, uint32_t funcId, AccessStatInfo &info);
+    static std::string AnonymousUri(const std::string &uri);
+    static std::string FormatApiCounts(const std::map<uint32_t, uint64_t> &apiCounts);
+
+private:
+    ConcurrentMap<std::string, UriEntry> entries_;
+    std::atomic<size_t> rowCount_ { 0 };
+    std::shared_ptr<ExecutorPool> executors_;
+    std::mutex flushMutex_;
+    ExecutorPool::TaskId nextTaskId_ = ExecutorPool::INVALID_TASK_ID;
+    int64_t nextFireTimeMs_ = 0;
+    std::atomic<bool> overflowFlushPending_ { false };
+    std::atomic<int64_t> lastOverflowFlushMs_ { 0 };
+    void FlushEntries(bool forceAll);
+    bool TryDispatchOverflowFlush();
+    void ScheduleLocked(int64_t fireAtMs);
+    void CancelTimerLocked();
+    int64_t DueTimeMsLocked(const UriEntry &entry) const;
+    int64_t NowMs() const;
+    void ReportEntry(const UriEntry &entry);
+    static std::string MakeUriKey(const std::string &uri, const std::string &providerBundleName);
 };
 } // namespace DataShare
 } // namespace OHOS

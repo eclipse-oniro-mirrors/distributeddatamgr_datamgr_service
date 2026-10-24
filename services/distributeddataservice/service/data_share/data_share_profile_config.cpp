@@ -86,6 +86,23 @@ bool AllowList::Unmarshal(const json &node)
     return true;
 }
 
+bool AccessStatisticsConfig::Marshal(json &node) const
+{
+    SetValue(node[GET_NAME(enable)], enable);
+    SetValue(node[GET_NAME(reportInterval)], reportInterval);
+    return true;
+}
+
+bool AccessStatisticsConfig::Unmarshal(const json &node)
+{
+    GetValue(node, GET_NAME(enable), enable);
+    GetValue(node, GET_NAME(reportInterval), reportInterval);
+    if (reportInterval < 1) {
+        reportInterval = DEFAULT_REPORT_INTERVAL_HOURS;
+    }
+    return true;
+}
+
 bool ProfileInfo::Marshal(json &node) const
 {
     SetValue(node[GET_NAME(tableConfig)], tableConfig);
@@ -100,6 +117,7 @@ bool ProfileInfo::Marshal(json &node) const
     SetValue(node[GET_NAME(accountIsolation)], accountIsolation);
     SetValue(node[GET_NAME(backup)], backup);
     SetValue(node[GET_NAME(extUri)], extUri);
+    SetValue(node[GET_NAME(accessStatistics)], accessStatistics);
     return true;
 }
 
@@ -119,6 +137,7 @@ bool ProfileInfo::Unmarshal(const json &node)
     GetValue(node, GET_NAME(accountIsolation), accountIsolation);
     GetValue(node, GET_NAME(backup), backup);
     GetValue(node, GET_NAME(extUri), extUri);
+    GetValue(node, GET_NAME(accessStatistics), accessStatistics);
     std::string path;
     auto ret = GetValue(node, GET_NAME(path), path);
     if (ret) {

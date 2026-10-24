@@ -58,6 +58,7 @@ public:
         bool accountIsolation = false;
         AccessCrossMode accessCrossMode = AccessCrossMode::USER_UNDEFINED;
         std::vector<AllowList> allowLists;
+        AccessStatisticsConfig accessStatistics;
     };
 
     std::pair<int, ProviderInfo> GetProviderInfo();

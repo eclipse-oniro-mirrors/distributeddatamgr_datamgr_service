@@ -311,4 +311,78 @@ HWTEST_F(DataShareProfileConfigTest, GetFromExtension, TestSize.Level1)
     result = providerConfig.GetFromExtension();
     EXPECT_EQ(result, DataShare::E_URI_NOT_EXIST);
 }
+
+/**
+ * @tc.name: AccessStatisticsConfig_Unmarshal_ValidConfig_ReturnsConfiguredValues
+ * @tc.desc: test AccessStatisticsConfig Unmarshal with valid enable and reportInterval
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(DataShareProfileConfigTest, AccessStatisticsConfig_Unmarshal_ValidConfig_ReturnsConfiguredValues,
+    TestSize.Level1)
+{
+    ZLOGI("DataShareProfileConfigTest AccessStatisticsConfig_Unmarshal_ValidConfig start");
+    AccessStatisticsConfig config;
+    auto node = DistributedData::Serializable::json::parse(
+        R"({"enable": true, "reportInterval": 48})");
+    EXPECT_TRUE(config.Unmarshal(node));
+    EXPECT_TRUE(config.enable);
+    EXPECT_EQ(config.reportInterval, 48);
+    ZLOGI("DataShareProfileConfigTest AccessStatisticsConfig_Unmarshal_ValidConfig end");
+}
+
+/**
+ * @tc.name: AccessStatisticsConfig_Unmarshal_IntervalBelowLimit_FallsBackToDefault
+ * @tc.desc: test AccessStatisticsConfig Unmarshal falls back to default interval when below limit
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(DataShareProfileConfigTest, AccessStatisticsConfig_Unmarshal_IntervalBelowLimit_FallsBackToDefault,
+    TestSize.Level1)
+{
+    ZLOGI("DataShareProfileConfigTest AccessStatisticsConfig_Unmarshal_IntervalBelowLimit start");
+    AccessStatisticsConfig config;
+    auto node = DistributedData::Serializable::json::parse(
+        R"({"enable": true, "reportInterval": 0})");
+    EXPECT_TRUE(config.Unmarshal(node));
+    EXPECT_TRUE(config.enable);
+    EXPECT_EQ(config.reportInterval, AccessStatisticsConfig::DEFAULT_REPORT_INTERVAL_HOURS);
+    ZLOGI("DataShareProfileConfigTest AccessStatisticsConfig_Unmarshal_IntervalBelowLimit end");
+}
+
+/**
+ * @tc.name: AccessStatisticsConfig_Unmarshal_MissingFields_KeepsDefaults
+ * @tc.desc: test AccessStatisticsConfig Unmarshal with missing fields keeps defaults
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(DataShareProfileConfigTest, AccessStatisticsConfig_Unmarshal_MissingFields_KeepsDefaults, TestSize.Level1)
+{
+    ZLOGI("DataShareProfileConfigTest AccessStatisticsConfig_Unmarshal_MissingFields start");
+    AccessStatisticsConfig config;
+    auto node = DistributedData::Serializable::json::parse(R"({})");
+    EXPECT_TRUE(config.Unmarshal(node));
+    EXPECT_FALSE(config.enable);
+    EXPECT_EQ(config.reportInterval, AccessStatisticsConfig::DEFAULT_REPORT_INTERVAL_HOURS);
+    ZLOGI("DataShareProfileConfigTest AccessStatisticsConfig_Unmarshal_MissingFields end");
+}
+
+/**
+ * @tc.name: AccessStatisticsConfig_MarshalRoundTrip_PreservesValues
+ * @tc.desc: test AccessStatisticsConfig Marshal keeps configured values
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(DataShareProfileConfigTest, AccessStatisticsConfig_MarshalRoundTrip_PreservesValues, TestSize.Level1)
+{
+    ZLOGI("DataShareProfileConfigTest AccessStatisticsConfig_MarshalRoundTrip start");
+    AccessStatisticsConfig config;
+    config.enable = true;
+    config.reportInterval = 12;
+    DistributedData::Serializable::json node;
+    EXPECT_TRUE(config.Marshal(node));
+    EXPECT_EQ(node.at("enable"), true);
+    EXPECT_EQ(node.at("reportInterval"), 12);
+    ZLOGI("DataShareProfileConfigTest AccessStatisticsConfig_MarshalRoundTrip end");
+}
 } // namespace OHOS::Test

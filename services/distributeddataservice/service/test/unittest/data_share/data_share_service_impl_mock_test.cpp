@@ -147,6 +147,54 @@ HWTEST_F(DataShareServiceImplMockTest, CheckAllowList002, TestSize.Level1)
     EXPECT_TRUE(result);
     ZLOGI("DataShareServiceImplMockTest CheckAllowList002 end");
 }
+/**
+ * @tc.name: GetCallerBundleNameForStat_NativeToken_ReturnsProcessName
+ * @tc.desc: test GetCallerBundleNameForStat returns the native process name for a native caller
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(DataShareServiceImplMockTest, GetCallerBundleNameForStat_NativeToken_ReturnsProcessName, TestSize.Level1)
+{
+    ZLOGI("DataShareServiceImplMockTest GetCallerBundleNameForStat_NativeToken_ReturnsProcessName start");
+    MockNativeToken mock(STORAGE_MANAGER_PROCE_NAME);
+    DataShareServiceImpl dataShareServiceImpl;
+    EXPECT_EQ(dataShareServiceImpl.GetCallerBundleNameForStat(), STORAGE_MANAGER_PROCE_NAME);
+    ZLOGI("DataShareServiceImplMockTest GetCallerBundleNameForStat_NativeToken_ReturnsProcessName end");
+}
+
+/**
+ * @tc.name: GetCallerBundleNameForStat_ShellToken_ReturnsProcessName
+ * @tc.desc: test GetCallerBundleNameForStat returns the process name for the default shell caller
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(DataShareServiceImplMockTest, GetCallerBundleNameForStat_ShellToken_ReturnsProcessName, TestSize.Level1)
+{
+    ZLOGI("DataShareServiceImplMockTest GetCallerBundleNameForStat_ShellToken_ReturnsProcessName start");
+    DataShareServiceImpl dataShareServiceImpl;
+    // The test process runs with the shell token: the shell branch resolves the
+    // process name (or falls back to "system" on query failure), never "unknown".
+    auto callerName = dataShareServiceImpl.GetCallerBundleNameForStat();
+    EXPECT_NE(callerName, "unknown");
+    ZLOGI("DataShareServiceImplMockTest GetCallerBundleNameForStat_ShellToken_ReturnsProcessName end");
+}
+
+/**
+ * @tc.name: GetCallerBundleNameForStat_InvalidToken_ReturnsUnknown
+ * @tc.desc: test GetCallerBundleNameForStat returns unknown for an invalid token
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(DataShareServiceImplMockTest, GetCallerBundleNameForStat_InvalidToken_ReturnsUnknown, TestSize.Level1)
+{
+    ZLOGI("DataShareServiceImplMockTest GetCallerBundleNameForStat_InvalidToken_ReturnsUnknown start");
+    auto selfToken = GetSelfTokenID();
+    SetSelfTokenID(0);
+    DataShareServiceImpl dataShareServiceImpl;
+    EXPECT_EQ(dataShareServiceImpl.GetCallerBundleNameForStat(), "unknown");
+    SetSelfTokenID(selfToken);
+    ZLOGI("DataShareServiceImplMockTest GetCallerBundleNameForStat_InvalidToken_ReturnsUnknown end");
+}
 
 /**
  * @tc.name: VerifyColumns001

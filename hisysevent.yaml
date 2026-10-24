@@ -125,3 +125,10 @@ ARKDATA_CLOUD_SYNC_FAULT:
   BUSINESS_TYPE: {type: STRING, desc: business type }
   ERROR_CODE: {type: INT32, desc: error code }
   APPENDIX: {type: STRING, desc: such as uid/tokenid }
+
+DATA_SHARE_ACCESS_STATISTIC:
+  __BASE: {type: STATISTIC, level: CRITICAL, desc: The event is data share silent access statistic }
+  URI: {type: STRING, desc: anonymous uri }
+  PROVIDER_BUNDLE_NAME: {type: STRING, desc: provider bundle name }
+  CALLER_BUNDLE_NAME: {type: STRING, arrsize: 100, desc: caller bundle name array }
+  API_CALL_COUNT: {type: STRING, arrsize: 100, desc: api call count per caller }
