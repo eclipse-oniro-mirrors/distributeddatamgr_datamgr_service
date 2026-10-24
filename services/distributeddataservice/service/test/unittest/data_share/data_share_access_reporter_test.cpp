@@ -47,20 +47,21 @@ constexpr uint32_t FUNC_ID_INSERT = 2;
 constexpr uint32_t MAX_KEY_COUNT_FOR_TEST = 5000;
 // Same value as MAX_REPORT_INTERVAL_HOURS defined in hiview_adapter.cpp
 constexpr int32_t MAX_INTERVAL_HOURS_FOR_TEST = 48;
-constexpr int64_t TWO_HOURS_MS = 2LL * 3600 * 1000;
+constexpr int64_t HOURS_TO_MS = 3600LL * 1000;
 constexpr int64_t THROTTLE_WINDOW_MS = 60LL * 1000;
 // Time for the asynchronous overflow flush task to complete on the executor.
 constexpr int ASYNC_FLUSH_WAIT_MS = 200;
 // Same value as MAX_CALLERS_PER_EVENT defined in hiview_adapter.cpp
 constexpr uint32_t MAX_CALLERS_PER_EVENT_FOR_TEST = 100;
 
-// Makes the uri entry's window look 2 hours old so it is due for flush. The interval
-// floor is 1 hour so time passage cannot be awaited in tests.
+// Shifts the window start back by the entry's own interval plus one hour, so the
+// entry is exactly one hour past due. The interval floor is 1 hour so real time
+// passage cannot be awaited in tests.
 void MakeEntryDue(DataShareAccessReporter &reporter, const std::string &uri, const std::string &provider)
 {
     reporter.entries_.Compute(DataShareAccessReporter::MakeUriKey(uri, provider),
         [](const std::string &, UriEntry &entry) {
-            entry.windowStartTime -= TWO_HOURS_MS;
+            entry.windowStartTime -= (entry.reportIntervalHours + 1) * HOURS_TO_MS;
             return true;
         });
 }
