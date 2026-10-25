@@ -1,0 +1,50 @@
+/*
+ * Copyright (c) 2026 Huawei Device Co., Ltd.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+#include "datafabricaddresscommon_fuzzer.h"
+
+#include "data_fabric_address_errors.h"
+#include "message_parcel.h"
+
+namespace OHOS {
+namespace DataFabricAddress {
+using namespace NativePreferences;
+
+int32_t DataFabricAddressStubFuzz::Subscribe(const DataFabricAddressParams& inputParams,
+    sptr<IDataFabricAddressCallback> callback)
+{
+    return RUN_OK;
+}
+
+int32_t DataFabricAddressStubFuzz::Unsubscribe(const DataFabricAddressParams& inputParams)
+{
+    return RUN_OK;
+}
+
+void DataFabricAddressCommonTestFuzzer(const uint8_t* data, size_t size, uint32_t code)
+{
+    if (data == nullptr || size == 0) {
+        return;
+    }
+    DataFabricAddressStubFuzz stub;
+    MessageParcel request;
+    request.WriteInterfaceToken(DataFabricAddressServiceStub::GetDescriptor());
+    request.WriteBuffer(data, size);
+    request.RewindRead(0);
+    MessageParcel reply;
+    stub.OnRemoteRequest(code, request, reply);
+}
+} // End of namespace DataFabricAddress
+} // End of namespace OHOS

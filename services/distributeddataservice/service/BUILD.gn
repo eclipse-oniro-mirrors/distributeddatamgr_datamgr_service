@@ -128,6 +128,10 @@ ohos_shared_library("distributeddatasvc") {
     deps += [ "${data_service_path}/service/object:distributeddata_object" ]
   }
 
+  if (datamgr_service_data_fabric_address) {
+    deps += [ "${data_service_path}/service/data_fabric_address:data_fabric_address_service" ]
+  }
+
   external_deps = [ "hilog:libhilog" ]
   subsystem_name = "distributeddatamgr"
 

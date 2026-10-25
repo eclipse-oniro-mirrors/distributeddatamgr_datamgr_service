@@ -1,0 +1,71 @@
+# Copyright (c) 2026 Huawei Device Co., Ltd.
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##############################hydra-fuzz########################################
+import("//build/config/features.gni")
+import("//build/test.gni")
+import("//foundation/distributeddatamgr/datamgr_service/datamgr_service.gni")
+
+##############################fuzztest##########################################
+ohos_fuzztest("DataFabricAddressSubscribeFuzzTest") {
+  module_out_path = "datamgr_service/datamgr_service"
+
+  fuzz_config_file =
+      "${data_service_path}/service/test/fuzztest/datafabricaddresssubscribe_fuzzer"
+
+  cflags = [
+    "-g",
+    "-O0",
+    "-Wno-unused-variable",
+    "-Wno-unused-parameter",
+    "-fno-omit-frame-pointer",
+  ]
+
+  include_dirs = [
+    "${data_service_path}/framework/include",
+    "${data_service_path}/framework/include/feature",
+    "${data_service_path}/service/data_fabric_address",
+    "${data_service_path}/service/test/fuzztest/common/datafabricaddresscommon_fuzzer",
+  ]
+
+  sources = [
+    "${data_service_path}/service/data_fabric_address/data_fabric_address_callback_proxy.cpp",
+    "${data_service_path}/service/data_fabric_address/data_fabric_address_service_stub.cpp",
+    "${data_service_path}/service/data_fabric_address/data_fabric_address_types_util.cpp",
+    "${data_service_path}/service/test/fuzztest/common/datafabricaddresscommon_fuzzer/datafabricaddresscommon_fuzzer.cpp",
+    "datafabricaddresssubscribe_fuzzer.cpp",
+  ]
+
+  deps = [
+    "${data_service_path}/framework:distributeddatasvcfwk",
+  ]
+
+  external_deps = [
+    "access_token:libaccesstoken_sdk",
+    "access_token:libtokenid_sdk",
+    "c_utils:utils",
+    "hilog:libhilog",
+    "init:libbegetutil",
+    "ipc:ipc_core",
+    "ipc:ipc_single",
+    "kv_store:datamgr_common",
+    "preferences:native_preferences",
+  ]
+}
+
+###############################################################################
+group("fuzztest") {
+  testonly = true
+
+  deps = [ ":DataFabricAddressSubscribeFuzzTest" ]
+}
+###############################################################################

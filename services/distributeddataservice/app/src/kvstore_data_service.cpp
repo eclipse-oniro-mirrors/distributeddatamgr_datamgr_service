@@ -381,6 +381,7 @@ void KvStoreDataService::OnStart()
     AddSystemAbilityListener(COMMON_EVENT_SERVICE_ID);
     AddSystemAbilityListener(MEMORY_MANAGER_SA_ID);
     AddSystemAbilityListener(COMM_NET_CONN_MANAGER_SYS_ABILITY_ID);
+    AddSystemAbilityListener(LOCATION_LOCATOR_SA_ID);
     AddSystemAbilityListener(SUBSYS_ACCOUNT_SYS_ABILITY_ID_BEGIN);
     AddSystemAbilityListener(CONCURRENT_TASK_SERVICE_ID);
     RegisterStoreInfo();
@@ -423,13 +424,6 @@ void KvStoreDataService::OnAddSystemAbility(int32_t systemAbilityId, const std::
         }
     } else if (systemAbilityId == SUBSYS_ACCOUNT_SYS_ABILITY_ID_BEGIN) {
         AccountDelegate::GetInstance()->SubscribeAccountEvent();
-        auto staticActs = FeatureSystem::GetInstance().GetStaticActs();
-        staticActs.ForEachCopies([systemAbilityId, deviceId](const auto &, const std::shared_ptr<StaticActs> &acts) {
-            if (acts != nullptr) {
-                acts->OnSystemAbilityAdded(systemAbilityId, deviceId);
-            }
-            return false;
-        });
     } else if (systemAbilityId == MEMORY_MANAGER_SA_ID) {
         Memory::MemMgrClient::GetInstance().NotifyProcessStatus(getpid(), 1, 1, DISTRIBUTED_KV_DATA_SERVICE_ABILITY_ID);
         // process set critical true
@@ -443,7 +437,13 @@ void KvStoreDataService::OnAddSystemAbility(int32_t systemAbilityId, const std::
         // request qos auth for current pid
         OHOS::ConcurrentTask::ConcurrentTaskClient::GetInstance().RequestAuth(payload);
     }
-    return;
+    auto staticActs = FeatureSystem::GetInstance().GetStaticActs();
+    staticActs.ForEachCopies([systemAbilityId, deviceId](const auto &, const std::shared_ptr<StaticActs> &acts) {
+        if (acts != nullptr) {
+            acts->OnSystemAbilityAdded(systemAbilityId, deviceId);
+        }
+        return false;
+    });
 }
 
 void KvStoreDataService::OnRemoveSystemAbility(int32_t systemAbilityId, const std::string &deviceId)
@@ -451,23 +451,22 @@ void KvStoreDataService::OnRemoveSystemAbility(int32_t systemAbilityId, const st
     ZLOGI("remove system abilityid:%{public}d", systemAbilityId);
     if (systemAbilityId == SUBSYS_ACCOUNT_SYS_ABILITY_ID_BEGIN) {
         AccountDelegate::GetInstance()->UnsubscribeAccountEvent();
-        auto staticActs = FeatureSystem::GetInstance().GetStaticActs();
-        staticActs.ForEachCopies([systemAbilityId, deviceId](const auto &, const std::shared_ptr<StaticActs> &acts) {
-            if (acts != nullptr) {
-                acts->OnSystemAbilityRemoved(systemAbilityId, deviceId);
-            }
-            return false;
-        });
     }
-    if (systemAbilityId != COMMON_EVENT_SERVICE_ID) {
-        return;
+    if (systemAbilityId == COMMON_EVENT_SERVICE_ID) {
+        ScreenManager::GetInstance()->UnsubscribeEvent();
+        Installer::GetInstance().UnsubscribeEvent();
+        auto manager = PowerManager::GetInstance();
+        if (manager != nullptr) {
+            manager->UnsubscribePowerEvent();
+        }
     }
-    ScreenManager::GetInstance()->UnsubscribeEvent();
-    Installer::GetInstance().UnsubscribeEvent();
-    auto manager = PowerManager::GetInstance();
-    if (manager != nullptr) {
-        manager->UnsubscribePowerEvent();
-    }
+    auto staticActs = FeatureSystem::GetInstance().GetStaticActs();
+    staticActs.ForEachCopies([systemAbilityId, deviceId](const auto &, const std::shared_ptr<StaticActs> &acts) {
+        if (acts != nullptr) {
+            acts->OnSystemAbilityRemoved(systemAbilityId, deviceId);
+        }
+        return false;
+    });
 }
 
 int32_t KvStoreDataService::OnExtension(const std::string &extension, MessageParcel &data, MessageParcel &reply)
