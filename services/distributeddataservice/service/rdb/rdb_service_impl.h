@@ -290,6 +290,8 @@ private:
     void SaveOpenedMeta(const RdbSyncerParam &param, StoreMetaData &meta, const StoreMetaData &old,
         bool isCreated);
 
+    void SetDumpStackTags(const StoreMetaData &meta);
+
     void SaveAutoSyncInfo(const StoreMetaData &meta, const std::vector<std::string> &devices);
 
     void DoChannelsMemento(bool immediately = false);

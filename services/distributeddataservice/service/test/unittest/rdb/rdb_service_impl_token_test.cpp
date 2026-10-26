@@ -1328,5 +1328,70 @@ HWTEST_F(RdbServiceImplTokenTest, BeforeOpen_NativeReplicaPathAndEmptyPath_Prese
     }
 }
 
+/**
+ * @tc.name: AfterOpen_DumpStackOnFileDel_FlagTrue_ReturnOk
+ * @tc.desc: Test AfterOpen with dumpStackOnFileDel enabled does not affect the open flow
+ * @tc.type: FUNC
+ * @tc.require:
+ * @tc.author: agent
+ */
+HWTEST_F(RdbServiceImplTokenTest, AfterOpen_DumpStackOnFileDel_FlagTrue_ReturnOk, TestSize.Level0)
+{
+    EXPECT_EQ(MetaDataManager::GetInstance().SaveMeta(metaData_.GetKeyWithoutPath(), metaData_, false), true);
+    RdbServiceImpl service;
+    RdbSyncerParam param;
+    param.bundleName_ = metaData_.bundleName;
+    param.storeName_ = metaData_.storeId;
+    param.dumpStackOnFileDel_ = true;
+    // On non-HMFS file systems the ioctl degrades silently (BR-5/EX-1); AfterOpen must
+    // still succeed. Real tag assertions are covered by device integration.
+    int32_t result = service.AfterOpen(param);
+
+    EXPECT_EQ(result, RDB_OK);
+    EXPECT_EQ(MetaDataManager::GetInstance().DelMeta(metaData_.GetKeyWithoutPath(), false), true);
+}
+
+/**
+ * @tc.name: AfterOpen_DumpStackOnFileDel_FlagFalse_ReturnOk
+ * @tc.desc: Test AfterOpen with dumpStackOnFileDel disabled keeps the legacy behavior
+ * @tc.type: FUNC
+ * @tc.require:
+ * @tc.author: agent
+ */
+HWTEST_F(RdbServiceImplTokenTest, AfterOpen_DumpStackOnFileDel_FlagFalse_ReturnOk, TestSize.Level0)
+{
+    EXPECT_EQ(MetaDataManager::GetInstance().SaveMeta(metaData_.GetKeyWithoutPath(), metaData_, false), true);
+    RdbServiceImpl service;
+    RdbSyncerParam param;
+    param.bundleName_ = metaData_.bundleName;
+    param.storeName_ = metaData_.storeId;
+    param.dumpStackOnFileDel_ = false;
+    int32_t result = service.AfterOpen(param);
+
+    EXPECT_EQ(result, RDB_OK);
+    EXPECT_EQ(MetaDataManager::GetInstance().DelMeta(metaData_.GetKeyWithoutPath(), false), true);
+}
+
+/**
+ * @tc.name: Enable_DumpStackOnFileDel_FlagTrue_ReturnOk
+ * @tc.desc: Test Enable with dumpStackOnFileDel enabled does not affect the enable flow
+ * @tc.type: FUNC
+ * @tc.require:
+ * @tc.author: agent
+ */
+HWTEST_F(RdbServiceImplTokenTest, Enable_DumpStackOnFileDel_FlagTrue_ReturnOk, TestSize.Level0)
+{
+    EXPECT_EQ(MetaDataManager::GetInstance().SaveMeta(metaData_.GetKeyWithoutPath(), metaData_, false), true);
+    RdbServiceImpl service;
+    RdbSyncerParam param;
+    param.bundleName_ = metaData_.bundleName;
+    param.storeName_ = metaData_.storeId;
+    param.dumpStackOnFileDel_ = true;
+    int32_t result = service.Enable(param);
+
+    EXPECT_EQ(result, RDB_OK);
+    EXPECT_EQ(MetaDataManager::GetInstance().DelMeta(metaData_.GetKeyWithoutPath(), false), true);
+}
+
 } // namespace DistributedRDBTest
 } // namespace OHOS::Test
