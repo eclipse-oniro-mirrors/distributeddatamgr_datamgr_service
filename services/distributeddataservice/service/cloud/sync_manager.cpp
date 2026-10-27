@@ -823,8 +823,8 @@ int32_t SyncManager::FillUserBindInfos(const AutoCache::Store &store, const Stor
             meta.GetStoreAlias().c_str());
         return E_ERROR;
     }
-    config.isSupportEncrypt = schemaMeta.e2eeEnable;
     auto dbMeta = schemaMeta.GetDataBase(meta.storeId);
+    config.isSupportEncrypt = dbMeta.e2eeEnable;
     std::vector<int32_t> users = { info.user };
     std::map<uint32_t, GeneralStore::BindInfo> bindInfos = GetBindInfos(meta, users, dbMeta);
     if (mustBind && bindInfos.size() != users.size()) {
@@ -849,7 +849,7 @@ void SyncManager::BindInfos(const AutoCache::Store &store, const UserBindInfo &u
             std::min(config.maxNumber, userConfig.maxNumber);
         config.maxSize = config.maxSize == 0 ? userConfig.maxSize :
             std::min(config.maxSize, userConfig.maxSize);
-        config.isSupportEncrypt = config.isSupportEncrypt || schemaMeta.e2eeEnable;
+        config.isSupportEncrypt = config.isSupportEncrypt || dbMeta.e2eeEnable;
     }
     store->Bind(bindInfos, config);
 }

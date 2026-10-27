@@ -2786,24 +2786,62 @@ HWTEST_F(CloudDataTest, OnAppUpdateTest, TestSize.Level1)
 
 /**
 * @tc.name: UpdateE2eeEnableTest
-* @tc.desc: Test the UpdateE2eeEnable
+* @tc.desc: Test the UpdateE2eeEnable with database-level e2eeEnable of schema from server.
 * @tc.type: FUNC
 * @tc.require:
+* @tc.author: agent
 */
 HWTEST_F(CloudDataTest, UpdateE2eeEnableTest, TestSize.Level1)
 {
     SchemaMeta schemaMeta;
     std::string schemaKey = CloudInfo::GetSchemaKey(cloudInfo_.user, TEST_CLOUD_BUNDLE, 0);
     ASSERT_TRUE(MetaDataManager::GetInstance().LoadMeta(schemaKey, schemaMeta, true));
-    EXPECT_EQ(schemaMeta.e2eeEnable, schemaMeta_.e2eeEnable);
+    ASSERT_EQ(schemaMeta.databases.size(), 2u);
+    EXPECT_EQ(schemaMeta.databases[0].e2eeEnable, schemaMeta_.databases[0].e2eeEnable);
+    EXPECT_EQ(schemaMeta.databases[1].e2eeEnable, schemaMeta_.databases[1].e2eeEnable);
 
     ASSERT_NE(cloudServiceImpl_, nullptr);
-    cloudServiceImpl_->UpdateE2eeEnable(schemaKey, false, TEST_CLOUD_BUNDLE);
+    SchemaMeta serverSchemaMeta = schemaMeta_;
+    serverSchemaMeta.databases[0].e2eeEnable = false;
+    serverSchemaMeta.databases[1].e2eeEnable = false;
+    cloudServiceImpl_->UpdateE2eeEnable(schemaKey, serverSchemaMeta, TEST_CLOUD_BUNDLE);
     ASSERT_TRUE(MetaDataManager::GetInstance().LoadMeta(schemaKey, schemaMeta, true));
-    EXPECT_EQ(schemaMeta.e2eeEnable, schemaMeta_.e2eeEnable);
-    cloudServiceImpl_->UpdateE2eeEnable(schemaKey, true, TEST_CLOUD_BUNDLE);
+    EXPECT_EQ(schemaMeta.databases[0].e2eeEnable, false);
+    EXPECT_EQ(schemaMeta.databases[1].e2eeEnable, false);
+    EXPECT_EQ(schemaMeta.e2eeEnable, false);
+
+    serverSchemaMeta.databases[0].e2eeEnable = true;
+    serverSchemaMeta.databases[1].e2eeEnable = true;
+    cloudServiceImpl_->UpdateE2eeEnable(schemaKey, serverSchemaMeta, TEST_CLOUD_BUNDLE);
     ASSERT_TRUE(MetaDataManager::GetInstance().LoadMeta(schemaKey, schemaMeta, true));
-    EXPECT_EQ(schemaMeta.e2eeEnable, true);
+    EXPECT_EQ(schemaMeta.databases[0].e2eeEnable, true);
+    EXPECT_EQ(schemaMeta.databases[1].e2eeEnable, true);
+    EXPECT_EQ(schemaMeta.e2eeEnable, false);
+
+    SchemaMeta noMatchSchemaMeta = schemaMeta_;
+    noMatchSchemaMeta.databases[0].name = "no_exist_store";
+    noMatchSchemaMeta.databases[1].name = "no_exist_store2";
+    noMatchSchemaMeta.databases[0].e2eeEnable = false;
+    noMatchSchemaMeta.databases[1].e2eeEnable = false;
+    cloudServiceImpl_->UpdateE2eeEnable(schemaKey, noMatchSchemaMeta, TEST_CLOUD_BUNDLE);
+    ASSERT_TRUE(MetaDataManager::GetInstance().LoadMeta(schemaKey, schemaMeta, true));
+    EXPECT_EQ(schemaMeta.databases[0].e2eeEnable, true);
+    EXPECT_EQ(schemaMeta.databases[1].e2eeEnable, true);
+
+    SchemaMeta singleDbMeta = schemaMeta_;
+    singleDbMeta.databases.resize(1);
+    singleDbMeta.e2eeEnable = false;
+    singleDbMeta.databases[0].e2eeEnable = false;
+    std::string singleDbKey = CloudInfo::GetSchemaKey(cloudInfo_.user, TEST_CLOUD_BUNDLE, 1);
+    ASSERT_TRUE(MetaDataManager::GetInstance().SaveMeta(singleDbKey, singleDbMeta, true));
+    SchemaMeta serverSingleDbMeta = singleDbMeta;
+    serverSingleDbMeta.databases[0].e2eeEnable = true;
+    cloudServiceImpl_->UpdateE2eeEnable(singleDbKey, serverSingleDbMeta, TEST_CLOUD_BUNDLE);
+    SchemaMeta singleDbResult;
+    ASSERT_TRUE(MetaDataManager::GetInstance().LoadMeta(singleDbKey, singleDbResult, true));
+    EXPECT_EQ(singleDbResult.databases[0].e2eeEnable, true);
+    EXPECT_EQ(singleDbResult.e2eeEnable, false);
+    MetaDataManager::GetInstance().DelMeta(singleDbKey, true);
 }
 
 /**

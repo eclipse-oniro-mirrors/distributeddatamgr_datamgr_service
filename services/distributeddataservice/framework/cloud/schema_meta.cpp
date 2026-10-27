@@ -95,7 +95,19 @@ bool SchemaMeta::Unmarshal(const Serializable::json &node)
     GetValue(node, GET_NAME(bundleName), bundleName);
     GetValue(node, GET_NAME(databases), databases);
     GetValue(node, GET_NAME(dbSchema), databases);
-    GetValue(node, GET_NAME(e2eeEnable), e2eeEnable);
+    bool hasE2eeEnable = GetValue(node, GET_NAME(e2eeEnable), e2eeEnable);
+    if (hasE2eeEnable && databases.size() == 1) {
+        auto dbNode = node.find(GET_NAME(dbSchema));
+        if (dbNode == node.end() || !dbNode->is_array()) {
+            dbNode = node.find(GET_NAME(databases));
+        }
+        if (dbNode != node.end() && dbNode->is_array() && !dbNode->empty()) {
+            auto &dbElement = dbNode->front();
+            if (dbElement.find(GET_NAME(e2eeEnable)) == dbElement.end()) {
+                databases[0].e2eeEnable = e2eeEnable;
+            }
+        }
+    }
     return true;
 }
 
@@ -183,6 +195,7 @@ bool Database::Marshal(Serializable::json &node) const
     SetValue(node[GET_NAME(deviceId)], deviceId);
     SetValue(node[GET_NAME(autoSyncType)], autoSyncType);
     SetValue(node[GET_NAME(backwardCompatiblePolicies)], backwardCompatiblePolicies);
+    SetValue(node[GET_NAME(e2eeEnable)], e2eeEnable);
     return true;
 }
 
@@ -198,17 +211,16 @@ bool Database::Unmarshal(const Serializable::json &node)
     GetValue(node, GET_NAME(version), version);
     GetValue(node, GET_NAME(bundleName), bundleName);
     GetValue(node, GET_NAME(backwardCompatiblePolicies), backwardCompatiblePolicies);
+    GetValue(node, GET_NAME(e2eeEnable), e2eeEnable);
     return true;
 }
 
 bool Database::operator==(const Database &database) const
 {
-    return std::tie(name, alias, tables, version, bundleName, user,
-                    deviceId, autoSyncType, backwardCompatiblePolicies) ==
-           std::tie(database.name, database.alias, database.tables,
-                    database.version, database.bundleName, database.user,
-                    database.deviceId, database.autoSyncType,
-                    database.backwardCompatiblePolicies);
+    return std::tie(name, alias, tables, version, bundleName, user, deviceId, autoSyncType, backwardCompatiblePolicies,
+               e2eeEnable) == std::tie(database.name, database.alias, database.tables, database.version,
+                                  database.bundleName, database.user, database.deviceId, database.autoSyncType,
+                                  database.backwardCompatiblePolicies, database.e2eeEnable);
 }
 
 bool Table::Marshal(Serializable::json &node) const

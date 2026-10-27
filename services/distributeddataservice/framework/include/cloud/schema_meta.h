@@ -76,6 +76,7 @@ struct API_EXPORT Database final : public Serializable {
     std::string deviceId = "";
     uint32_t version = 0;
     std::string bundleName = "";
+    bool e2eeEnable = false;
     API_EXPORT std::string GetKey() const;
     API_EXPORT static std::string GetKey(const std::initializer_list<std::string> &fields);
     API_EXPORT static std::string GetPrefix(const std::initializer_list<std::string> &fields);
