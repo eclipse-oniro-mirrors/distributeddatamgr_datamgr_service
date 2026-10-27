@@ -431,7 +431,7 @@ ExecutorPool::Task SyncManager::GetSyncTask(int32_t times, bool retry, RefCount 
     times++;
     return [this, times, retry, keep = std::move(ref), info = std::move(syncInfo)]() mutable {
         activeInfos_.Erase(info.syncId_);
-        bool createdByDefaultUser = InitDefaultUser(info.user_);
+        bool createdByDefaultUser = InitDefaultUser(info.user_, info.bundleName_);
         CloudInfo cloud;
         cloud.user = info.user_;
         CloudSyncInfos cloudSyncInfos;
@@ -1186,15 +1186,36 @@ void SyncManager::DoExceptionalCallback(const GenAsync &async, GenDetails &detai
         param.errCode, param.message });
 }
 
-bool SyncManager::InitDefaultUser(int32_t &user)
+bool SyncManager::InitDefaultUser(int32_t &user, const std::string &bundleName)
 {
     if (user != 0) {
         return false;
     }
     std::vector<int32_t> users;
     AccountDelegate::GetInstance()->QueryUsers(users);
+    bool isKvApp = kvApps_.find(bundleName) != kvApps_.end();
+    if (isKvApp) {
+        for (auto candidate : users) {
+            if (candidate == 0) {
+                continue;
+            }
+            CloudInfo cloudInfo;
+            cloudInfo.user = candidate;
+            if (!MetaDataManager::GetInstance().LoadMeta(cloudInfo.GetKey(), cloudInfo, true)) {
+                continue;
+            }
+            auto schemaKey = CloudInfo::GetSchemaKey(candidate, bundleName);
+            SchemaMeta schemaMeta;
+            if (!MetaDataManager::GetInstance().LoadMeta(schemaKey, schemaMeta, true)) {
+                continue;
+            }
+            user = candidate;
+            return true;
+        }
+    }
     if (!users.empty()) {
         user = users[0];
+        ZLOGW("InitDefaultUser fallback to users[0]:%{public}d bundleName:%{public}s", user, bundleName.c_str());
     }
     return true;
 }

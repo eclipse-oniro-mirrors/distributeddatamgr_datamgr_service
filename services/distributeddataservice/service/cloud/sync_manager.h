@@ -215,7 +215,7 @@ private:
         bool retry, const TraceIds &traceIds);
     void DoExceptionalCallback(const GenAsync &async, GenDetails &details, const StoreInfo &storeInfo,
         const ReportParam &param);
-    bool InitDefaultUser(int32_t &user);
+    bool InitDefaultUser(int32_t &user, const std::string &bundleName);
     std::function<void(const DistributedData::GenDetails &result)> RetryCallback(const StoreInfo &storeInfo,
         Retryer retryer, int32_t triggerMode, const std::string &prepareTraceId, int32_t user);
     void BatchUpdateFinishState(const CloudSyncInfos &cloudSyncInfos, int32_t code);
