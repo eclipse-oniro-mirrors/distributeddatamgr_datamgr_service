@@ -1290,11 +1290,13 @@ void CloudServiceImpl::UpdateE2eeEnable(
                 continue;
             }
             ZLOGI("Update e2eeEnable, bundleName:%{public}s, storeId:%{public}s, %{public}d->%{public}d",
-                bundleName.c_str(), oldDatabase.name.c_str(), oldDatabase.e2eeEnable, newDatabase.e2eeEnable);
+                bundleName.c_str(), Anonymous::Change(oldDatabase.name).c_str(), oldDatabase.e2eeEnable,
+                newDatabase.e2eeEnable);
             if (!appendix.empty()) {
                 appendix.append(";");
             }
-            appendix.append("storeId=" + oldDatabase.name + ",oldE2eeEnable=" + std::to_string(oldDatabase.e2eeEnable) +
+            appendix.append("storeId=" + Anonymous::Change(oldDatabase.name) +
+                            ",oldE2eeEnable=" + std::to_string(oldDatabase.e2eeEnable) +
                             ",newE2eeEnable=" + std::to_string(newDatabase.e2eeEnable));
             oldDatabase.e2eeEnable = newDatabase.e2eeEnable;
             changed = true;
