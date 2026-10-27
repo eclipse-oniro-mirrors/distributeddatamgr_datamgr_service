@@ -107,9 +107,8 @@ bool StoreMetaData::Unmarshal(const json &node)
     GetValue(node, GET_NAME(user), user);
     GetValue(node, GET_NAME(account), account);
     GetValue(node, GET_NAME(dataType), dataType);
-    GetValue(node, GET_NAME(enableCloud), enableCloud);
+    UnmarshalCloudFields(node);
     GetValue(node, GET_NAME(customSwitch), customSwitch);
-    GetValue(node, GET_NAME(cloudAutoSync), cloudAutoSync);
     GetValue(node, GET_NAME(asyncDownloadAsset), asyncDownloadAsset);
     GetValue(node, GET_NAME(isNeedUpdateDeviceId), isNeedUpdateDeviceId);
     GetValue(node, GET_NAME(assetConflictPolicy), assetConflictPolicy);
@@ -129,6 +128,12 @@ bool StoreMetaData::Unmarshal(const json &node)
     replicaPath.clear();
     GetValue(node, GET_NAME(replicaPath), replicaPath);
     return true;
+}
+
+void StoreMetaData::UnmarshalCloudFields(const json &node)
+{
+    GetValue(node, GET_NAME(enableCloud), enableCloud);
+    GetValue(node, GET_NAME(cloudAutoSync), cloudAutoSync);
 }
 
 StoreMetaData::StoreMetaData()

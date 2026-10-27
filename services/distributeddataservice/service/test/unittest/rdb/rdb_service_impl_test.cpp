@@ -1205,6 +1205,128 @@ HWTEST_F(RdbServiceImplTest, NotifyDataChange004, TestSize.Level0)
 }
 
 /**
+ * @tc.name: NotifyDataChange005
+ * @tc.desc: Test NotifyDataChange triggers OnCloudDataChange.
+ * @tc.type: FUNC
+ */
+HWTEST_F(RdbServiceImplTest, NotifyDataChange005, TestSize.Level0)
+{
+    RdbServiceImpl service;
+    RdbSyncerParam param;
+    param.storeName_ = metaData_.storeId;
+    param.bundleName_ = metaData_.bundleName;
+    param.user_ = metaData_.user;
+    param.hapName_ = metaData_.hapName;
+    param.customDir_ = metaData_.customDir;
+    param.area_ = metaData_.area;
+
+    StoreMetaData meta = metaData_;
+    EXPECT_EQ(MetaDataManager::GetInstance().SaveMeta(meta.GetKey(), meta, true), true);
+
+    Database database;
+    database.bundleName = metaData_.bundleName;
+    database.name = metaData_.storeId;
+    database.user = metaData_.user;
+    database.deviceId = metaData_.deviceId;
+    EXPECT_EQ(MetaDataManager::GetInstance().SaveMeta(database.GetKey(), database, true), true);
+
+    RdbChangedData rdbChangedData;
+    RdbChangeProperties props;
+    props.isCloudSyncDataChange = true;
+    rdbChangedData.tableData.insert_or_assign("cloud_table", props);
+
+    RdbNotifyConfig rdbNotifyConfig;
+    rdbNotifyConfig.delay_ = 0;
+    int32_t result = service.NotifyDataChange(param, rdbChangedData, rdbNotifyConfig);
+    EXPECT_EQ(result, RDB_OK);
+
+    EXPECT_EQ(MetaDataManager::GetInstance().DelMeta(meta.GetKey(), true), true);
+    EXPECT_EQ(MetaDataManager::GetInstance().DelMeta(database.GetKey(), true), true);
+}
+
+/**
+ * @tc.name: NotifyDataChange006
+ * @tc.desc: Test NotifyDataChange does not trigger OnCloudDataChange when no cloud tables in data.
+ * @tc.type: FUNC
+ */
+HWTEST_F(RdbServiceImplTest, NotifyDataChange006, TestSize.Level0)
+{
+    RdbServiceImpl service;
+    RdbSyncerParam param;
+    param.storeName_ = metaData_.storeId;
+    param.bundleName_ = metaData_.bundleName;
+    param.user_ = metaData_.user;
+    param.hapName_ = metaData_.hapName;
+    param.customDir_ = metaData_.customDir;
+    param.area_ = metaData_.area;
+
+    StoreMetaData meta = metaData_;
+    EXPECT_EQ(MetaDataManager::GetInstance().SaveMeta(meta.GetKey(), meta, true), true);
+
+    Database database;
+    database.bundleName = metaData_.bundleName;
+    database.name = metaData_.storeId;
+    database.user = metaData_.user;
+    database.deviceId = metaData_.deviceId;
+    EXPECT_EQ(MetaDataManager::GetInstance().SaveMeta(database.GetKey(), database, true), true);
+
+    RdbChangedData rdbChangedData;
+    RdbChangeProperties props;
+    props.isCloudSyncDataChange = true;
+    rdbChangedData.tableData.insert_or_assign("cloud_table", props);
+
+    RdbNotifyConfig rdbNotifyConfig;
+    rdbNotifyConfig.delay_ = 0;
+    int32_t result = service.NotifyDataChange(param, rdbChangedData, rdbNotifyConfig);
+    EXPECT_EQ(result, RDB_OK);
+
+    EXPECT_EQ(MetaDataManager::GetInstance().DelMeta(meta.GetKey(), true), true);
+    EXPECT_EQ(MetaDataManager::GetInstance().DelMeta(database.GetKey(), true), true);
+}
+
+/**
+ * @tc.name: NotifyDataChange007
+ * @tc.desc: Test NotifyDataChange with isCloudSyncDataChange but no cloud tables in data.
+ *           OnCloudDataChange returns early because GetCloudTables returns empty.
+ * @tc.type: FUNC
+ */
+HWTEST_F(RdbServiceImplTest, NotifyDataChange007, TestSize.Level0)
+{
+    RdbServiceImpl service;
+    RdbSyncerParam param;
+    param.storeName_ = metaData_.storeId;
+    param.bundleName_ = metaData_.bundleName;
+    param.user_ = metaData_.user;
+    param.hapName_ = metaData_.hapName;
+    param.customDir_ = metaData_.customDir;
+    param.area_ = metaData_.area;
+
+    StoreMetaData meta = metaData_;
+    EXPECT_EQ(MetaDataManager::GetInstance().SaveMeta(meta.GetKey(), meta, true), true);
+
+    Database database;
+    database.bundleName = metaData_.bundleName;
+    database.name = metaData_.storeId;
+    database.user = metaData_.user;
+    database.deviceId = metaData_.deviceId;
+    EXPECT_EQ(MetaDataManager::GetInstance().SaveMeta(database.GetKey(), database, true), true);
+
+    RdbChangedData rdbChangedData;
+    RdbChangeProperties props;
+    props.isTrackedDataChange = true;
+    props.isCloudSyncDataChange = false;
+    rdbChangedData.tableData.insert_or_assign("normal_table", props);
+
+    RdbNotifyConfig rdbNotifyConfig;
+    rdbNotifyConfig.delay_ = 0;
+    int32_t result = service.NotifyDataChange(param, rdbChangedData, rdbNotifyConfig);
+    EXPECT_EQ(result, RDB_OK);
+
+    EXPECT_EQ(MetaDataManager::GetInstance().DelMeta(meta.GetKey(), true), true);
+    EXPECT_EQ(MetaDataManager::GetInstance().DelMeta(database.GetKey(), true), true);
+}
+
+/**
  * @tc.name: SetSearchable001
  * @tc.desc: Test SetSearchable when CheckAccess fails.
  * @tc.type: FUNC
