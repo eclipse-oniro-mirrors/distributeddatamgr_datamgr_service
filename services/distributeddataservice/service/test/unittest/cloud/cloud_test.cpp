@@ -79,6 +79,55 @@ HWTEST_F(CloudTest, EventInfo, TestSize.Level1)
 }
 
 /**
+* @tc.name: EventInfo_FullSync
+* @tc.desc: Test SyncEvent EventInfo with isFullSync field
+* @tc.type: FUNC
+* @tc.require:
+*/
+HWTEST_F(CloudTest, EventInfo_FullSync, TestSize.Level1)
+{
+    SyncParam syncParam;
+    syncParam.mode = 4; // CLOUD_TIME_FIRST
+    syncParam.wait = 5;
+    syncParam.isDownloadOnly = true;
+    syncParam.isFullSync = true;
+
+    auto query = std::shared_ptr<GenQuery>(nullptr);
+    auto async = [](const GenDetails &) {};
+    SyncEvent::EventInfo eventInfo(syncParam, false, query, async);
+    SyncEvent::EventInfo movedInfo(std::move(eventInfo));
+
+    StoreInfo storeInfo{ IPCSkeleton::GetCallingTokenID(), TEST_CLOUD_BUNDLE, TEST_CLOUD_STORE, 0 };
+    SyncEvent evt(storeInfo, std::move(movedInfo));
+
+    EXPECT_TRUE(evt.GetFullSync());
+    EXPECT_TRUE(evt.GetDownloadOnly());
+    EXPECT_EQ(evt.GetWait(), 5);
+}
+
+/**
+* @tc.name: EventInfo_FullSync_Default
+* @tc.desc: Test SyncEvent EventInfo with isFullSync default false
+* @tc.type: FUNC
+* @tc.require:
+*/
+HWTEST_F(CloudTest, EventInfo_FullSync_Default, TestSize.Level1)
+{
+    SyncParam syncParam;
+    syncParam.mode = 4; // CLOUD_TIME_FIRST
+    syncParam.isFullSync = false;
+
+    auto query = std::shared_ptr<GenQuery>(nullptr);
+    auto async = [](const GenDetails &) {};
+    SyncEvent::EventInfo eventInfo(syncParam, false, query, async);
+
+    StoreInfo storeInfo{ IPCSkeleton::GetCallingTokenID(), TEST_CLOUD_BUNDLE, TEST_CLOUD_STORE, 0 };
+    SyncEvent evt(storeInfo, std::move(eventInfo));
+
+    EXPECT_FALSE(evt.GetFullSync());
+}
+
+/**
 * @tc.name: Serializable_Marshal
 * @tc.desc:
 * @tc.type: FUNC

@@ -3184,5 +3184,51 @@ HWTEST_F(RdbGeneralStoreTest, SetCloudConflictHandlerDelegateNull, TestSize.Leve
     auto result = store_->SetCloudConflictHandler(handler);
     EXPECT_EQ(result, GeneralError::E_ALREADY_CLOSED);
 }
+
+/**
+* @tc.name: DoCloudSync_FullSync_True
+* @tc.desc: Test DoCloudSync with isFullSync=true
+* @tc.type: FUNC
+*/
+HWTEST_F(RdbGeneralStoreTest, DoCloudSync_FullSync_True, TestSize.Level1)
+{
+    MockRelationalStoreDelegate::SetResSync(DBStatus::OK);
+    GeneralStore::Devices devices;
+    MockQuery query;
+    GeneralStore::DetailAsync async;
+    SyncParam syncParam;
+    syncParam.mode = GeneralStore::CLOUD_TIME_FIRST;
+    syncParam.isFullSync = true;
+
+    metaData_.storeId = "mock";
+    store_ = std::make_shared<RdbGeneralStore>(metaData_);
+    store_->Init();
+    auto [status, dbCode] = store_->Sync(devices, query, async, syncParam);
+    EXPECT_EQ(status, GeneralError::E_OK);
+    EXPECT_EQ(dbCode, DBStatus::OK);
+}
+
+/**
+* @tc.name: DoCloudSync_FullSync_False
+* @tc.desc: Test DoCloudSync with isFullSync=false
+* @tc.type: FUNC
+*/
+HWTEST_F(RdbGeneralStoreTest, DoCloudSync_FullSync_False, TestSize.Level1)
+{
+    MockRelationalStoreDelegate::SetResSync(DBStatus::OK);
+    GeneralStore::Devices devices;
+    MockQuery query;
+    GeneralStore::DetailAsync async;
+    SyncParam syncParam;
+    syncParam.mode = GeneralStore::CLOUD_TIME_FIRST;
+    syncParam.isFullSync = false;
+
+    metaData_.storeId = "mock";
+    store_ = std::make_shared<RdbGeneralStore>(metaData_);
+    store_->Init();
+    auto [status, dbCode] = store_->Sync(devices, query, async, syncParam);
+    EXPECT_EQ(status, GeneralError::E_OK);
+    EXPECT_EQ(dbCode, DBStatus::OK);
+}
 } // namespace DistributedRDBTest
 } // namespace OHOS::Test
