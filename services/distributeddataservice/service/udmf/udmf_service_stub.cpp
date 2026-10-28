@@ -25,6 +25,37 @@
 
 namespace OHOS {
 namespace UDMF {
+namespace {
+constexpr uint32_t MAX_VIRTUAL_ENTRY_COUNT = 4096;
+constexpr uint32_t MAX_VIRTUAL_ENTRY_DEPTH = 64;
+
+bool ReadVirtualEntry(MessageParcel &parcel, VirtualEntry &entry, uint32_t &count, uint32_t depth = 0)
+{
+    if (depth > MAX_VIRTUAL_ENTRY_DEPTH || count >= MAX_VIRTUAL_ENTRY_COUNT) {
+        return false;
+    }
+    ++count;
+    int32_t type = 0;
+    uint32_t childCount = 0;
+    entry.id = parcel.ReadString();
+    entry.name = parcel.ReadString();
+    if (!parcel.ReadInt32(type) || !parcel.ReadInt64(entry.modifyTime) || !parcel.ReadInt64(entry.size) ||
+        !parcel.ReadUint32(childCount) || type < static_cast<int32_t>(VirtualEntryType::FILE) ||
+        type > static_cast<int32_t>(VirtualEntryType::DIRECTORY) || childCount > MAX_VIRTUAL_ENTRY_COUNT - count) {
+        return false;
+    }
+    entry.type = static_cast<VirtualEntryType>(type);
+    entry.subItems.reserve(childCount);
+    for (uint32_t index = 0; index < childCount; ++index) {
+        VirtualEntry child;
+        if (!ReadVirtualEntry(parcel, child, count, depth + 1)) {
+            return false;
+        }
+        entry.subItems.emplace_back(std::move(child));
+    }
+    return true;
+}
+} // namespace
 using OHOS::DistributedData::QosManager;
 constexpr UdmfServiceStub::Handler
     UdmfServiceStub::HANDLERS[static_cast<uint32_t>(UdmfServiceInterfaceCode::CODE_BUTT)];
@@ -404,6 +435,19 @@ int32_t UdmfServiceStub::OnGetDataIfAvailable(MessageParcel &data, MessageParcel
         return E_WRITE_PARCEL_ERROR;
     }
     return E_OK;
+}
+
+int32_t UdmfServiceStub::OnRegisterVirtualEntry(MessageParcel &data, MessageParcel &reply)
+{
+    std::string key = data.ReadString();
+    uint32_t recordIndex = data.ReadUint32();
+    VirtualEntry entry;
+    uint32_t entryCount = 0;
+    sptr<IRemoteObject> provider;
+    if (key.empty() || !ReadVirtualEntry(data, entry, entryCount) || (provider = data.ReadRemoteObject()) == nullptr) {
+        return E_READ_PARCEL_ERROR;
+    }
+    return reply.WriteInt32(RegisterVirtualEntry(key, recordIndex, entry, provider)) ? E_OK : E_WRITE_PARCEL_ERROR;
 }
 } // namespace UDMF
 } // namespace OHOS

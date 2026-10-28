@@ -17,13 +17,13 @@
 #define UDMF_SERVICE_IMPL_H
 
 #include "block_data.h"
-#include "permission/checker_manager.h"
 #include "kv_store_delegate_manager.h"
+#include "metadata/meta_data_manager.h"
 #include "metadata/store_meta_data.h"
+#include "permission/checker_manager.h"
 #include "store_cache.h"
 #include "udmf_notifier_proxy.h"
 #include "udmf_service_stub.h"
-#include "metadata/meta_data_manager.h"
 #include "uri.h"
 namespace OHOS {
 namespace UDMF {
@@ -53,25 +53,40 @@ public:
     int32_t ClearAsynProcessByKey(const std::string &businessUdKey) override;
     int32_t ResolveAutoLaunch(const std::string &identifier, DBLaunchParam &param) override;
     int32_t OnUserChange(uint32_t code, const std::string &user, const std::string &account) override;
-    int32_t SetDelayInfo(const DataLoadInfo &dataLoadInfo, sptr<IRemoteObject> iUdmfNotifier,
-        std::string &key) override;
+    int32_t SetDelayInfo(
+        const DataLoadInfo &dataLoadInfo, sptr<IRemoteObject> iUdmfNotifier, std::string &key) override;
     int32_t PushDelayData(const std::string &key, UnifiedData &unifiedData, Summary &summary) override;
     int32_t GetDataIfAvailable(const std::string &key, const DataLoadInfo &dataLoadInfo,
         sptr<IRemoteObject> iUdmfNotifier, std::shared_ptr<UnifiedData> unifiedData) override;
+    int32_t RegisterVirtualEntry(const std::string &key, uint32_t recordIndex, const VirtualEntry &entry,
+        sptr<IRemoteObject> provider) override;
     int32_t HandleRemoteDelayData(const std::string &key);
     static std::shared_ptr<UdmfServiceImpl> GetService();
+
 private:
     using StaticActs = DistributedData::StaticActs;
+    struct VirtualDataResult {
+        bool exists = false;
+        uint32_t recordIndex = 0;
+        std::string uri;
+    };
+
     bool IsNeedMetaSync(const DistributedData::StoreMetaData &meta, const std::vector<std::string> &uuids);
+    ProcessCallback CreateSyncCallback(const QueryOption &query);
     int32_t StoreSync(const UnifiedKey &key, const QueryOption &query, const std::vector<std::string> &devices);
     int32_t SaveData(CustomOption &option, UnifiedData &unifiedData, Summary &summary, std::string &key);
     int32_t RetrieveData(const QueryOption &query, UnifiedData &unifiedData);
+    int32_t LoadDragData(
+        const QueryOption &query, UnifiedKey &key, UnifiedData &unifiedData, std::shared_ptr<Runtime> &runtime);
+    int32_t ProcessVirtualData(const QueryOption &query, UnifiedKey &key, const std::shared_ptr<Runtime> &runtime,
+        UnifiedData &unifiedData, VirtualDataResult &result);
+    static void RemoveVirtualSessions(const std::vector<std::string> &sessionKeys);
     int32_t QueryDataCommon(const QueryOption &query, std::vector<UnifiedData> &dataSet, std::shared_ptr<Store> &store);
     int32_t ProcessUri(const QueryOption &query, UnifiedData &unifiedData);
     bool IsPermissionInCache(const QueryOption &query);
     bool IsReadAndKeep(const std::vector<Privilege> &privileges, const QueryOption &query);
-    int32_t ProcessCrossDeviceData(uint32_t tokenId, UnifiedData &unifiedData,
-        std::map<unsigned int, std::vector<Uri>> &grantUris);
+    int32_t ProcessCrossDeviceData(
+        uint32_t tokenId, UnifiedData &unifiedData, std::map<unsigned int, std::vector<Uri>> &grantUris);
     bool VerifyPermission(const std::string &permission, uint32_t callerTokenId);
     bool HasDatahubPriviledge(const std::string &bundleName);
     void RegisterAsyncProcessInfo(const std::string &businessUdKey, uint32_t tokenId);
@@ -80,20 +95,20 @@ private:
     bool CheckDragParams(UnifiedKey &key);
     int32_t CheckAddPrivilegePermission(UnifiedKey &key, std::string &processName, const QueryOption &query);
     int32_t ProcessData(const QueryOption &query, std::vector<UnifiedData> &dataSet);
-    int32_t VerifyIntentionPermission(const QueryOption &query, UnifiedData &dataSet,
-        UnifiedKey &key, CheckerManager::CheckInfo &info);
+    int32_t VerifyIntentionPermission(
+        const QueryOption &query, UnifiedData &dataSet, UnifiedKey &key, CheckerManager::CheckInfo &info);
     bool IsFileMangerSa();
     bool IsFileMangerIntention(const std::string &intention);
     std::string FindIntentionMap(const Intention &queryintention);
     bool IsValidOptionsNonDrag(UnifiedKey &key, const std::string &intention);
     bool IsValidInput(const QueryOption &query, UnifiedData &unifiedData, UnifiedKey &key);
-    bool CheckDeleteDataPermission(std::string &appId, const std::shared_ptr<Runtime> &runtime,
-        const QueryOption &query);
+    bool CheckDeleteDataPermission(
+        std::string &appId, const std::shared_ptr<Runtime> &runtime, const QueryOption &query);
     int32_t CheckAppId(std::shared_ptr<Runtime> runtime, const std::string &bundleName);
     void CloseStoreWhenCorrupted(const std::string &intention, int32_t status);
     void HandleDbError(const std::string &intention, int32_t &status);
-    int32_t VerifyDataAccessPermission(std::shared_ptr<Runtime> runtime, const QueryOption &query,
-        const UnifiedData &unifiedData);
+    int32_t VerifyDataAccessPermission(
+        std::shared_ptr<Runtime> runtime, const QueryOption &query, const UnifiedData &unifiedData);
     std::vector<std::string> ProcessResult(const std::map<std::string, int32_t> &results);
     DistributedData::StoreMetaData BuildMeta(const std::string &storeId, int userId);
     int32_t VerifyUpdatePermission(const QueryOption &query, UnifiedData &unifiedData, std::string &bundleName);
@@ -104,15 +119,15 @@ private:
     int32_t FillDelayUnifiedData(const UnifiedKey &key, UnifiedData &unifiedData);
     std::vector<std::string> GetDevicesForDelayData();
     using DeviceMetaSyncOption = DistributedData::MetaDataManager::DeviceMetaSyncOption;
-    static DeviceMetaSyncOption GetMetaSyncOption(const DistributedData::StoreMetaData &metaData,
-        const std::vector<std::string> &devices);
+    static DeviceMetaSyncOption GetMetaSyncOption(
+        const DistributedData::StoreMetaData &metaData, const std::vector<std::string> &devices);
     static bool IsDraggable(uint32_t tokenId);
 
     class UdmfStatic : public StaticActs {
     public:
         ~UdmfStatic() override{};
-        int32_t OnAppUninstall(const std::string &bundleName, int32_t user, int32_t index,
-            int32_t tokenId, const std::string &appIdentifier = "") override;
+        int32_t OnAppUninstall(const std::string &bundleName, int32_t user, int32_t index, int32_t tokenId,
+            const std::string &appIdentifier = "") override;
     };
     class Factory {
     public:
@@ -126,10 +141,10 @@ private:
     };
     static Factory factory_;
     mutable std::recursive_mutex cacheMutex_;
-    std::map<std::string, std::vector<Privilege>> privilegeCache_ {};
+    std::map<std::string, std::vector<Privilege>> privilegeCache_{};
     std::shared_ptr<ExecutorPool> executors_;
     std::mutex mutex_;
-    std::unordered_map<std::string, AsyncProcessInfo> asyncProcessInfoMap_ {};
+    std::unordered_map<std::string, AsyncProcessInfo> asyncProcessInfoMap_{};
 };
 } // namespace UDMF
 } // namespace OHOS
