@@ -805,6 +805,15 @@ std::vector<CloudInfo> SyncManager::GetCloudInfos(int32_t user)
     return infos;
 }
 
+void SyncManager::RefreshE2eeEnable(const std::string &schemaKey, SchemaMeta &schemaMeta)
+{
+    if (!schemaMeta.e2eeEnable || schemaMeta.databases.size() != 1 || schemaMeta.databases[0].e2eeEnable) {
+        return;
+    }
+    schemaMeta.databases[0].e2eeEnable = schemaMeta.e2eeEnable;
+    MetaDataManager::GetInstance().SaveMeta(schemaKey, schemaMeta, true);
+}
+
 int32_t SyncManager::FillUserBindInfos(const AutoCache::Store &store, const StoreMetaData &meta,
     bool mustBind, CloudInfo &info, UserBindInfo &infos)
 {
@@ -823,6 +832,7 @@ int32_t SyncManager::FillUserBindInfos(const AutoCache::Store &store, const Stor
             meta.GetStoreAlias().c_str());
         return E_ERROR;
     }
+    RefreshE2eeEnable(schemaKey, schemaMeta);
     auto dbMeta = schemaMeta.GetDataBase(meta.storeId);
     config.isSupportEncrypt = dbMeta.e2eeEnable;
     std::vector<int32_t> users = { info.user };
