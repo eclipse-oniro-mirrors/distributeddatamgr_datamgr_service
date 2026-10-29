@@ -170,7 +170,6 @@ void StoreSyncFuzz(FuzzedDataProvider &provider)
     DistributedData::Bootstrap::GetInstance().LoadDirectory();
     DistributedData::Bootstrap::GetInstance().LoadCheckers();
     auto executors = std::make_shared<OHOS::ExecutorPool>(NUM_MAX, NUM_MIN);
-    DmAdapter::GetInstance().Init(executors);
     DistributedKv::KvStoreMetaManager::GetInstance().BindExecutor(executors);
     DistributedKv::KvStoreMetaManager::GetInstance().InitMetaParameter();
     DistributedKv::KvStoreMetaManager::GetInstance().InitMetaListener();
