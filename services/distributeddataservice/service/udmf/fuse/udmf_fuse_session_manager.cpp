@@ -64,7 +64,7 @@ bool IsValidEntry(const VirtualEntry &entry, uint32_t depth, uint32_t &count)
         return false;
     }
     if (entry.type == VirtualEntryType::FILE) {
-        return !entry.id.empty() && entry.id.size() <= MAX_ENTRY_ID_BYTES && entry.size >= -1 && entry.subItems.empty();
+        return !entry.id.empty() && entry.id.size() <= MAX_ENTRY_ID_BYTES && entry.size >= 0 && entry.subItems.empty();
     }
     if (entry.type != VirtualEntryType::DIRECTORY || entry.size != -1 || !entry.id.empty()) {
         return false;

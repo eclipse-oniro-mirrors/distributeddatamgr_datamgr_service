@@ -14,8 +14,10 @@
  */
 
 #include "udmf_fuse_mount_adapter.h"
+#include "udmf_fuse_mount_adapter_mock.h"
 
 #include <cerrno>
+#include <sys/eventfd.h>
 
 namespace OHOS::UDMF {
 int32_t UdmfFuseMountAdapter::Mount(int32_t userId, const std::string &mountPoint, int &fuseFd)
@@ -23,13 +25,19 @@ int32_t UdmfFuseMountAdapter::Mount(int32_t userId, const std::string &mountPoin
     (void)userId;
     (void)mountPoint;
     fuseFd = -1;
-    return -ENOSYS;
+    ++UdmfFuseMountAdapterMock::mounts;
+    if (UdmfFuseMountAdapterMock::mountStatus != 0) {
+        return UdmfFuseMountAdapterMock::mountStatus;
+    }
+    fuseFd = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
+    return fuseFd < 0 ? -errno : 0;
 }
 
 int32_t UdmfFuseMountAdapter::Unmount(int32_t userId, const std::string &mountPoint)
 {
     (void)userId;
     (void)mountPoint;
-    return 0;
+    ++UdmfFuseMountAdapterMock::unmounts;
+    return UdmfFuseMountAdapterMock::unmountStatus;
 }
 } // namespace OHOS::UDMF

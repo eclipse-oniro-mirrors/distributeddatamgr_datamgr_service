@@ -45,6 +45,9 @@ bool ReadVirtualEntry(MessageParcel &parcel, VirtualEntry &entry, uint32_t &coun
         return false;
     }
     entry.type = static_cast<VirtualEntryType>(type);
+    if (entry.type == VirtualEntryType::FILE && entry.size < 0) {
+        return false;
+    }
     entry.subItems.reserve(childCount);
     for (uint32_t index = 0; index < childCount; ++index) {
         VirtualEntry child;

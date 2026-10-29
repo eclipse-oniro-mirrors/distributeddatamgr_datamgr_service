@@ -50,6 +50,16 @@ namespace DistributedDataTest {
 namespace {
 class FuseReadProvider final : public IRemoteStub<IVirtualEntryProvider> {
 public:
+    bool AddDeathRecipient(const sptr<DeathRecipient> &recipient) override
+    {
+        return recipient != nullptr;
+    }
+
+    bool RemoveDeathRecipient(const sptr<DeathRecipient> &recipient) override
+    {
+        return recipient != nullptr;
+    }
+
     struct PendingRead {
         std::string id;
         int64_t offset = 0;
@@ -626,6 +636,7 @@ HWTEST_F(UdmfServiceImplMockTest, FillFuseAttr_SessionNode_UseOwnerOnlyMode, Tes
     file.inode = FUSE_ROOT_ID + 2;
     file.targetUid = targetUid;
     file.entry.type = VirtualEntryType::FILE;
+    file.entry.size = 0;
     struct stat fileAttr {};
     controller.FillAttr(file, fileAttr);
 

@@ -162,6 +162,7 @@ ohos_unittest("UdmfServiceImplMockTest") {
     "${data_service_path}/framework/feature/feature_system.cpp",
     "${data_service_path}/service/backup/src/backup_manager.cpp",
     "${data_service_path}/service/test/mock/meta_data_manager_mock.cpp",
+    "${data_service_path}/service/test/mock/udmf_fuse_lowlevel_mock.cpp",
     "${data_service_path}/service/test/mock/udmf_fuse_mount_adapter_mock.cpp",
     "${data_service_path}/service/udmf/delay_data/delay_data_acquire_container.cpp",
     "${data_service_path}/service/udmf/delay_data/delay_data_prepare_container.cpp",
@@ -183,6 +184,7 @@ ohos_unittest("UdmfServiceImplMockTest") {
     "${data_service_path}/service/udmf/store/store_cache.cpp",
     "${data_service_path}/service/udmf/udmf_service_impl.cpp",
     "${data_service_path}/service/udmf/udmf_service_stub.cpp",
+    "udmf_fuse_tdd_test.cpp",
     "udmf_service_impl_mock_test.cpp",
   ]
 
@@ -245,6 +247,7 @@ ohos_unittest("UdmfServiceImplMockTest") {
     "samgr:samgr_proxy",
     "udmf:udmf_client",
     "udmf:utd_client",
+    "udmf:virtual_entry_provider_proxy",
   ]
   sanitize = {
     cfi = true
@@ -440,6 +443,7 @@ ohos_unittest("UdmfServiceStubMockTest") {
     "samgr:samgr_proxy",
     "udmf:udmf_client",
     "udmf:utd_client",
+    "udmf:virtual_entry_provider_proxy",
   ]
 }
 

@@ -76,7 +76,6 @@ private:
         uid_t targetUid = 0;
         gid_t targetGid = 0;
         bool synthetic = false;
-        bool statAttempted = false;
         std::vector<fuse_ino_t> children;
         std::unordered_map<std::string, fuse_ino_t> childrenByName;
     };
@@ -158,15 +157,13 @@ private:
     static int32_t GetSeekResult(const Node &node, off_t offset, int whence, off_t &result);
     void FillStatFs(uid_t callingUid, struct statvfs &stat) const;
     bool GetNode(fuse_ino_t inode, Node &node, sptr<IRemoteObject> &provider) const;
-    void FillAttr(const Node &node, struct stat &attr) const;
+    bool FillAttr(const Node &node, struct stat &attr) const;
     static void ReadDirectory(fuse_req_t req, fuse_ino_t inode, size_t size, off_t offset, bool plus);
     std::vector<Node> GetDirectoryEntries(fuse_req_t req, const Node &directory);
-    int32_t RefreshFileSize(Node &node, const sptr<IRemoteObject> &provider);
     int32_t ReadFileData(const Node &node, const sptr<IRemoteObject> &provider, size_t size, off_t offset,
         std::vector<uint8_t> &result);
     int32_t AddTreeLocked(fuse_ino_t parent, const VirtualEntry &entry, Session &session, fuse_ino_t &inode);
     void RemoveNodeLocked(fuse_ino_t inode);
-    static int32_t ProviderStat(const sptr<IRemoteObject> &provider, const std::string &id, VirtualEntry &entry);
     int32_t ProviderRead(const sptr<IRemoteObject> &provider, const std::string &sessionId, const std::string &id,
         int64_t offset, int32_t length, const std::chrono::steady_clock::time_point &deadline,
         std::vector<uint8_t> &bytes);

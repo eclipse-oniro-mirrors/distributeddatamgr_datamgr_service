@@ -506,7 +506,6 @@ int32_t UdmfFuseController::AddTreeLocked(
     }
     node.targetUid = session.targetUid;
     node.targetGid = session.targetGid;
-    node.statAttempted = entry.type != VirtualEntryType::FILE || entry.size >= 0;
     // unordered_map::emplace may rehash and invalidate parentIt.
     parentIt->second.children.push_back(inode);
     parentIt->second.childrenByName.emplace(entry.name, inode);
@@ -528,7 +527,8 @@ int32_t UdmfFuseController::AddTreeLocked(
 
 int32_t UdmfFuseController::AddSession(const SessionOptions &options, std::string &relativePath)
 {
-    if (options.sessionId.empty() || options.alias.empty() || options.provider == nullptr) {
+    if (options.sessionId.empty() || options.alias.empty() || options.provider == nullptr ||
+        !options.root.HasValidFileSizes()) {
         return -EINVAL;
     }
     std::lock_guard<std::mutex> lock(mutex_);
@@ -720,7 +720,7 @@ bool UdmfFuseController::GetNode(fuse_ino_t inode, Node &node, sptr<IRemoteObjec
     return true;
 }
 
-void UdmfFuseController::FillAttr(const Node &node, struct stat &attr) const
+bool UdmfFuseController::FillAttr(const Node &node, struct stat &attr) const
 {
     attr = {};
     attr.st_ino = node.inode;
@@ -733,13 +733,17 @@ void UdmfFuseController::FillAttr(const Node &node, struct stat &attr) const
         // filter aliases by target UID. Per-session directories stay private.
         attr.st_mode = S_IFDIR | (node.inode == FUSE_ROOT_ID ? ROOT_DIRECTORY_MODE : SESSION_DIRECTORY_MODE);
         attr.st_nlink = DIRECTORY_LINK_COUNT;
-        return;
+        return true;
+    }
+    if (node.entry.size < 0) {
+        return false;
     }
     attr.st_mode = S_IFREG | VIRTUAL_FILE_MODE;
     attr.st_nlink = FILE_LINK_COUNT;
-    attr.st_size = std::max<int64_t>(node.entry.size, 0);
+    attr.st_size = node.entry.size;
     attr.st_blksize = PROVIDER_BLOCK_BYTES;
-    attr.st_blocks = (attr.st_size + BYTES_PER_BLOCK - 1) / BYTES_PER_BLOCK;
+    attr.st_blocks = attr.st_size / BYTES_PER_BLOCK + (attr.st_size % BYTES_PER_BLOCK != 0);
+    return true;
 }
 
 void UdmfFuseController::Init(void *userdata, struct fuse_conn_info *connection)
@@ -793,7 +797,10 @@ void UdmfFuseController::Lookup(fuse_req_t req, fuse_ino_t parent, const char *n
     }
     struct fuse_entry_param result {};
     result.ino = child.inode;
-    controller->FillAttr(child, result.attr);
+    if (!controller->FillAttr(child, result.attr)) {
+        fuse_reply_err(req, EIO);
+        return;
+    }
     result.attr_timeout = ATTR_TIMEOUT_SECONDS;
     result.entry_timeout = ATTR_TIMEOUT_SECONDS;
     fuse_reply_entry(req, &result);
@@ -820,33 +827,11 @@ void UdmfFuseController::GetAttr(fuse_req_t req, fuse_ino_t inode, struct fuse_f
         fuse_reply_err(req, EACCES);
         return;
     }
-    if (node.entry.type == VirtualEntryType::FILE && !node.statAttempted) {
-        VirtualEntry actual;
-        int32_t ret = ProviderStat(provider, node.entry.id, actual);
-        if (ret != 0 && ret != -ENOSYS) {
-            fuse_reply_err(req, ToFuseError(ret));
-            return;
-        }
-        if (ret == 0 && actual.id != node.entry.id) {
-            fuse_reply_err(req, EIO);
-            return;
-        }
-        node.statAttempted = true;
-        if (ret == 0) {
-            node.entry.size = actual.size;
-            node.entry.modifyTime = actual.modifyTime;
-        }
-        {
-            std::lock_guard<std::mutex> lock(controller->mutex_);
-            auto stored = controller->nodes_.find(inode);
-            if (stored != controller->nodes_.end()) {
-                stored->second.entry = node.entry;
-                stored->second.statAttempted = true;
-            }
-        }
-    }
     struct stat attr {};
-    controller->FillAttr(node, attr);
+    if (!controller->FillAttr(node, attr)) {
+        fuse_reply_err(req, EIO);
+        return;
+    }
     fuse_reply_attr(req, &attr, ATTR_TIMEOUT_SECONDS);
 }
 
@@ -953,7 +938,10 @@ void UdmfFuseController::ReadDirectory(fuse_req_t req, fuse_ino_t inode, size_t 
         entry.ino = entries[index].inode;
         entry.attr_timeout = ATTR_TIMEOUT_SECONDS;
         entry.entry_timeout = ATTR_TIMEOUT_SECONDS;
-        controller->FillAttr(entries[index], entry.attr);
+        if (!controller->FillAttr(entries[index], entry.attr)) {
+            fuse_reply_err(req, EIO);
+            return;
+        }
         size_t needed =
             plus ? fuse_add_direntry_plus(req, nullptr, 0, entries[index].entry.name.c_str(), &entry, index + 1)
                  : fuse_add_direntry(req, nullptr, 0, entries[index].entry.name.c_str(), &entry.attr, index + 1);
@@ -1057,7 +1045,7 @@ void UdmfFuseController::Read(
         fuse_reply_err(req, EACCES);
         return;
     }
-    if (offset < 0 || node.entry.type != VirtualEntryType::FILE) {
+    if (offset < 0 || node.entry.type != VirtualEntryType::FILE || node.entry.size < 0) {
         fuse_reply_err(req, EINVAL);
         return;
     }
@@ -1065,13 +1053,8 @@ void UdmfFuseController::Read(
         fuse_reply_buf(req, nullptr, 0);
         return;
     }
-    int32_t ret = controller->RefreshFileSize(node, provider);
-    if (ret != 0) {
-        fuse_reply_err(req, ToFuseError(ret));
-        return;
-    }
     std::vector<uint8_t> result;
-    ret = controller->ReadFileData(node, provider, size, offset, result);
+    int32_t ret = controller->ReadFileData(node, provider, size, offset, result);
     if (ret != 0) {
         fuse_reply_err(req, ToFuseError(ret));
         return;
@@ -1104,27 +1087,6 @@ int32_t UdmfFuseController::ReadFileData(const Node &node, const sptr<IRemoteObj
         std::copy_n(block->data.data() + offsetInBlock, copySize, result.data() + copied);
         copied += copySize;
         ReleaseTransientBlock(blockKey, block);
-    }
-    return 0;
-}
-
-int32_t UdmfFuseController::RefreshFileSize(Node &node, const sptr<IRemoteObject> &provider)
-{
-    if (node.entry.size >= 0) {
-        return 0;
-    }
-    VirtualEntry actual;
-    int32_t ret = ProviderStat(provider, node.entry.id, actual);
-    if (ret != 0 || actual.id != node.entry.id || actual.size < 0) {
-        return ret == 0 ? -EIO : ret;
-    }
-    node.entry.size = actual.size;
-    node.entry.modifyTime = actual.modifyTime;
-    std::lock_guard<std::mutex> lock(mutex_);
-    auto stored = nodes_.find(node.inode);
-    if (stored != nodes_.end()) {
-        stored->second.entry = node.entry;
-        stored->second.statAttempted = true;
     }
     return 0;
 }
@@ -1173,22 +1135,6 @@ void UdmfFuseController::Lseek(
         fuse_reply_err(req, EBADF);
         return;
     }
-    if (node.entry.type == VirtualEntryType::FILE && node.entry.size < 0) {
-        VirtualEntry actual;
-        int32_t ret = ProviderStat(provider, node.entry.id, actual);
-        if (ret != 0 || actual.id != node.entry.id || actual.size < 0) {
-            fuse_reply_err(req, ToFuseError(ret == 0 ? -EIO : ret));
-            return;
-        }
-        node.entry.size = actual.size;
-        node.entry.modifyTime = actual.modifyTime;
-        std::lock_guard<std::mutex> lock(controller->mutex_);
-        auto stored = controller->nodes_.find(inode);
-        if (stored != controller->nodes_.end()) {
-            stored->second.entry = node.entry;
-            stored->second.statAttempted = true;
-        }
-    }
     off_t result = 0;
     int32_t ret = GetSeekResult(node, offset, whence, result);
     if (ret != 0) {
@@ -1208,13 +1154,6 @@ void UdmfFuseController::Release(fuse_req_t req, fuse_ino_t inode, struct fuse_f
         UdmfFuseSessionManager::GetInstance().ReleaseOpen(node.sessionId);
     }
     fuse_reply_err(req, 0);
-}
-
-int32_t UdmfFuseController::ProviderStat(
-    const sptr<IRemoteObject> &provider, const std::string &id, VirtualEntry &entry)
-{
-    auto virtualProvider = iface_cast<IVirtualEntryProvider>(provider);
-    return virtualProvider == nullptr ? -EPIPE : virtualProvider->Stat(id, entry);
 }
 
 int32_t UdmfFuseController::ProviderRead(const sptr<IRemoteObject> &provider, const std::string &sessionId,
