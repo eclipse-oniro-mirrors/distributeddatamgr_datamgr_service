@@ -80,6 +80,8 @@ private:
         const QueryOption &query, UnifiedKey &key, UnifiedData &unifiedData, std::shared_ptr<Runtime> &runtime);
     int32_t ProcessVirtualData(const QueryOption &query, UnifiedKey &key, const std::shared_ptr<Runtime> &runtime,
         UnifiedData &unifiedData, VirtualDataResult &result);
+    int32_t ActivateVirtualData(const QueryOption &query, const UnifiedData &data, uint32_t recordIndex,
+        int32_t userId, std::string &uri, const char *caller);
     static void RemoveVirtualSessions(const std::vector<std::string> &sessionKeys);
     int32_t QueryDataCommon(const QueryOption &query, std::vector<UnifiedData> &dataSet, std::shared_ptr<Store> &store);
     int32_t ProcessUri(const QueryOption &query, UnifiedData &unifiedData);

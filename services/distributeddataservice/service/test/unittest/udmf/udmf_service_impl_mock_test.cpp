@@ -167,6 +167,14 @@ private:
     const std::vector<uint8_t> content_;
     const size_t maxReadBytes_;
 };
+
+bool WaitForAsyncRequests(const sptr<FuseReadProvider> &provider, size_t count,
+    const std::chrono::steady_clock::time_point &deadline)
+{
+    std::unique_lock<std::mutex> lock(provider->asyncMutex_);
+    return provider->asyncCondition_.wait_until(
+        lock, deadline, [&provider, count] { return provider->asyncRequestCount_ == count; });
+}
 } // namespace
 
 class UdmfServiceImplMockTest : public testing::Test {
@@ -1107,11 +1115,7 @@ HWTEST_F(UdmfServiceImplMockTest, ProviderGate_WaitingSessionGetsFairSlot_AvoidS
                 0);
         });
     }
-    {
-        std::unique_lock<std::mutex> lock(activeProvider->asyncMutex_);
-        EXPECT_TRUE(activeProvider->asyncCondition_.wait_until(
-            lock, deadline, [&activeProvider] { return activeProvider->asyncRequestCount_ == 3; }));
-    }
+    EXPECT_TRUE(WaitForAsyncRequests(activeProvider, 3, deadline));
     std::thread borrowedRead([&controller, &borrowedProvider, deadline] {
         std::vector<uint8_t> bytes;
         EXPECT_EQ(controller.ProviderRead(
@@ -1126,21 +1130,13 @@ HWTEST_F(UdmfServiceImplMockTest, ProviderGate_WaitingSessionGetsFairSlot_AvoidS
     });
 
     EXPECT_TRUE(activeProvider->CompleteNextRead());
-    {
-        std::unique_lock<std::mutex> lock(waitingProvider->asyncMutex_);
-        EXPECT_TRUE(waitingProvider->asyncCondition_.wait_until(
-            lock, deadline, [&waitingProvider] { return waitingProvider->asyncRequestCount_ == 1; }));
-    }
+    EXPECT_TRUE(WaitForAsyncRequests(waitingProvider, 1, deadline));
     {
         std::lock_guard<std::mutex> lock(borrowedProvider->asyncMutex_);
         EXPECT_EQ(borrowedProvider->asyncRequestCount_, 0u);
     }
     EXPECT_TRUE(waitingProvider->CompleteNextRead());
-    {
-        std::unique_lock<std::mutex> lock(borrowedProvider->asyncMutex_);
-        EXPECT_TRUE(borrowedProvider->asyncCondition_.wait_until(
-            lock, deadline, [&borrowedProvider] { return borrowedProvider->asyncRequestCount_ == 1; }));
-    }
+    EXPECT_TRUE(WaitForAsyncRequests(borrowedProvider, 1, deadline));
     borrowedRead.join();
     waitingRead.join();
     EXPECT_TRUE(activeProvider->CompleteNextRead());

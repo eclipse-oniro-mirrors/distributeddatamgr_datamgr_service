@@ -48,6 +48,8 @@ constexpr unsigned long MAX_FILE_NAME_BYTES = 255;
 constexpr int32_t PROVIDER_READ_MAX_ATTEMPTS = 3;
 constexpr size_t MAX_PROVIDER_READS = 3;
 constexpr size_t MAX_READS_PER_PROVIDER = MAX_PROVIDER_READS;
+// A transient block can be removed when only the map and the current reader own it.
+constexpr long TRANSIENT_BLOCK_OWNER_COUNT = 2;
 constexpr int32_t MAX_FUSE_THREADS = 16;
 constexpr uint32_t PROVIDER_TIMEOUT_THRESHOLD = 3;
 constexpr nfds_t FUSE_POLL_FD_COUNT = 2;
@@ -140,7 +142,7 @@ struct UdmfFuseController::ProviderGate {
         const auto *providerKey = provider.GetRefPtr();
         uint64_t ticket = nextTicket++;
         waiters.push_back({ ticket, sessionId });
-        while (true) {
+        do {
             auto now = std::chrono::steady_clock::now();
             ClearRecoveredProvidersLocked(now);
             auto state = states.find(providerKey);
@@ -161,12 +163,10 @@ struct UdmfFuseController::ProviderGate {
                 condition.notify_all();
                 return 0;
             }
-            if (condition.wait_until(lock, deadline) == std::cv_status::timeout) {
-                RemoveWaiterLocked(ticket);
-                condition.notify_all();
-                return -ETIMEDOUT;
-            }
-        }
+        } while (condition.wait_until(lock, deadline) != std::cv_status::timeout);
+        RemoveWaiterLocked(ticket);
+        condition.notify_all();
+        return -ETIMEDOUT;
     }
 
     void RecordTimeout(const sptr<IRemoteObject> &provider)
@@ -400,24 +400,9 @@ int32_t UdmfFuseController::Start(int fuseFd)
         (void)close(fuseFd);
         return ret;
     }
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        if (fuseSession_ != nullptr) {
-            fuse_session_destroy(session);
-            (void)close(wakeFd);
-            return -EALREADY;
-        }
-        Node root;
-        root.inode = FUSE_ROOT_ID;
-        root.parent = FUSE_ROOT_ID;
-        root.synthetic = true;
-        root.entry.name = "/";
-        root.entry.type = VirtualEntryType::DIRECTORY;
-        nodes_.emplace(FUSE_ROOT_ID, std::move(root));
-        fuseSession_ = session;
-        wakeFd_ = wakeFd;
-        loopState_ = LoopState::STARTING;
-        loopResult_ = 0;
+    ret = InitializeSession(session, wakeFd);
+    if (ret != 0) {
+        return ret;
     }
     loopThread_ = std::thread(&UdmfFuseController::LoopMain, this);
     int32_t startResult = 0;
@@ -436,6 +421,28 @@ int32_t UdmfFuseController::Start(int fuseFd)
         Stop();
     }
     return startResult;
+}
+
+int32_t UdmfFuseController::InitializeSession(struct fuse_session *session, int wakeFd)
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (fuseSession_ != nullptr) {
+        fuse_session_destroy(session);
+        (void)close(wakeFd);
+        return -EALREADY;
+    }
+    Node root;
+    root.inode = FUSE_ROOT_ID;
+    root.parent = FUSE_ROOT_ID;
+    root.synthetic = true;
+    root.entry.name = "/";
+    root.entry.type = VirtualEntryType::DIRECTORY;
+    nodes_.emplace(FUSE_ROOT_ID, std::move(root));
+    fuseSession_ = session;
+    wakeFd_ = wakeFd;
+    loopState_ = LoopState::STARTING;
+    loopResult_ = 0;
+    return 0;
 }
 
 void UdmfFuseController::Stop()
@@ -579,26 +586,32 @@ void UdmfFuseController::RemoveSession(const std::string &sessionId)
         fileIds = session->second.fileIds;
         RemoveBlocksLocked(session->second.nodes);
         for (auto inode : session->second.nodes) {
-            auto node = nodes_.find(inode);
-            if (node != nodes_.end()) {
-                auto parent = nodes_.find(node->second.parent);
-                if (parent != nodes_.end()) {
-                    parent->second.children.erase(
-                        std::remove(parent->second.children.begin(), parent->second.children.end(), inode),
-                        parent->second.children.end());
-                    auto child = parent->second.childrenByName.find(node->second.entry.name);
-                    if (child != parent->second.childrenByName.end() && child->second == inode) {
-                        parent->second.childrenByName.erase(child);
-                    }
-                }
-                nodes_.erase(node);
-            }
+            RemoveNodeLocked(inode);
         }
         sessions_.erase(session);
     }
     // Cancel is best-effort. The provider side has its own timeout and will
     // reject late completions after the session disappears.
     ProviderCancel(provider, fileIds);
+}
+
+void UdmfFuseController::RemoveNodeLocked(fuse_ino_t inode)
+{
+    auto node = nodes_.find(inode);
+    if (node == nodes_.end()) {
+        return;
+    }
+    auto parent = nodes_.find(node->second.parent);
+    if (parent != nodes_.end()) {
+        parent->second.children.erase(
+            std::remove(parent->second.children.begin(), parent->second.children.end(), inode),
+            parent->second.children.end());
+        auto child = parent->second.childrenByName.find(node->second.entry.name);
+        if (child != parent->second.childrenByName.end() && child->second == inode) {
+            parent->second.childrenByName.erase(child);
+        }
+    }
+    nodes_.erase(node);
 }
 
 bool UdmfFuseController::IsAllowed(fuse_req_t req, const Node &node) const
@@ -931,27 +944,7 @@ void UdmfFuseController::ReadDirectory(fuse_req_t req, fuse_ino_t inode, size_t 
         fuse_reply_err(req, EACCES);
         return;
     }
-    std::vector<Node> entries;
-    Node dot = directory;
-    dot.entry.name = ".";
-    entries.push_back(dot);
-    Node dotdot;
-    sptr<IRemoteObject> ignored;
-    if (!controller->GetNode(directory.parent, dotdot, ignored)) {
-        dotdot = directory;
-    }
-    dotdot.entry.name = "..";
-    entries.push_back(dotdot);
-    {
-        std::lock_guard<std::mutex> lock(controller->mutex_);
-        for (auto childInode : directory.children) {
-            auto child = controller->nodes_.find(childInode);
-            if (inode != FUSE_ROOT_ID && child != controller->nodes_.end() &&
-                controller->IsAllowed(req, child->second)) {
-                entries.push_back(child->second);
-            }
-        }
-    }
+    auto entries = controller->GetDirectoryEntries(req, directory);
     size_t bufferSize = std::min(size, DIRECTORY_READ_BYTES);
     std::vector<char> buffer(bufferSize);
     size_t used = 0;
@@ -977,6 +970,31 @@ void UdmfFuseController::ReadDirectory(fuse_req_t req, fuse_ino_t inode, size_t 
         used += needed;
     }
     fuse_reply_buf(req, buffer.data(), used);
+}
+
+std::vector<UdmfFuseController::Node> UdmfFuseController::GetDirectoryEntries(fuse_req_t req, const Node &directory)
+{
+    std::vector<Node> entries;
+    Node dot = directory;
+    dot.entry.name = ".";
+    entries.push_back(dot);
+    Node dotdot;
+    sptr<IRemoteObject> ignored;
+    if (!GetNode(directory.parent, dotdot, ignored)) {
+        dotdot = directory;
+    }
+    dotdot.entry.name = "..";
+    entries.push_back(dotdot);
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        for (auto childInode : directory.children) {
+            auto child = nodes_.find(childInode);
+            if (directory.inode != FUSE_ROOT_ID && child != nodes_.end() && IsAllowed(req, child->second)) {
+                entries.push_back(child->second);
+            }
+        }
+    }
+    return entries;
 }
 
 void UdmfFuseController::ReleaseDir(fuse_req_t req, fuse_ino_t inode, struct fuse_file_info *fileInfo)
@@ -1047,25 +1065,26 @@ void UdmfFuseController::Read(
         fuse_reply_buf(req, nullptr, 0);
         return;
     }
-    if (node.entry.size < 0) {
-        VirtualEntry actual;
-        int32_t ret = ProviderStat(provider, node.entry.id, actual);
-        if (ret != 0 || actual.id != node.entry.id || actual.size < 0) {
-            fuse_reply_err(req, ToFuseError(ret == 0 ? -EIO : ret));
-            return;
-        }
-        node.entry.size = actual.size;
-        node.entry.modifyTime = actual.modifyTime;
-        std::lock_guard<std::mutex> lock(controller->mutex_);
-        auto stored = controller->nodes_.find(inode);
-        if (stored != controller->nodes_.end()) {
-            stored->second.entry = node.entry;
-            stored->second.statAttempted = true;
-        }
+    int32_t ret = controller->RefreshFileSize(node, provider);
+    if (ret != 0) {
+        fuse_reply_err(req, ToFuseError(ret));
+        return;
     }
+    std::vector<uint8_t> result;
+    ret = controller->ReadFileData(node, provider, size, offset, result);
+    if (ret != 0) {
+        fuse_reply_err(req, ToFuseError(ret));
+        return;
+    }
+    fuse_reply_buf(req, reinterpret_cast<const char *>(result.data()), result.size());
+}
+
+int32_t UdmfFuseController::ReadFileData(const Node &node, const sptr<IRemoteObject> &provider, size_t size,
+    off_t offset, std::vector<uint8_t> &result)
+{
     uint64_t available = static_cast<uint64_t>(node.entry.size - offset);
     size_t replySize = static_cast<size_t>(std::min<uint64_t>(size, available));
-    std::vector<uint8_t> result(replySize);
+    result.resize(replySize);
     size_t copied = 0;
     while (copied < replySize) {
         uint64_t currentOffset = static_cast<uint64_t>(offset) + copied;
@@ -1073,21 +1092,41 @@ void UdmfFuseController::Read(
         size_t offsetInBlock = static_cast<size_t>(currentOffset % PROVIDER_BLOCK_BYTES);
         BlockKey blockKey{ node.inode, blockIndex };
         std::shared_ptr<BlockEntry> block;
-        int32_t ret = controller->GetOrLoadBlock(node, provider, blockIndex, block);
+        int32_t ret = GetOrLoadBlock(node, provider, blockIndex, block);
         if (ret != 0 || block == nullptr || offsetInBlock >= block->data.size()) {
-            controller->ReleaseTransientBlock(blockKey, block);
+            ReleaseTransientBlock(blockKey, block);
             ZLOGE("Read virtual entry block failed, inode:%{public}" PRIu64 ", block:%{public}" PRIu64
                   ", ret:%{public}d",
-                static_cast<uint64_t>(inode), blockIndex, ret);
-            fuse_reply_err(req, ToFuseError(ret == 0 ? -EIO : ret));
-            return;
+                static_cast<uint64_t>(node.inode), blockIndex, ret);
+            return ret == 0 ? -EIO : ret;
         }
         size_t copySize = std::min(replySize - copied, block->data.size() - offsetInBlock);
         std::copy_n(block->data.data() + offsetInBlock, copySize, result.data() + copied);
         copied += copySize;
-        controller->ReleaseTransientBlock(blockKey, block);
+        ReleaseTransientBlock(blockKey, block);
     }
-    fuse_reply_buf(req, reinterpret_cast<const char *>(result.data()), result.size());
+    return 0;
+}
+
+int32_t UdmfFuseController::RefreshFileSize(Node &node, const sptr<IRemoteObject> &provider)
+{
+    if (node.entry.size >= 0) {
+        return 0;
+    }
+    VirtualEntry actual;
+    int32_t ret = ProviderStat(provider, node.entry.id, actual);
+    if (ret != 0 || actual.id != node.entry.id || actual.size < 0) {
+        return ret == 0 ? -EIO : ret;
+    }
+    node.entry.size = actual.size;
+    node.entry.modifyTime = actual.modifyTime;
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto stored = nodes_.find(node.inode);
+    if (stored != nodes_.end()) {
+        stored->second.entry = node.entry;
+        stored->second.statAttempted = true;
+    }
+    return 0;
 }
 
 void UdmfFuseController::Flush(fuse_req_t req, fuse_ino_t inode, struct fuse_file_info *fileInfo)
@@ -1225,6 +1264,18 @@ int32_t UdmfFuseController::GetOrLoadBlock(
     }
     BlockKey key{ node.inode, blockIndex };
     bool shouldLoad = false;
+    int32_t ret = PrepareBlock(key, block, shouldLoad);
+    if (ret != 0 || !shouldLoad) {
+        return ret;
+    }
+    std::vector<uint8_t> bytes;
+    ret = ReadBlockData(node, provider, blockOffset, block, bytes);
+    return FinishBlockLoad(key, block, bytes, ret);
+}
+
+int32_t UdmfFuseController::PrepareBlock(
+    const BlockKey &key, std::shared_ptr<BlockEntry> &block, bool &shouldLoad)
+{
     {
         std::unique_lock<std::mutex> lock(mutex_);
         auto it = blocks_.find(key);
@@ -1253,10 +1304,14 @@ int32_t UdmfFuseController::GetOrLoadBlock(
             return block->state == BlockState::READY ? 0 : block->status;
         }
     }
+    return 0;
+}
 
+int32_t UdmfFuseController::ReadBlockData(const Node &node, const sptr<IRemoteObject> &provider,
+    uint64_t blockOffset, const std::shared_ptr<BlockEntry> &block, std::vector<uint8_t> &bytes)
+{
     uint64_t remaining = static_cast<uint64_t>(node.entry.size) - blockOffset;
     size_t expectedSize = static_cast<size_t>(std::min<uint64_t>(remaining, PROVIDER_BLOCK_BYTES));
-    std::vector<uint8_t> bytes;
     bytes.reserve(expectedSize);
     int32_t ret = 0;
     while (bytes.size() < expectedSize) {
@@ -1266,37 +1321,7 @@ int32_t UdmfFuseController::GetOrLoadBlock(
         }
         size_t requestSize = expectedSize - bytes.size();
         std::vector<uint8_t> part;
-        int32_t attempt = 0;
-        do {
-            ret = ProviderRead(provider, node.sessionId, node.entry.id,
-                static_cast<int64_t>(blockOffset + bytes.size()), static_cast<int32_t>(requestSize), block->deadline,
-                part);
-            ++attempt;
-            if (ret == 0 || !IsTransientReadError(ret) || attempt >= PROVIDER_READ_MAX_ATTEMPTS) {
-                break;
-            }
-            ZLOGW("Retry virtual entry block read, inode:%{public}" PRIu64 ", block:%{public}" PRIu64
-                  ", attempt:%{public}d, ret:%{public}d",
-                static_cast<uint64_t>(node.inode), blockIndex, attempt, ret);
-            auto now = std::chrono::steady_clock::now();
-            if (now >= block->deadline) {
-                ret = -ETIMEDOUT;
-                break;
-            }
-            auto retryDelay = PROVIDER_RETRY_INTERVAL * attempt;
-            std::unique_lock<std::mutex> lock(mutex_);
-            block->condition.wait_until(lock, std::min(now + retryDelay, block->deadline),
-                [&block] { return block->state == BlockState::CANCELED; });
-            if (block->state == BlockState::CANCELED) {
-                ret = -ECANCELED;
-                break;
-            }
-            if (std::chrono::steady_clock::now() >= block->deadline) {
-                ret = -ETIMEDOUT;
-                break;
-            }
-            part.clear();
-        } while (true);
+        ret = ReadBlockPart(node, provider, block, blockOffset + bytes.size(), static_cast<int32_t>(requestSize), part);
         if (ret != 0) {
             break;
         }
@@ -1306,7 +1331,44 @@ int32_t UdmfFuseController::GetOrLoadBlock(
         }
         bytes.insert(bytes.end(), part.begin(), part.end());
     }
+    return ret;
+}
 
+int32_t UdmfFuseController::ReadBlockPart(const Node &node, const sptr<IRemoteObject> &provider,
+    const std::shared_ptr<BlockEntry> &block, uint64_t offset, int32_t length, std::vector<uint8_t> &part)
+{
+    int32_t ret = 0;
+    for (int32_t attempt = 1; attempt <= PROVIDER_READ_MAX_ATTEMPTS; ++attempt) {
+        ret = ProviderRead(provider, node.sessionId, node.entry.id, static_cast<int64_t>(offset), length,
+            block->deadline, part);
+        if (ret == 0 || !IsTransientReadError(ret) || attempt >= PROVIDER_READ_MAX_ATTEMPTS) {
+            return ret;
+        }
+        ZLOGW("Retry virtual entry block read, inode:%{public}" PRIu64 ", block:%{public}" PRIu64
+              ", attempt:%{public}d, ret:%{public}d",
+            static_cast<uint64_t>(node.inode), offset / PROVIDER_BLOCK_BYTES, attempt, ret);
+        auto now = std::chrono::steady_clock::now();
+        if (now >= block->deadline) {
+            return -ETIMEDOUT;
+        }
+        auto retryDelay = PROVIDER_RETRY_INTERVAL * attempt;
+        std::unique_lock<std::mutex> lock(mutex_);
+        block->condition.wait_until(lock, std::min(now + retryDelay, block->deadline),
+            [&block] { return block->state == BlockState::CANCELED; });
+        if (block->state == BlockState::CANCELED) {
+            return -ECANCELED;
+        }
+        if (std::chrono::steady_clock::now() >= block->deadline) {
+            return -ETIMEDOUT;
+        }
+        part.clear();
+    }
+    return ret;
+}
+
+int32_t UdmfFuseController::FinishBlockLoad(
+    const BlockKey &key, const std::shared_ptr<BlockEntry> &block, std::vector<uint8_t> &bytes, int32_t status)
+{
     std::lock_guard<std::mutex> lock(mutex_);
     auto it = blocks_.find(key);
     if (it == blocks_.end() || it->second != block || block->state == BlockState::CANCELED) {
@@ -1315,7 +1377,7 @@ int32_t UdmfFuseController::GetOrLoadBlock(
         block->condition.notify_all();
         return -ECANCELED;
     }
-    if (ret == 0) {
+    if (status == 0) {
         block->data = std::move(bytes);
         block->state = BlockState::READY;
         block->status = 0;
@@ -1330,10 +1392,10 @@ int32_t UdmfFuseController::GetOrLoadBlock(
         }
     } else {
         block->state = BlockState::FAILED;
-        block->status = ret;
+        block->status = status;
     }
     block->condition.notify_all();
-    return ret;
+    return status;
 }
 
 bool UdmfFuseController::EvictOldestBlockLocked()
@@ -1376,7 +1438,7 @@ void UdmfFuseController::ReleaseTransientBlock(const BlockKey &key, const std::s
         return;
     }
     auto it = blocks_.find(key);
-    if (it != blocks_.end() && it->second == block && block.use_count() == 2) {
+    if (it != blocks_.end() && it->second == block && block.use_count() == TRANSIENT_BLOCK_OWNER_COUNT) {
         blocks_.erase(it);
     }
 }

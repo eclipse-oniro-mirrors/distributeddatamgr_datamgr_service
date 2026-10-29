@@ -182,25 +182,9 @@ int32_t UdmfFuseSessionManager::Activate(
             activeSessionCount_, sourceActiveCount);
         return -EAGAIN;
     }
-    int32_t ret = MountUserLocked(it->second.userId);
-    if (ret != 0) {
-        return ret;
-    }
-    auto controller = controllers_.find(it->second.userId);
-    if (controller == controllers_.end()) {
-        return -ENODEV;
-    }
-    it->second.alias = GenerateAlias();
-    if (it->second.alias.empty()) {
-        TryUnmountUserLocked(it->second.userId);
-        return -EIO;
-    }
     std::string relativePath;
-    UdmfFuseController::SessionOptions options{ sessionId, it->second.alias, it->second.root, it->second.provider,
-        static_cast<uid_t>(targetUid), static_cast<gid_t>(targetGid) };
-    ret = controller->second->AddSession(options, relativePath);
+    int32_t ret = AddControllerSessionLocked(sessionId, it->second, targetUid, targetGid, relativePath);
     if (ret != 0) {
-        TryUnmountUserLocked(it->second.userId);
         return ret;
     }
     it->second.targetTokenId = targetTokenId;
@@ -211,14 +195,45 @@ int32_t UdmfFuseSessionManager::Activate(
     ++activeSessionCount_;
     ++activeSourceSessionCounts_[it->second.sourceTokenId];
     ++activeSessionCounts_[it->second.userId];
-    if (executor_ != nullptr) {
-        uint64_t generation = it->second.generation;
-        it->second.expiryTask = executor_->Schedule(ACTIVE_SESSION_LEASE,
-            [sessionId, generation] { UdmfFuseSessionManager::GetInstance().Expire(sessionId, generation); });
-        ScheduleCleanupTaskLocked(sessionId, it->second, INITIAL_OPEN_TIMEOUT);
-    }
+    ScheduleActiveSessionLocked(sessionId, it->second);
     uri = "file://" + GetAppMountPoint(it->second.userId) + "/" + relativePath;
     return 0;
+}
+
+void UdmfFuseSessionManager::ScheduleActiveSessionLocked(const std::string &sessionId, SessionInfo &session)
+{
+    if (executor_ == nullptr) {
+        return;
+    }
+    uint64_t generation = session.generation;
+    session.expiryTask = executor_->Schedule(ACTIVE_SESSION_LEASE,
+        [sessionId, generation] { UdmfFuseSessionManager::GetInstance().Expire(sessionId, generation); });
+    ScheduleCleanupTaskLocked(sessionId, session, INITIAL_OPEN_TIMEOUT);
+}
+
+int32_t UdmfFuseSessionManager::AddControllerSessionLocked(const std::string &sessionId, SessionInfo &session,
+    int32_t targetUid, int32_t targetGid, std::string &relativePath)
+{
+    int32_t ret = MountUserLocked(session.userId);
+    if (ret != 0) {
+        return ret;
+    }
+    auto controller = controllers_.find(session.userId);
+    if (controller == controllers_.end()) {
+        return -ENODEV;
+    }
+    session.alias = GenerateAlias();
+    if (session.alias.empty()) {
+        TryUnmountUserLocked(session.userId);
+        return -EIO;
+    }
+    UdmfFuseController::SessionOptions options{ sessionId, session.alias, session.root, session.provider,
+        static_cast<uid_t>(targetUid), static_cast<gid_t>(targetGid) };
+    ret = controller->second->AddSession(options, relativePath);
+    if (ret != 0) {
+        TryUnmountUserLocked(session.userId);
+    }
+    return ret;
 }
 
 int32_t UdmfFuseSessionManager::AcquireOpen(const std::string &sessionId, int32_t callingUid)

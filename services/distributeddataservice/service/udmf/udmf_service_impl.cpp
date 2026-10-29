@@ -93,6 +93,23 @@ bool IsVirtualEntryRecord(const std::shared_ptr<UnifiedRecord> &record)
            details->GetValue(VIRTUAL_ENTRY_FLAG, marker) && marker;
 }
 
+static int32_t FindVirtualRecordIndex(const std::vector<std::shared_ptr<UnifiedRecord>> &records,
+    bool &hasVirtualEntry, uint32_t &recordIndex)
+{
+    for (uint32_t index = 0; index < records.size(); ++index) {
+        if (!IsVirtualEntryRecord(records[index])) {
+            continue;
+        }
+        if (hasVirtualEntry) {
+            ZLOGE("Multiple virtual entry markers found");
+            return E_INVALID_PARAMETERS;
+        }
+        hasVirtualEntry = true;
+        recordIndex = index;
+    }
+    return E_OK;
+}
+
 void ClearVirtualEntryMarker(const std::shared_ptr<UnifiedRecord> &record)
 {
     if (record == nullptr || record->GetType() != FILE) {
@@ -380,16 +397,9 @@ int32_t UdmfServiceImpl::ProcessVirtualData(const QueryOption &query, UnifiedKey
     auto records = unifiedData.GetRecords();
     bool hasVirtualEntry = false;
     uint32_t virtualRecordIndex = 0;
-    for (uint32_t index = 0; index < records.size(); ++index) {
-        if (!IsVirtualEntryRecord(records[index])) {
-            continue;
-        }
-        if (hasVirtualEntry) {
-            ZLOGE("Multiple virtual entry markers found");
-            return E_INVALID_PARAMETERS;
-        }
-        hasVirtualEntry = true;
-        virtualRecordIndex = index;
+    int32_t ret = FindVirtualRecordIndex(records, hasVirtualEntry, virtualRecordIndex);
+    if (ret != E_OK) {
+        return ret;
     }
     result.exists = hasVirtualEntry;
     UdmfFuseSessionManager::SessionInfo virtualSession;
@@ -418,35 +428,46 @@ int32_t UdmfServiceImpl::ProcessVirtualData(const QueryOption &query, UnifiedKey
         virtualSession.recordIndex >= records.size()) {
         return E_NO_PERMISSION;
     }
-    UnifiedData authorizationData = unifiedData;
-    auto authorizationRecords = authorizationData.GetRecords();
-    authorizationRecords.erase(authorizationRecords.begin() + virtualSession.recordIndex);
-    authorizationData.SetRecords(std::move(authorizationRecords));
-    int32_t ret = ProcessUri(query, authorizationData);
+    ret = ActivateVirtualData(query, unifiedData, virtualSession.recordIndex, virtualSession.userId, result.uri,
+        __FUNCTION__);
     if (ret != E_OK) {
-        RadarReporterAdapter::ReportFail(
-            std::string(__FUNCTION__), BizScene::GET_DATA, GetDataStage::GRANT_URI_PERMISSION, StageRes::FAILED, ret);
-        ZLOGE("ProcessUri failed:%{public}d", ret);
         return ret;
-    }
-    int32_t targetUserId = -1;
-    if (PreProcessUtils::GetHapUidByToken(query.tokenId, targetUserId) != E_OK ||
-        targetUserId != virtualSession.userId) {
-        ZLOGE("Virtual entry does not support cross-user access");
-        return E_NO_PERMISSION;
-    }
-    int32_t targetUid = IPCSkeleton::GetCallingUid();
-    int32_t fuseRet =
-        UdmfFuseSessionManager::GetInstance().Activate(query.key, query.tokenId, targetUid, targetUid, result.uri);
-    if (fuseRet != 0) {
-        ZLOGE("Activate virtual entry failed, ret:%{public}d", fuseRet);
-        return E_FS_ERROR;
     }
     if (shouldRemoveData && LifeCycleManager::GetInstance().OnGot(key, runtime->tokenId) != E_OK) {
         RemoveVirtualSessions({ query.key });
         return E_DB_ERROR;
     }
     result.recordIndex = virtualSession.recordIndex;
+    return E_OK;
+}
+
+int32_t UdmfServiceImpl::ActivateVirtualData(const QueryOption &query, const UnifiedData &data,
+    uint32_t recordIndex, int32_t userId, std::string &uri, const char *caller)
+{
+    UnifiedData authorizationData = data;
+    auto authorizationRecords = authorizationData.GetRecords();
+    authorizationRecords.erase(authorizationRecords.begin() + recordIndex);
+    authorizationData.SetRecords(std::move(authorizationRecords));
+    int32_t ret = ProcessUri(query, authorizationData);
+    if (ret != E_OK) {
+        RadarReporterAdapter::ReportFail(
+            std::string(caller), BizScene::GET_DATA, GetDataStage::GRANT_URI_PERMISSION, StageRes::FAILED, ret);
+        ZLOGE("ProcessUri failed:%{public}d", ret);
+        return ret;
+    }
+    int32_t targetUserId = -1;
+    if (PreProcessUtils::GetHapUidByToken(query.tokenId, targetUserId) != E_OK ||
+        targetUserId != userId) {
+        ZLOGE("Virtual entry does not support cross-user access");
+        return E_NO_PERMISSION;
+    }
+    int32_t targetUid = IPCSkeleton::GetCallingUid();
+    int32_t fuseRet =
+        UdmfFuseSessionManager::GetInstance().Activate(query.key, query.tokenId, targetUid, targetUid, uri);
+    if (fuseRet != 0) {
+        ZLOGE("Activate virtual entry failed, ret:%{public}d", fuseRet);
+        return E_FS_ERROR;
+    }
     return E_OK;
 }
 

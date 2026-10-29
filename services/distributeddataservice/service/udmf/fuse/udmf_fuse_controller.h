@@ -151,6 +151,7 @@ private:
     static ssize_t WriteFuseFd(int fd, struct iovec *iov, int count, void *userdata);
 
     int32_t CreateFuseSession(int fuseFd, struct fuse_session *&session);
+    int32_t InitializeSession(struct fuse_session *session, int wakeFd);
     bool IsAllowed(fuse_req_t req, const Node &node) const;
     bool IsUidAllowed(uid_t callingUid, const Node &node) const;
     int32_t CheckAccess(uid_t callingUid, const Node &node, int mask) const;
@@ -159,7 +160,12 @@ private:
     bool GetNode(fuse_ino_t inode, Node &node, sptr<IRemoteObject> &provider) const;
     void FillAttr(const Node &node, struct stat &attr) const;
     static void ReadDirectory(fuse_req_t req, fuse_ino_t inode, size_t size, off_t offset, bool plus);
+    std::vector<Node> GetDirectoryEntries(fuse_req_t req, const Node &directory);
+    int32_t RefreshFileSize(Node &node, const sptr<IRemoteObject> &provider);
+    int32_t ReadFileData(const Node &node, const sptr<IRemoteObject> &provider, size_t size, off_t offset,
+        std::vector<uint8_t> &result);
     int32_t AddTreeLocked(fuse_ino_t parent, const VirtualEntry &entry, Session &session, fuse_ino_t &inode);
+    void RemoveNodeLocked(fuse_ino_t inode);
     static int32_t ProviderStat(const sptr<IRemoteObject> &provider, const std::string &id, VirtualEntry &entry);
     int32_t ProviderRead(const sptr<IRemoteObject> &provider, const std::string &sessionId, const std::string &id,
         int64_t offset, int32_t length, const std::chrono::steady_clock::time_point &deadline,
@@ -167,6 +173,13 @@ private:
     static void ProviderCancel(const sptr<IRemoteObject> &provider, const std::vector<std::string> &ids);
     int32_t GetOrLoadBlock(const Node &node, const sptr<IRemoteObject> &provider, uint64_t blockIndex,
         std::shared_ptr<BlockEntry> &block);
+    int32_t PrepareBlock(const BlockKey &key, std::shared_ptr<BlockEntry> &block, bool &shouldLoad);
+    int32_t ReadBlockData(const Node &node, const sptr<IRemoteObject> &provider, uint64_t blockOffset,
+        const std::shared_ptr<BlockEntry> &block, std::vector<uint8_t> &bytes);
+    int32_t ReadBlockPart(const Node &node, const sptr<IRemoteObject> &provider,
+        const std::shared_ptr<BlockEntry> &block, uint64_t offset, int32_t length, std::vector<uint8_t> &part);
+    int32_t FinishBlockLoad(const BlockKey &key, const std::shared_ptr<BlockEntry> &block,
+        std::vector<uint8_t> &bytes, int32_t status);
     bool EvictOldestBlockLocked();
     void EvictBlocksLocked(size_t incomingBytes);
     void ReleaseTransientBlock(const BlockKey &key, const std::shared_ptr<BlockEntry> &block);

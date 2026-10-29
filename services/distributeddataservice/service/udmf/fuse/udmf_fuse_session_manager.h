@@ -84,7 +84,10 @@ private:
     void CancelCleanupTaskLocked(SessionInfo &session);
     void ScheduleCleanupTaskLocked(
         const std::string &sessionId, SessionInfo &session, const std::chrono::seconds &delay);
+    void ScheduleActiveSessionLocked(const std::string &sessionId, SessionInfo &session);
     int32_t MountUserLocked(int32_t userId);
+    int32_t AddControllerSessionLocked(const std::string &sessionId, SessionInfo &session, int32_t targetUid,
+        int32_t targetGid, std::string &relativePath);
     void TryUnmountUser(int32_t userId);
     void TryUnmountUserLocked(int32_t userId);
     void Expire(const std::string &sessionId, uint64_t generation);
