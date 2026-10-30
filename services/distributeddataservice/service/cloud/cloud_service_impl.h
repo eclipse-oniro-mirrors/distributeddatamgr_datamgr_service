@@ -252,7 +252,8 @@ private:
     static int32_t UpdateSchemaFromHap(const HapInfo &hapInfo);
     static int32_t UpdateSchemaFromServer(int32_t user);
     static int32_t UpdateSchemaFromServer(const CloudInfo &cloudInfo, int32_t user);
-    static void UpdateE2eeEnable(const std::string &schemaKey, bool newE2eeEnable, const std::string &bundleName);
+    static void UpdateE2eeEnable(
+        const std::string &schemaKey, const SchemaMeta &newSchemaMeta, const std::string &bundleName);
     static void UpdateClearWaterMark(
         const HapInfo &hapInfo, const SchemaMeta &newSchemaMeta, const SchemaMeta &schemaMeta);
 

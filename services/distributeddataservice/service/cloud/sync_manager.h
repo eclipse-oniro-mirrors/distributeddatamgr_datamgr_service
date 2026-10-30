@@ -246,6 +246,7 @@ private:
         DistributedData::GeneralStore::CloudConfig, std::string>>;
     static int32_t FillUserBindInfos(const AutoCache::Store &store, const StoreMetaData &meta,
         bool mustBind, CloudInfo &info, UserBindInfo &infos);
+    static void RefreshE2eeEnable(const std::string &schemaKey, SchemaMeta &schemaMeta);
 
     static std::vector<std::string> GetStoresIntersection(const SyncInfo::Stores &schemaStores,
         const std::map<std::string, SyncInfo::Tables> &requestedTables);

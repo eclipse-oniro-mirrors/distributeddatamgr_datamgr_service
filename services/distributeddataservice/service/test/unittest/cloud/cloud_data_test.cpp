@@ -2786,24 +2786,174 @@ HWTEST_F(CloudDataTest, OnAppUpdateTest, TestSize.Level1)
 
 /**
 * @tc.name: UpdateE2eeEnableTest
-* @tc.desc: Test the UpdateE2eeEnable
+* @tc.desc: Test the UpdateE2eeEnable with database-level e2eeEnable of schema from server.
 * @tc.type: FUNC
 * @tc.require:
+* @tc.author: agent
 */
 HWTEST_F(CloudDataTest, UpdateE2eeEnableTest, TestSize.Level1)
 {
     SchemaMeta schemaMeta;
     std::string schemaKey = CloudInfo::GetSchemaKey(cloudInfo_.user, TEST_CLOUD_BUNDLE, 0);
     ASSERT_TRUE(MetaDataManager::GetInstance().LoadMeta(schemaKey, schemaMeta, true));
-    EXPECT_EQ(schemaMeta.e2eeEnable, schemaMeta_.e2eeEnable);
+    ASSERT_EQ(schemaMeta.databases.size(), 2u);
+    EXPECT_EQ(schemaMeta.databases[0].e2eeEnable, schemaMeta_.databases[0].e2eeEnable);
+    EXPECT_EQ(schemaMeta.databases[1].e2eeEnable, schemaMeta_.databases[1].e2eeEnable);
 
     ASSERT_NE(cloudServiceImpl_, nullptr);
-    cloudServiceImpl_->UpdateE2eeEnable(schemaKey, false, TEST_CLOUD_BUNDLE);
+    SchemaMeta serverSchemaMeta = schemaMeta_;
+    serverSchemaMeta.databases[0].e2eeEnable = false;
+    serverSchemaMeta.databases[1].e2eeEnable = false;
+    cloudServiceImpl_->UpdateE2eeEnable(schemaKey, serverSchemaMeta, TEST_CLOUD_BUNDLE);
     ASSERT_TRUE(MetaDataManager::GetInstance().LoadMeta(schemaKey, schemaMeta, true));
-    EXPECT_EQ(schemaMeta.e2eeEnable, schemaMeta_.e2eeEnable);
-    cloudServiceImpl_->UpdateE2eeEnable(schemaKey, true, TEST_CLOUD_BUNDLE);
+    EXPECT_EQ(schemaMeta.databases[0].e2eeEnable, false);
+    EXPECT_EQ(schemaMeta.databases[1].e2eeEnable, false);
+    EXPECT_EQ(schemaMeta.e2eeEnable, false);
+
+    serverSchemaMeta.databases[0].e2eeEnable = true;
+    serverSchemaMeta.databases[1].e2eeEnable = true;
+    cloudServiceImpl_->UpdateE2eeEnable(schemaKey, serverSchemaMeta, TEST_CLOUD_BUNDLE);
     ASSERT_TRUE(MetaDataManager::GetInstance().LoadMeta(schemaKey, schemaMeta, true));
+    EXPECT_EQ(schemaMeta.databases[0].e2eeEnable, true);
+    EXPECT_EQ(schemaMeta.databases[1].e2eeEnable, true);
+    EXPECT_EQ(schemaMeta.e2eeEnable, false);
+
+    SchemaMeta noMatchSchemaMeta = schemaMeta_;
+    noMatchSchemaMeta.databases[0].name = "no_exist_store";
+    noMatchSchemaMeta.databases[1].name = "no_exist_store2";
+    noMatchSchemaMeta.databases[0].e2eeEnable = false;
+    noMatchSchemaMeta.databases[1].e2eeEnable = false;
+    cloudServiceImpl_->UpdateE2eeEnable(schemaKey, noMatchSchemaMeta, TEST_CLOUD_BUNDLE);
+    ASSERT_TRUE(MetaDataManager::GetInstance().LoadMeta(schemaKey, schemaMeta, true));
+    EXPECT_EQ(schemaMeta.databases[0].e2eeEnable, true);
+    EXPECT_EQ(schemaMeta.databases[1].e2eeEnable, true);
+
+    SchemaMeta singleDbMeta = schemaMeta_;
+    singleDbMeta.databases.resize(1);
+    singleDbMeta.e2eeEnable = false;
+    singleDbMeta.databases[0].e2eeEnable = false;
+    std::string singleDbKey = CloudInfo::GetSchemaKey(cloudInfo_.user, TEST_CLOUD_BUNDLE, 1);
+    ASSERT_TRUE(MetaDataManager::GetInstance().SaveMeta(singleDbKey, singleDbMeta, true));
+    SchemaMeta serverSingleDbMeta = singleDbMeta;
+    serverSingleDbMeta.databases[0].e2eeEnable = true;
+    cloudServiceImpl_->UpdateE2eeEnable(singleDbKey, serverSingleDbMeta, TEST_CLOUD_BUNDLE);
+    SchemaMeta singleDbResult;
+    ASSERT_TRUE(MetaDataManager::GetInstance().LoadMeta(singleDbKey, singleDbResult, true));
+    EXPECT_EQ(singleDbResult.databases[0].e2eeEnable, true);
+    EXPECT_EQ(singleDbResult.e2eeEnable, false);
+    MetaDataManager::GetInstance().DelMeta(singleDbKey, true);
+}
+
+/**
+* @tc.name: SyncManager_RefreshE2eeEnable_LegacySingleDatabase_ExpectMigratedAndPersisted
+* @tc.desc: Test the RefreshE2eeEnable migrate legacy app-level e2eeEnable to the database
+*           level and persist the updated SchemaMeta.
+* @tc.type: FUNC
+* @tc.require:
+* @tc.author: agent
+*/
+HWTEST_F(CloudDataTest, SyncManager_RefreshE2eeEnable_LegacySingleDatabase_ExpectMigratedAndPersisted, TestSize.Level1)
+{
+    SchemaMeta legacyMeta = schemaMeta_;
+    legacyMeta.databases.resize(1);
+    legacyMeta.e2eeEnable = true;
+    legacyMeta.databases[0].e2eeEnable = false;
+    std::string schemaKey = CloudInfo::GetSchemaKey(cloudInfo_.user, TEST_CLOUD_BUNDLE, 1);
+    ASSERT_TRUE(MetaDataManager::GetInstance().SaveMeta(schemaKey, legacyMeta, true));
+
+    SchemaMeta schemaMeta;
+    ASSERT_TRUE(MetaDataManager::GetInstance().LoadMeta(schemaKey, schemaMeta, true));
+    OHOS::CloudData::SyncManager::RefreshE2eeEnable(schemaKey, schemaMeta);
+    EXPECT_EQ(schemaMeta.databases[0].e2eeEnable, true);
     EXPECT_EQ(schemaMeta.e2eeEnable, true);
+
+    SchemaMeta persistedMeta;
+    ASSERT_TRUE(MetaDataManager::GetInstance().LoadMeta(schemaKey, persistedMeta, true));
+    EXPECT_EQ(persistedMeta.databases[0].e2eeEnable, true);
+
+    OHOS::CloudData::SyncManager::RefreshE2eeEnable(schemaKey, persistedMeta);
+    SchemaMeta idempotentMeta;
+    ASSERT_TRUE(MetaDataManager::GetInstance().LoadMeta(schemaKey, idempotentMeta, true));
+    EXPECT_EQ(idempotentMeta.databases[0].e2eeEnable, true);
+    EXPECT_EQ(idempotentMeta.e2eeEnable, true);
+    MetaDataManager::GetInstance().DelMeta(schemaKey, true);
+}
+
+/**
+* @tc.name: SyncManager_RefreshE2eeEnable_MultiDatabase_ExpectNotMigrated
+* @tc.desc: Test the RefreshE2eeEnable with multiple databases, the e2eeEnable should not
+*           be migrated to the database level.
+* @tc.type: FUNC
+* @tc.require:
+* @tc.author: agent
+*/
+HWTEST_F(CloudDataTest, SyncManager_RefreshE2eeEnable_MultiDatabase_ExpectNotMigrated, TestSize.Level1)
+{
+    SchemaMeta multiDbMeta = schemaMeta_;
+    multiDbMeta.e2eeEnable = true;
+    std::string schemaKey = CloudInfo::GetSchemaKey(cloudInfo_.user, TEST_CLOUD_BUNDLE, 2);
+    ASSERT_TRUE(MetaDataManager::GetInstance().SaveMeta(schemaKey, multiDbMeta, true));
+
+    SchemaMeta schemaMeta;
+    ASSERT_TRUE(MetaDataManager::GetInstance().LoadMeta(schemaKey, schemaMeta, true));
+    ASSERT_EQ(schemaMeta.databases.size(), 2u);
+    OHOS::CloudData::SyncManager::RefreshE2eeEnable(schemaKey, schemaMeta);
+    EXPECT_EQ(schemaMeta.databases[0].e2eeEnable, false);
+    EXPECT_EQ(schemaMeta.databases[1].e2eeEnable, false);
+
+    SchemaMeta persistedMeta;
+    ASSERT_TRUE(MetaDataManager::GetInstance().LoadMeta(schemaKey, persistedMeta, true));
+    EXPECT_EQ(persistedMeta.databases[0].e2eeEnable, false);
+    MetaDataManager::GetInstance().DelMeta(schemaKey, true);
+}
+
+/**
+* @tc.name: SyncManager_RefreshE2eeEnable_DatabaseE2eeEnabled_ExpectNotMigrated
+* @tc.desc: Test the RefreshE2eeEnable when the database-level e2eeEnable is already enabled,
+*           the SchemaMeta should be kept unchanged.
+* @tc.type: FUNC
+* @tc.require:
+* @tc.author: agent
+*/
+HWTEST_F(CloudDataTest, SyncManager_RefreshE2eeEnable_DatabaseE2eeEnabled_ExpectNotMigrated, TestSize.Level1)
+{
+    SchemaMeta enabledMeta = schemaMeta_;
+    enabledMeta.databases.resize(1);
+    enabledMeta.e2eeEnable = true;
+    enabledMeta.databases[0].e2eeEnable = true;
+    std::string schemaKey = CloudInfo::GetSchemaKey(cloudInfo_.user, TEST_CLOUD_BUNDLE, 3);
+    ASSERT_TRUE(MetaDataManager::GetInstance().SaveMeta(schemaKey, enabledMeta, true));
+
+    SchemaMeta schemaMeta;
+    ASSERT_TRUE(MetaDataManager::GetInstance().LoadMeta(schemaKey, schemaMeta, true));
+    OHOS::CloudData::SyncManager::RefreshE2eeEnable(schemaKey, schemaMeta);
+    EXPECT_EQ(schemaMeta.databases[0].e2eeEnable, true);
+    EXPECT_EQ(schemaMeta.databases.size(), 1u);
+    MetaDataManager::GetInstance().DelMeta(schemaKey, true);
+}
+
+/**
+* @tc.name: SyncManager_RefreshE2eeEnable_AppE2eeDisabled_ExpectNotMigrated
+* @tc.desc: Test the RefreshE2eeEnable when the app-level e2eeEnable is disabled,
+*           the database-level e2eeEnable should be kept unchanged.
+* @tc.type: FUNC
+* @tc.require:
+* @tc.author: agent
+*/
+HWTEST_F(CloudDataTest, SyncManager_RefreshE2eeEnable_AppE2eeDisabled_ExpectNotMigrated, TestSize.Level1)
+{
+    SchemaMeta appDisabledMeta = schemaMeta_;
+    appDisabledMeta.databases.resize(1);
+    appDisabledMeta.e2eeEnable = false;
+    appDisabledMeta.databases[0].e2eeEnable = false;
+    std::string schemaKey = CloudInfo::GetSchemaKey(cloudInfo_.user, TEST_CLOUD_BUNDLE, 4);
+    ASSERT_TRUE(MetaDataManager::GetInstance().SaveMeta(schemaKey, appDisabledMeta, true));
+
+    SchemaMeta schemaMeta;
+    ASSERT_TRUE(MetaDataManager::GetInstance().LoadMeta(schemaKey, schemaMeta, true));
+    OHOS::CloudData::SyncManager::RefreshE2eeEnable(schemaKey, schemaMeta);
+    EXPECT_EQ(schemaMeta.databases[0].e2eeEnable, false);
+    MetaDataManager::GetInstance().DelMeta(schemaKey, true);
 }
 
 /**

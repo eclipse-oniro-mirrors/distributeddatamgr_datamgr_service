@@ -595,7 +595,8 @@ HWTEST_F(CloudServiceImplTest, UpdateE2eeEnableTest, TestSize.Level0)
     EXPECT_EQ(result, false);
 
     std::string schemaKey = "schemaKey";
-    cloudServiceImpl_->UpdateE2eeEnable(schemaKey, true, TEST_CLOUD_BUNDLE);
+    SchemaMeta newSchemaMeta;
+    cloudServiceImpl_->UpdateE2eeEnable(schemaKey, newSchemaMeta, TEST_CLOUD_BUNDLE);
     SchemaMeta schemaMeta;
     ASSERT_FALSE(MetaDataManager::GetInstance().LoadMeta(schemaKey, schemaMeta, true));
 }

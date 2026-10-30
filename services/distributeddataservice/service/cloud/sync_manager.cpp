@@ -805,6 +805,15 @@ std::vector<CloudInfo> SyncManager::GetCloudInfos(int32_t user)
     return infos;
 }
 
+void SyncManager::RefreshE2eeEnable(const std::string &schemaKey, SchemaMeta &schemaMeta)
+{
+    if (!schemaMeta.e2eeEnable || schemaMeta.databases.size() != 1 || schemaMeta.databases[0].e2eeEnable) {
+        return;
+    }
+    schemaMeta.databases[0].e2eeEnable = schemaMeta.e2eeEnable;
+    MetaDataManager::GetInstance().SaveMeta(schemaKey, schemaMeta, true);
+}
+
 int32_t SyncManager::FillUserBindInfos(const AutoCache::Store &store, const StoreMetaData &meta,
     bool mustBind, CloudInfo &info, UserBindInfo &infos)
 {
@@ -823,8 +832,9 @@ int32_t SyncManager::FillUserBindInfos(const AutoCache::Store &store, const Stor
             meta.GetStoreAlias().c_str());
         return E_ERROR;
     }
-    config.isSupportEncrypt = schemaMeta.e2eeEnable;
+    RefreshE2eeEnable(schemaKey, schemaMeta);
     auto dbMeta = schemaMeta.GetDataBase(meta.storeId);
+    config.isSupportEncrypt = dbMeta.e2eeEnable;
     std::vector<int32_t> users = { info.user };
     std::map<uint32_t, GeneralStore::BindInfo> bindInfos = GetBindInfos(meta, users, dbMeta);
     if (mustBind && bindInfos.size() != users.size()) {
@@ -849,7 +859,7 @@ void SyncManager::BindInfos(const AutoCache::Store &store, const UserBindInfo &u
             std::min(config.maxNumber, userConfig.maxNumber);
         config.maxSize = config.maxSize == 0 ? userConfig.maxSize :
             std::min(config.maxSize, userConfig.maxSize);
-        config.isSupportEncrypt = config.isSupportEncrypt || schemaMeta.e2eeEnable;
+        config.isSupportEncrypt = config.isSupportEncrypt || dbMeta.e2eeEnable;
     }
     store->Bind(bindInfos, config);
 }

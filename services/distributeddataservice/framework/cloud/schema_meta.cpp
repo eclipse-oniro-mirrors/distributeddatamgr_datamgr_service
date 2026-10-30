@@ -183,6 +183,7 @@ bool Database::Marshal(Serializable::json &node) const
     SetValue(node[GET_NAME(deviceId)], deviceId);
     SetValue(node[GET_NAME(autoSyncType)], autoSyncType);
     SetValue(node[GET_NAME(backwardCompatiblePolicies)], backwardCompatiblePolicies);
+    SetValue(node[GET_NAME(e2eeEnable)], e2eeEnable);
     return true;
 }
 
@@ -198,17 +199,17 @@ bool Database::Unmarshal(const Serializable::json &node)
     GetValue(node, GET_NAME(version), version);
     GetValue(node, GET_NAME(bundleName), bundleName);
     GetValue(node, GET_NAME(backwardCompatiblePolicies), backwardCompatiblePolicies);
+    GetValue(node, GET_NAME(e2eeEnable), e2eeEnable);
     return true;
 }
 
 bool Database::operator==(const Database &database) const
 {
-    return std::tie(name, alias, tables, version, bundleName, user,
-                    deviceId, autoSyncType, backwardCompatiblePolicies) ==
-           std::tie(database.name, database.alias, database.tables,
-                    database.version, database.bundleName, database.user,
-                    database.deviceId, database.autoSyncType,
-                    database.backwardCompatiblePolicies);
+    return std::tie(name, alias, tables, version, bundleName, user, deviceId, autoSyncType,
+                    backwardCompatiblePolicies, e2eeEnable) ==
+           std::tie(database.name, database.alias, database.tables, database.version, database.bundleName,
+                    database.user, database.deviceId, database.autoSyncType, database.backwardCompatiblePolicies,
+                    database.e2eeEnable);
 }
 
 bool Table::Marshal(Serializable::json &node) const

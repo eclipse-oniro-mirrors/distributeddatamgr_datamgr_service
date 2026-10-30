@@ -731,6 +731,10 @@ HWTEST_F(CloudInfoTest, SchemaMeta002, TestSize.Level0)
     SchemaMeta schemaMeta2 = schemaMeta1;
     EXPECT_EQ(schemaMeta2, schemaMeta1);
 
+    schemaMeta2.databases[0].e2eeEnable = true;
+    EXPECT_NE(schemaMeta2, schemaMeta1);
+    schemaMeta2.databases[0].e2eeEnable = false;
+    EXPECT_EQ(schemaMeta2, schemaMeta1);
     schemaMeta2.e2eeEnable = true;
     EXPECT_NE(schemaMeta2, schemaMeta1);
     schemaMeta2.databases[0].alias = "test_cloud_database_alias_2";
@@ -774,6 +778,8 @@ HWTEST_F(CloudInfoTest, SchemaMeta003, TestSize.Level0)
 
     SchemaMeta schemaMeta2 = schemaMeta1;
     schemaMeta2.databases[0].autoSyncType = 1;
+    EXPECT_NE(schemaMeta2, schemaMeta1);
+    schemaMeta2.databases[0].e2eeEnable = true;
     EXPECT_NE(schemaMeta2, schemaMeta1);
     schemaMeta2.databases[0].deviceId = "111";
     EXPECT_NE(schemaMeta2, schemaMeta1);
@@ -875,6 +881,42 @@ HWTEST_F(CloudInfoTest, SchemaMeta005, TestSize.Level0)
     EXPECT_NE(schemaMeta2, schemaMeta1);
     schemaMeta2.databases[0].tables[0].fields[0].colName = "test_cloud_field_name2";
     EXPECT_NE(schemaMeta2, schemaMeta1);
+}
+
+/**
+* @tc.name: SchemaMeta_Unmarshal_SingleDatabaseNoAppE2eeEnable_ExpectDatabaseE2eeEnableReserved
+* @tc.desc: Unmarshal a new format schema with database-level e2eeEnable only,
+*           the database-level e2eeEnable should be reserved.
+* @tc.type: FUNC
+* @tc.require:
+* @tc.author: agent
+*/
+HWTEST_F(CloudInfoTest, SchemaMeta_Unmarshal_SingleDatabaseNoAppE2eeEnable_ExpectDatabaseE2eeEnableReserved,
+    TestSize.Level0)
+{
+    SchemaMeta::Database database;
+    database.name = "test_cloud_store";
+    database.alias = "test_cloud_database_alias_1";
+    database.e2eeEnable = true;
+    SchemaMeta schemaMeta1;
+    schemaMeta1.version = 1;
+    schemaMeta1.bundleName = "test_cloud_bundleName";
+    schemaMeta1.databases.emplace_back(database);
+
+    Serializable::json node;
+    schemaMeta1.Marshal(node);
+    node.erase(GET_NAME(e2eeEnable));
+
+    SchemaMeta schemaMeta2;
+    ASSERT_TRUE(schemaMeta2.Unmarshal(node));
+    ASSERT_EQ(schemaMeta2.databases.size(), 1u);
+    EXPECT_EQ(schemaMeta2.databases[0].e2eeEnable, true);
+    EXPECT_EQ(schemaMeta2.e2eeEnable, false);
+
+    SchemaMeta schemaMeta3;
+    ASSERT_TRUE(schemaMeta3.Unmarshall(Serializable::Marshall(schemaMeta2)));
+    EXPECT_EQ(schemaMeta3.databases[0].e2eeEnable, true);
+    EXPECT_EQ(schemaMeta3.e2eeEnable, false);
 }
 
 /**

@@ -1267,25 +1267,45 @@ int32_t CloudServiceImpl::UpdateSchemaFromServer(const CloudInfo &cloudInfo, int
         if (status != SUCCESS) {
             continue;
         }
-        UpdateE2eeEnable(key, schemaMeta.e2eeEnable, bundle);
+        UpdateE2eeEnable(key, schemaMeta, bundle);
     }
     return SUCCESS;
 }
 
-void CloudServiceImpl::UpdateE2eeEnable(const std::string &schemaKey, bool newE2eeEnable,
-    const std::string &bundleName)
+void CloudServiceImpl::UpdateE2eeEnable(
+    const std::string &schemaKey, const SchemaMeta &newSchemaMeta, const std::string &bundleName)
 {
     SchemaMeta oldMeta;
     if (!MetaDataManager::GetInstance().LoadMeta(schemaKey, oldMeta, true)) {
         return;
     }
-    if (oldMeta.e2eeEnable == newE2eeEnable) {
+    bool changed = false;
+    std::string appendix;
+    for (const auto &newDatabase : newSchemaMeta.databases) {
+        for (auto &oldDatabase : oldMeta.databases) {
+            if (oldDatabase.name != newDatabase.name) {
+                continue;
+            }
+            if (oldDatabase.e2eeEnable == newDatabase.e2eeEnable) {
+                continue;
+            }
+            ZLOGI("Update e2eeEnable, bundleName:%{public}s, storeId:%{public}s, %{public}d->%{public}d",
+                bundleName.c_str(), Anonymous::Change(oldDatabase.name).c_str(), oldDatabase.e2eeEnable,
+                newDatabase.e2eeEnable);
+            if (!appendix.empty()) {
+                appendix.append(";");
+            }
+            appendix.append("storeId=" + Anonymous::Change(oldDatabase.name) +
+                            ",oldE2eeEnable=" + std::to_string(oldDatabase.e2eeEnable) +
+                            ",newE2eeEnable=" + std::to_string(newDatabase.e2eeEnable));
+            oldDatabase.e2eeEnable = newDatabase.e2eeEnable;
+            changed = true;
+        }
+    }
+    if (!changed) {
         return;
     }
-    ZLOGI("Update e2eeEnable: %{public}d->%{public}d", oldMeta.e2eeEnable, newE2eeEnable);
-    Report(FT_ENCRYPT_CHANGED, Fault::CSF_APP_SCHEMA, bundleName,
-        "oldE2eeEnable=" + std::to_string(oldMeta.e2eeEnable) + ",newE2eeEnable=" + std::to_string(newE2eeEnable));
-    oldMeta.e2eeEnable = newE2eeEnable;
+    Report(FT_ENCRYPT_CHANGED, Fault::CSF_APP_SCHEMA, bundleName, appendix);
     MetaDataManager::GetInstance().SaveMeta(schemaKey, oldMeta, true);
 }
 
