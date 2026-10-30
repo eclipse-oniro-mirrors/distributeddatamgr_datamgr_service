@@ -295,6 +295,27 @@ ohos_unittest("UdmfPermissionPolicyUtilsTest") {
   ]
 }
 
+ohos_unittest("UdmfDragProxyAuthorizationTest") {
+  module_out_path = module_output_path
+  sources = [
+    "${data_service_path}/service/test/mock/access_token_mock.cpp",
+    "${data_service_path}/service/udmf/permission/drag_proxy_authorization.cpp",
+    "udmf_drag_proxy_authorization_test.cpp",
+  ]
+
+  include_dirs = [
+    "${data_service_path}/service/test",
+    "${data_service_path}/service/test/mock",
+    "${data_service_path}/service/udmf/permission",
+  ]
+
+  external_deps = [
+    "access_token:libaccesstoken_sdk",
+    "googletest:gmock_main",
+    "googletest:gtest_main",
+  ]
+}
+
 ohos_unittest("UdmfServiceStubTest") {
   module_out_path = module_output_path
   sources = [ "udmf_service_stub_test.cpp" ]
@@ -890,6 +911,7 @@ group("unittests") {
   deps = [
     ":UdmfCheckerManagerTest",
     ":UdmfDelayDataContainerTest",
+    ":UdmfDragProxyAuthorizationTest",
     ":UdmfObserverTest",
     ":UdmfPermissionPolicyUtilsTest",
     ":UdmfPreProcessUtilsMockTest",

@@ -17,6 +17,7 @@
 
 #include "udmf_service_impl.h"
 
+#include <algorithm>
 #include <atomic>
 
 #include "accesstoken_kit.h"
@@ -30,6 +31,7 @@
 #include "delay_data_prepare_container.h"
 #include "device_manager_adapter.h"
 #include "device_matrix.h"
+#include "drag_proxy_authorization.h"
 #include "ipc_skeleton.h"
 #include "tokenid_kit.h"
 #include "udmf_fuse_session_manager.h"
@@ -508,7 +510,9 @@ int32_t UdmfServiceImpl::VerifyDataAccessPermission(
     CheckerManager::CheckInfo info;
     info.tokenId = query.tokenId;
 
-    if (!CheckerManager::GetInstance().IsValid(runtime->privileges, info) && !IsPermissionInCache(query)) {
+    const bool isAuthorized = CheckerManager::GetInstance().IsValid(runtime->privileges, info) ||
+                              IsPermissionInCache(query);
+    if (!isAuthorized && !IsDragProxyAuthorized(runtime, query, unifiedData)) {
         RadarReporterAdapter::ReportFail(std::string(__FUNCTION__), BizScene::GET_DATA, GetDataStage::VERIFY_PRIVILEGE,
             StageRes::FAILED, E_NO_PERMISSION);
         ZLOGE("Get data failed,key:%{public}s", query.key.c_str());
@@ -516,6 +520,33 @@ int32_t UdmfServiceImpl::VerifyDataAccessPermission(
     }
 
     return E_OK;
+}
+
+bool UdmfServiceImpl::IsDragProxyAuthorized(
+    const std::shared_ptr<Runtime> &runtime, const QueryOption &query, const UnifiedData &unifiedData)
+{
+    if (query.intention != UD_INTENTION_DRAG) {
+        return false;
+    }
+    const auto &records = unifiedData.GetRecords();
+    if (std::none_of(records.begin(), records.end(), IsVirtualEntryRecord)) {
+        return false;
+    }
+    std::vector<uint32_t> authorizedTokenIds;
+    authorizedTokenIds.reserve(runtime->privileges.size());
+    for (const auto &privilege : runtime->privileges) {
+        authorizedTokenIds.push_back(privilege.tokenId);
+    }
+    {
+        std::lock_guard<std::recursive_mutex> lock(cacheMutex_);
+        auto iter = privilegeCache_.find(query.key);
+        if (iter != privilegeCache_.end()) {
+            for (const auto &privilege : iter->second) {
+                authorizedTokenIds.push_back(privilege.tokenId);
+            }
+        }
+    }
+    return DragProxyAuthorization::IsAuthorized(query.tokenId, authorizedTokenIds);
 }
 
 bool UdmfServiceImpl::IsPermissionInCache(const QueryOption &query)

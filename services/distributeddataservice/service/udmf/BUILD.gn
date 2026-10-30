@@ -52,6 +52,7 @@ ohos_source_set("udmf_server") {
     "lifecycle/lifecycle_policy.cpp",
     "permission/checker_manager.cpp",
     "permission/data_checker.cpp",
+    "permission/drag_proxy_authorization.cpp",
     "permission/permission_policy_utils.cpp",
     "permission/uri_permission_manager.cpp",
     "preprocess/data_handler.cpp",
@@ -83,6 +84,7 @@ ohos_source_set("udmf_server") {
   external_deps = [
     "ability_base:zuri",
     "ability_runtime:uri_permission_mgr",
+    "access_token:libaccesstoken_sdk",
     "access_token:libtokenid_sdk",
     "app_file_service:fileuri_native",
     "app_file_service:remote_file_share_native",

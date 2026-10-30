@@ -111,6 +111,8 @@ private:
     void HandleDbError(const std::string &intention, int32_t &status);
     int32_t VerifyDataAccessPermission(
         std::shared_ptr<Runtime> runtime, const QueryOption &query, const UnifiedData &unifiedData);
+    bool IsDragProxyAuthorized(
+        const std::shared_ptr<Runtime> &runtime, const QueryOption &query, const UnifiedData &unifiedData);
     std::vector<std::string> ProcessResult(const std::map<std::string, int32_t> &results);
     DistributedData::StoreMetaData BuildMeta(const std::string &storeId, int userId);
     int32_t VerifyUpdatePermission(const QueryOption &query, UnifiedData &unifiedData, std::string &bundleName);
