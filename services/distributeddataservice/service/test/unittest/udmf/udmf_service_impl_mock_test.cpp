@@ -615,6 +615,35 @@ HWTEST_F(UdmfServiceImplMockTest, AcquireFuseSessionOpen_DifferentAppUid_ReturnN
 }
 
 /**
+ * @tc.name: AcquireFuseSessionOpen_DesktopProxy_AllowFileManagerOnly
+ * @tc.desc: Verify a desktop drop session can be opened only by its resolved file-manager proxy UID.
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(UdmfServiceImplMockTest, AcquireFuseSessionOpen_DesktopProxy_AllowFileManagerOnly, TestSize.Level0)
+{
+    constexpr int32_t desktopUid = 20010001;
+    constexpr int32_t fileManagerUid = 20010002;
+    const std::string sessionId = "desktop-proxy-virtual-session";
+    auto &manager = UdmfFuseSessionManager::GetInstance();
+    UdmfFuseSessionManager::SessionInfo session;
+    session.state = UdmfFuseSessionManager::State::ACTIVE;
+    session.targetUid = desktopUid;
+    session.accessUid = fileManagerUid;
+    {
+        std::lock_guard<std::mutex> lock(manager.mutex_);
+        manager.sessions_.emplace(sessionId, session);
+    }
+
+    EXPECT_EQ(manager.AcquireOpen(sessionId, desktopUid), -EACCES);
+    EXPECT_EQ(manager.AcquireOpen(sessionId, fileManagerUid), 0);
+
+    manager.ReleaseOpen(sessionId);
+    std::lock_guard<std::mutex> lock(manager.mutex_);
+    manager.sessions_.erase(sessionId);
+}
+
+/**
  * @tc.name: FillFuseAttr_SessionNode_UseOwnerOnlyMode
  * @tc.desc: Verify FUSE session directories and virtual files expose owner-only permissions.
  * @tc.type: FUNC

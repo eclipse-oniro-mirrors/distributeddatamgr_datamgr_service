@@ -20,6 +20,7 @@
 #include <unordered_set>
 #include <utility>
 
+#include "drag_proxy_authorization.h"
 #include "log_print.h"
 #include "udmf_fuse_controller.h"
 #include "udmf_fuse_mount_adapter.h"
@@ -159,6 +160,14 @@ int32_t UdmfFuseSessionManager::Activate(
     if (targetTokenId == 0 || targetUid < 0 || targetGid < 0) {
         return -EINVAL;
     }
+    int32_t accessUid = targetUid;
+    int32_t accessGid = targetGid;
+    int32_t proxyUid = -1;
+    if (DragProxyAuthorization::GetFileManagerProxyUid(targetTokenId, proxyUid)) {
+        accessUid = proxyUid;
+        accessGid = proxyUid;
+        ZLOGI("Use file manager as FUSE reader for desktop drop, uid:%{public}d", proxyUid);
+    }
     std::lock_guard<std::mutex> lock(mutex_);
     auto it = sessions_.find(sessionId);
     if (it == sessions_.end()) {
@@ -183,13 +192,14 @@ int32_t UdmfFuseSessionManager::Activate(
         return -EAGAIN;
     }
     std::string relativePath;
-    int32_t ret = AddControllerSessionLocked(sessionId, it->second, targetUid, targetGid, relativePath);
+    int32_t ret = AddControllerSessionLocked(sessionId, it->second, accessUid, accessGid, relativePath);
     if (ret != 0) {
         return ret;
     }
     it->second.targetTokenId = targetTokenId;
     it->second.targetUid = targetUid;
     it->second.targetGid = targetGid;
+    it->second.accessUid = accessUid;
     it->second.state = State::ACTIVE;
     DecreasePendingSessionLocked(it->second.sourceTokenId);
     ++activeSessionCount_;
@@ -212,7 +222,7 @@ void UdmfFuseSessionManager::ScheduleActiveSessionLocked(const std::string &sess
 }
 
 int32_t UdmfFuseSessionManager::AddControllerSessionLocked(const std::string &sessionId, SessionInfo &session,
-    int32_t targetUid, int32_t targetGid, std::string &relativePath)
+    int32_t accessUid, int32_t accessGid, std::string &relativePath)
 {
     int32_t ret = MountUserLocked(session.userId);
     if (ret != 0) {
@@ -228,7 +238,7 @@ int32_t UdmfFuseSessionManager::AddControllerSessionLocked(const std::string &se
         return -EIO;
     }
     UdmfFuseController::SessionOptions options{ sessionId, session.alias, session.root, session.provider,
-        static_cast<uid_t>(targetUid), static_cast<gid_t>(targetGid) };
+        static_cast<uid_t>(accessUid), static_cast<gid_t>(accessGid) };
     ret = controller->second->AddSession(options, relativePath);
     if (ret != 0) {
         TryUnmountUserLocked(session.userId);
@@ -243,7 +253,8 @@ int32_t UdmfFuseSessionManager::AcquireOpen(const std::string &sessionId, int32_
     if (it == sessions_.end() || it->second.state != State::ACTIVE) {
         return -ESTALE;
     }
-    if (callingUid < 0 || callingUid != it->second.targetUid) {
+    int32_t accessUid = it->second.accessUid >= 0 ? it->second.accessUid : it->second.targetUid;
+    if (callingUid < 0 || callingUid != accessUid) {
         return -EACCES;
     }
     CancelCleanupTaskLocked(it->second);

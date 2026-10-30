@@ -23,6 +23,7 @@ namespace OHOS::UDMF {
 class DragProxyAuthorization final {
 public:
     static bool IsAuthorized(uint32_t requesterTokenId, const std::vector<uint32_t> &authorizedTokenIds);
+    static bool GetFileManagerProxyUid(uint32_t authorizedTokenId, int32_t &proxyUid);
 };
 } // namespace OHOS::UDMF
 

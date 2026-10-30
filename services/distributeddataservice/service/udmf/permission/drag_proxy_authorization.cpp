@@ -16,6 +16,7 @@
 #include "drag_proxy_authorization.h"
 
 #include "accesstoken_kit.h"
+#include "bundle_mgr_client.h"
 
 namespace OHOS::UDMF {
 namespace {
@@ -45,5 +46,22 @@ bool DragProxyAuthorization::IsAuthorized(uint32_t requesterTokenId, const std::
         }
     }
     return false;
+}
+
+bool DragProxyAuthorization::GetFileManagerProxyUid(uint32_t authorizedTokenId, int32_t &proxyUid)
+{
+    proxyUid = -1;
+    HapTokenInfo authorizedInfo;
+    if (!GetHapTokenInfo(authorizedTokenId, authorizedInfo) || authorizedInfo.bundleName != DESKTOP_BUNDLE_NAME) {
+        return false;
+    }
+    AppExecFwk::BundleMgrClient bundleMgrClient;
+    AppExecFwk::BundleInfo bundleInfo;
+    if (!bundleMgrClient.GetBundleInfo(FILE_MANAGER_BUNDLE_NAME, AppExecFwk::GET_BUNDLE_DEFAULT, bundleInfo,
+        authorizedInfo.userID) || bundleInfo.applicationInfo.uid < 0) {
+        return false;
+    }
+    proxyUid = bundleInfo.applicationInfo.uid;
+    return true;
 }
 } // namespace OHOS::UDMF

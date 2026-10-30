@@ -47,6 +47,7 @@ public:
         uint32_t targetTokenId = 0;
         int32_t targetUid = -1;
         int32_t targetGid = -1;
+        int32_t accessUid = -1;
         uint64_t generation = 0;
         uint32_t recordIndex = 0;
         VirtualEntry root;
@@ -86,8 +87,8 @@ private:
         const std::string &sessionId, SessionInfo &session, const std::chrono::seconds &delay);
     void ScheduleActiveSessionLocked(const std::string &sessionId, SessionInfo &session);
     int32_t MountUserLocked(int32_t userId);
-    int32_t AddControllerSessionLocked(const std::string &sessionId, SessionInfo &session, int32_t targetUid,
-        int32_t targetGid, std::string &relativePath);
+    int32_t AddControllerSessionLocked(const std::string &sessionId, SessionInfo &session, int32_t accessUid,
+        int32_t accessGid, std::string &relativePath);
     void TryUnmountUser(int32_t userId);
     void TryUnmountUserLocked(int32_t userId);
     void Expire(const std::string &sessionId, uint64_t generation);
