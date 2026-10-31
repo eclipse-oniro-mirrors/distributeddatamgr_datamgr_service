@@ -23,7 +23,7 @@ namespace OHOS::UDMF {
 int32_t UdmfFuseMountAdapter::Mount(int32_t userId, const std::string &mountPoint, int &fuseFd)
 {
     (void)userId;
-    (void)mountPoint;
+    UdmfFuseMountAdapterMock::lastMountPoint = mountPoint;
     fuseFd = -1;
     ++UdmfFuseMountAdapterMock::mounts;
     if (UdmfFuseMountAdapterMock::mountStatus != 0) {
@@ -36,7 +36,7 @@ int32_t UdmfFuseMountAdapter::Mount(int32_t userId, const std::string &mountPoin
 int32_t UdmfFuseMountAdapter::Unmount(int32_t userId, const std::string &mountPoint)
 {
     (void)userId;
-    (void)mountPoint;
+    UdmfFuseMountAdapterMock::lastUnmountPoint = mountPoint;
     ++UdmfFuseMountAdapterMock::unmounts;
     return UdmfFuseMountAdapterMock::unmountStatus;
 }

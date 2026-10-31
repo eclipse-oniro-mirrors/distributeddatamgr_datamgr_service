@@ -508,6 +508,8 @@ HWTEST_F(UdmfFuseTddTest, Activate_ControllerFailure_UnmountAndAllowRetry, TestS
     mock_.customIoStatus = -EIO;
     EXPECT_EQ(manager_.Activate("tdd-session", TARGET_TOKEN, TARGET_UID, TARGET_UID, uri_), -EIO);
     EXPECT_EQ(UdmfFuseMountAdapterMock::unmounts, 1u);
+    EXPECT_EQ(UdmfFuseMountAdapterMock::lastMountPoint, "/mnt/data/100/udmf_fuse/files");
+    EXPECT_EQ(UdmfFuseMountAdapterMock::lastUnmountPoint, UdmfFuseMountAdapterMock::lastMountPoint);
     mock_.customIoStatus = 0;
     EXPECT_EQ(manager_.Activate("tdd-session", TARGET_TOKEN, TARGET_UID, TARGET_UID, uri_), 0);
 }
@@ -521,6 +523,8 @@ HWTEST_F(UdmfFuseTddTest, Activate_ControllerFailure_UnmountAndAllowRetry, TestS
 HWTEST_F(UdmfFuseTddTest, Activate_RepeatForSameTarget_ReuseUriAndMount, TestSize.Level0)
 {
     ASSERT_EQ(ActivateFile(), 0);
+    EXPECT_EQ(UdmfFuseMountAdapterMock::lastMountPoint, "/mnt/data/100/udmf_fuse/files");
+    EXPECT_EQ(uri_.find("file:///data/storage/el2/udmf/files/"), 0u);
     std::string repeated;
     EXPECT_EQ(manager_.Activate("tdd-session", TARGET_TOKEN, TARGET_UID, TARGET_UID, repeated), 0);
     EXPECT_EQ(repeated, uri_);
@@ -611,6 +615,7 @@ HWTEST_F(UdmfFuseTddTest, ProviderDeath_ActiveSession_RemoveAndUnmount, TestSize
     UdmfFuseSessionManager::SessionInfo info;
     EXPECT_FALSE(manager_.Get("tdd-session", info));
     EXPECT_EQ(UdmfFuseMountAdapterMock::unmounts, 1u);
+    EXPECT_EQ(UdmfFuseMountAdapterMock::lastUnmountPoint, UdmfFuseMountAdapterMock::lastMountPoint);
 }
 
 /**

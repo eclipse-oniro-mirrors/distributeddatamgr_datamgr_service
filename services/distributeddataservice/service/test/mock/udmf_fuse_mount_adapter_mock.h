@@ -18,6 +18,7 @@
 
 #include <cerrno>
 #include <cstdint>
+#include <string>
 
 namespace OHOS::UDMF {
 struct UdmfFuseMountAdapterMock {
@@ -27,12 +28,16 @@ struct UdmfFuseMountAdapterMock {
         unmountStatus = 0;
         mounts = 0;
         unmounts = 0;
+        lastMountPoint.clear();
+        lastUnmountPoint.clear();
     }
 
     inline static int32_t mountStatus = -ENOSYS;
     inline static int32_t unmountStatus = 0;
     inline static uint32_t mounts = 0;
     inline static uint32_t unmounts = 0;
+    inline static std::string lastMountPoint;
+    inline static std::string lastUnmountPoint;
 };
 } // namespace OHOS::UDMF
 #endif // UDMF_FUSE_MOUNT_ADAPTER_MOCK_H

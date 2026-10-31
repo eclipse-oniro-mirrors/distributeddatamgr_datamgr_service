@@ -15,6 +15,7 @@
 
 #include "udmf_fuse_mount_adapter.h"
 
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include <cerrno>
@@ -26,6 +27,24 @@
 
 namespace OHOS::UDMF {
 namespace {
+int32_t PrepareMountPoint(const std::string &mountPoint)
+{
+    // Storage prepares the per-user parent directory. Its child must exist before storage validates realpath.
+    constexpr mode_t MOUNT_POINT_MODE = S_IRWXU | S_IXGRP | S_IXOTH;
+    if (mkdir(mountPoint.c_str(), MOUNT_POINT_MODE) == 0) {
+        return 0;
+    }
+    int32_t error = errno;
+    if (error != EEXIST) {
+        return -error;
+    }
+    struct stat info {};
+    if (lstat(mountPoint.c_str(), &info) != 0) {
+        return -errno;
+    }
+    return S_ISDIR(info.st_mode) ? 0 : -ENOTDIR;
+}
+
 sptr<StorageManager::IStorageManager> GetStorageManagerProxy()
 {
     auto samgr = SystemAbilityManagerClient::GetInstance().GetSystemAbilityManager();
@@ -45,11 +64,16 @@ sptr<StorageManager::IStorageManager> GetStorageManagerProxy()
 int32_t UdmfFuseMountAdapter::Mount(int32_t userId, const std::string &mountPoint, int &fuseFd)
 {
     fuseFd = -1;
+    int32_t ret = PrepareMountPoint(mountPoint);
+    if (ret != 0) {
+        ZLOGE("Prepare UDMF FUSE mount point failed, userId:%{public}d ret:%{public}d", userId, ret);
+        return ret;
+    }
     auto proxy = GetStorageManagerProxy();
     if (proxy == nullptr) {
         return -EIO;
     }
-    int32_t ret = proxy->MountUdmfClipFuse(userId, mountPoint, fuseFd);
+    ret = proxy->MountUdmfClipFuse(userId, mountPoint, fuseFd);
     if (ret != 0 || fuseFd < 0) {
         if (fuseFd >= 0) {
             (void)close(fuseFd);
