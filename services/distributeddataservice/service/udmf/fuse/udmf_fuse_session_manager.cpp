@@ -31,7 +31,7 @@ namespace {
 // /mnt/data is a shared mount tree. Appspawn exposes the per-user UDMF FUSE directory through a
 // stable application-side path, so the mount is visible to the drop target without exposing user IDs.
 constexpr char UDMF_FUSE_MOUNT_PREFIX[] = "/mnt/data/";
-constexpr char UDMF_FUSE_MOUNT_SUFFIX[] = "/udmf_fuse";
+constexpr char UDMF_FUSE_MOUNT_SUFFIX[] = "/udmf_fuse/";
 constexpr char UDMF_FUSE_APP_MOUNT_POINT[] = "/data/storage/el2/udmf";
 constexpr std::chrono::hours ACTIVE_SESSION_LEASE(24);
 constexpr std::chrono::seconds INITIAL_OPEN_TIMEOUT(30);
