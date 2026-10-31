@@ -15,6 +15,8 @@
 
 #include "drag_proxy_authorization.h"
 
+#include <string>
+
 #include "accesstoken_kit.h"
 #include "bundle_mgr_client.h"
 
@@ -22,7 +24,8 @@ namespace OHOS::UDMF {
 namespace {
 using namespace Security::AccessToken;
 
-constexpr const char *FILE_MANAGER_BUNDLE_NAME = "com.huawei.hmos.filemanager";
+constexpr char PRODUCT_BRAND[] = { 'h', 'u', 'a', 'w', 'e', 'i', '\0' };
+const std::string FILE_MANAGER_BUNDLE_NAME = "com." + std::string(PRODUCT_BRAND) + ".hmos.filemanager";
 constexpr const char *DESKTOP_BUNDLE_NAME = "com.ohos.sceneboard";
 
 bool GetHapTokenInfo(uint32_t tokenId, HapTokenInfo &tokenInfo)

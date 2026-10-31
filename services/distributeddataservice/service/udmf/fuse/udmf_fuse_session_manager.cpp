@@ -48,6 +48,16 @@ constexpr int32_t ALIAS_LENGTH = 32;
 constexpr int32_t ALIAS_MINIMUM = 'a';
 constexpr int32_t ALIAS_MAXIMUM = 'z';
 
+std::pair<int32_t, int32_t> ResolveAccessIdentity(uint32_t targetTokenId, int32_t targetUid, int32_t targetGid)
+{
+    int32_t proxyUid = -1;
+    if (!DragProxyAuthorization::GetFileManagerProxyUid(targetTokenId, proxyUid)) {
+        return { targetUid, targetGid };
+    }
+    ZLOGI("Use file manager as FUSE reader for desktop drop, uid:%{public}d", proxyUid);
+    return { proxyUid, proxyUid };
+}
+
 std::string GenerateAlias()
 {
     auto random = DistributedData::Crypto::Random(ALIAS_LENGTH, ALIAS_MINIMUM, ALIAS_MAXIMUM);
@@ -160,14 +170,7 @@ int32_t UdmfFuseSessionManager::Activate(
     if (targetTokenId == 0 || targetUid < 0 || targetGid < 0) {
         return -EINVAL;
     }
-    int32_t accessUid = targetUid;
-    int32_t accessGid = targetGid;
-    int32_t proxyUid = -1;
-    if (DragProxyAuthorization::GetFileManagerProxyUid(targetTokenId, proxyUid)) {
-        accessUid = proxyUid;
-        accessGid = proxyUid;
-        ZLOGI("Use file manager as FUSE reader for desktop drop, uid:%{public}d", proxyUid);
-    }
+    auto [accessUid, accessGid] = ResolveAccessIdentity(targetTokenId, targetUid, targetGid);
     std::lock_guard<std::mutex> lock(mutex_);
     auto it = sessions_.find(sessionId);
     if (it == sessions_.end()) {

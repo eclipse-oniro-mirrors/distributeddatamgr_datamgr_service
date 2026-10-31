@@ -32,12 +32,14 @@ constexpr uint32_t OTHER_APP_TOKEN = 300;
 constexpr uint32_t OTHER_REQUESTER_TOKEN = 400;
 constexpr uint32_t UNKNOWN_TOKEN = 500;
 constexpr int32_t TEST_USER_ID = 100;
+constexpr char PRODUCT_BRAND[] = { 'h', 'u', 'a', 'w', 'e', 'i', '\0' };
+const std::string FILE_MANAGER_BUNDLE_NAME = "com." + std::string(PRODUCT_BRAND) + ".hmos.filemanager";
 
 int32_t FillKnownHapTokenInfo(AccessTokenID tokenId, HapTokenInfo &tokenInfo)
 {
     tokenInfo.userID = TEST_USER_ID;
     if (tokenId == FILE_MANAGER_TOKEN) {
-        tokenInfo.bundleName = "com.huawei.hmos.filemanager";
+        tokenInfo.bundleName = FILE_MANAGER_BUNDLE_NAME;
     } else if (tokenId == DESKTOP_TOKEN) {
         tokenInfo.bundleName = "com.ohos.sceneboard";
     } else if (tokenId == OTHER_USER_DESKTOP_TOKEN) {

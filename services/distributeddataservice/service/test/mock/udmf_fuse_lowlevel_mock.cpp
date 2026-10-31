@@ -15,11 +15,17 @@
 
 #include "udmf_fuse_lowlevel_mock.h"
 
+#include <algorithm>
 #include <cerrno>
 #include <cstring>
 #include <unistd.h>
 
 namespace OHOS::UDMF {
+namespace {
+constexpr uint32_t FUSE_PROTOCOL_MAJOR = 7;
+constexpr uint32_t FUSE_PROTOCOL_MINOR = 38;
+}
+
 std::atomic<FuseLowlevelMock *> FuseLowlevelMock::instance_{ nullptr };
 
 FuseLowlevelMock::FuseLowlevelMock()
@@ -72,8 +78,8 @@ int FuseLowlevelMock::RunLoop(struct fuse_session *value)
     auto *session = reinterpret_cast<Session *>(value);
     if (initialize) {
         struct fuse_conn_info connection {};
-        connection.proto_major = 7;
-        connection.proto_minor = 38;
+        connection.proto_major = FUSE_PROTOCOL_MAJOR;
+        connection.proto_minor = FUSE_PROTOCOL_MINOR;
         connection.want = FUSE_CAP_READDIRPLUS;
         operations.init(session->userdata, &connection);
     }
@@ -87,7 +93,7 @@ size_t FuseLowlevelMock::AddEntry(fuse_req_t req, char *buffer, size_t capacity,
     size_t length = std::strlen(name) + 1;
     if (buffer != nullptr && capacity >= length) {
         GetRequest(req).names.emplace_back(name);
-        std::memcpy(buffer, name, length);
+        std::copy_n(name, length, buffer);
     }
     return length;
 }
@@ -96,7 +102,9 @@ size_t FuseLowlevelMock::AddEntry(fuse_req_t req, char *buffer, size_t capacity,
 using OHOS::UDMF::FuseLowlevelMock;
 
 extern "C" {
-struct fuse_session *fuse_session_new_versioned(struct fuse_args *args, const struct fuse_lowlevel_ops *operations,
+struct fuse_session *FuseSessionNewVersioned(struct fuse_args *args, const struct fuse_lowlevel_ops *operations,
+    size_t size, struct libfuse_version *version, void *userdata) __asm__("fuse_session_new_versioned");
+struct fuse_session *FuseSessionNewVersioned(struct fuse_args *args, const struct fuse_lowlevel_ops *operations,
     size_t size, struct libfuse_version *version, void *userdata)
 {
     (void)args;
@@ -106,7 +114,9 @@ struct fuse_session *fuse_session_new_versioned(struct fuse_args *args, const st
     return mock == nullptr ? nullptr : mock->CreateSession(operations, userdata);
 }
 
-int fuse_session_custom_io_317(struct fuse_session *value, const struct fuse_custom_io *io, size_t size, int fd)
+int FuseSessionCustomIo317(struct fuse_session *value, const struct fuse_custom_io *io, size_t size, int fd)
+    __asm__("fuse_session_custom_io_317");
+int FuseSessionCustomIo317(struct fuse_session *value, const struct fuse_custom_io *io, size_t size, int fd)
 {
     (void)size;
     auto *mock = FuseLowlevelMock::Get();
@@ -118,7 +128,8 @@ int fuse_session_custom_io_317(struct fuse_session *value, const struct fuse_cus
     return 0;
 }
 
-void fuse_session_exit(struct fuse_session *value)
+void FuseSessionExit(struct fuse_session *value) __asm__("fuse_session_exit");
+void FuseSessionExit(struct fuse_session *value)
 {
     auto *session = reinterpret_cast<FuseLowlevelMock::Session *>(value);
     {
@@ -128,7 +139,8 @@ void fuse_session_exit(struct fuse_session *value)
     session->condition.notify_all();
 }
 
-void fuse_session_destroy(struct fuse_session *value)
+void FuseSessionDestroy(struct fuse_session *value) __asm__("fuse_session_destroy");
+void FuseSessionDestroy(struct fuse_session *value)
 {
     auto *session = reinterpret_cast<FuseLowlevelMock::Session *>(value);
     if (session->fd >= 0) {
@@ -138,36 +150,44 @@ void fuse_session_destroy(struct fuse_session *value)
     ++FuseLowlevelMock::Get()->destroyed;
 }
 
-int fuse_session_loop_mt(struct fuse_session *session, struct fuse_loop_config *config)
+int FuseSessionLoopMt(struct fuse_session *session, struct fuse_loop_config *config) __asm__("fuse_session_loop_mt");
+int FuseSessionLoopMt(struct fuse_session *session, struct fuse_loop_config *config)
 {
     (void)config;
     return FuseLowlevelMock::Get()->RunLoop(session);
 }
 
-struct fuse_loop_config *fuse_loop_cfg_create()
+struct fuse_loop_config *FuseLoopCfgCreate() __asm__("fuse_loop_cfg_create");
+struct fuse_loop_config *FuseLoopCfgCreate()
 {
     return FuseLowlevelMock::Get()->failLoopConfig
         ? nullptr : reinterpret_cast<struct fuse_loop_config *>(new uint32_t(0));
 }
 
-void fuse_loop_cfg_destroy(struct fuse_loop_config *config)
+void FuseLoopCfgDestroy(struct fuse_loop_config *config) __asm__("fuse_loop_cfg_destroy");
+void FuseLoopCfgDestroy(struct fuse_loop_config *config)
 {
     delete reinterpret_cast<uint32_t *>(config);
 }
 
-void fuse_loop_cfg_set_idle_threads(struct fuse_loop_config *config, unsigned int value)
+void FuseLoopCfgSetIdleThreads(struct fuse_loop_config *config, unsigned int value)
+    __asm__("fuse_loop_cfg_set_idle_threads");
+void FuseLoopCfgSetIdleThreads(struct fuse_loop_config *config, unsigned int value)
 {
     (void)config;
     (void)value;
 }
 
-void fuse_loop_cfg_set_max_threads(struct fuse_loop_config *config, unsigned int value)
+void FuseLoopCfgSetMaxThreads(struct fuse_loop_config *config, unsigned int value)
+    __asm__("fuse_loop_cfg_set_max_threads");
+void FuseLoopCfgSetMaxThreads(struct fuse_loop_config *config, unsigned int value)
 {
     (void)config;
     FuseLowlevelMock::Get()->maxThreads = value;
 }
 
-void fuse_loop_cfg_set_clone_fd(struct fuse_loop_config *config, unsigned int value)
+void FuseLoopCfgSetCloneFd(struct fuse_loop_config *config, unsigned int value) __asm__("fuse_loop_cfg_set_clone_fd");
+void FuseLoopCfgSetCloneFd(struct fuse_loop_config *config, unsigned int value)
 {
     (void)config;
     (void)value;

@@ -44,6 +44,9 @@ constexpr int32_t TEST_USER = 100;
 constexpr uint32_t SOURCE_TOKEN = 8001;
 constexpr uint32_t TARGET_TOKEN = 9001;
 constexpr size_t BLOCK_BYTES = 5 * 1024 * 1024;
+constexpr int64_t PROVIDER_MODIFY_TIME = 2345;
+constexpr int64_t ENTRY_MODIFY_TIME = 1234;
+constexpr int64_t DEFAULT_FILE_SIZE = 7;
 
 class TddProvider final : public IRemoteStub<IVirtualEntryProvider> {
 public:
@@ -74,7 +77,7 @@ public:
         ++statCalls;
         entry.id = mismatchId ? "wrong-id" : id;
         entry.type = VirtualEntryType::FILE;
-        entry.modifyTime = 2345;
+        entry.modifyTime = PROVIDER_MODIFY_TIME;
         entry.size = unknownStatSize ? -1 : static_cast<int64_t>(content.size());
         return statStatus;
     }
@@ -174,13 +177,13 @@ public:
     std::mutex mutex;
 };
 
-VirtualEntry MakeFile(int64_t size = 7, const std::string &name = "example.bin")
+VirtualEntry MakeFile(int64_t size = DEFAULT_FILE_SIZE, const std::string &name = "example.bin")
 {
     VirtualEntry entry;
     entry.id = name;
     entry.name = name;
     entry.size = size;
-    entry.modifyTime = 1234;
+    entry.modifyTime = ENTRY_MODIFY_TIME;
     return entry;
 }
 
@@ -190,7 +193,7 @@ VirtualEntry MakeDirectory(size_t count)
     entry.name = "directory";
     entry.type = VirtualEntryType::DIRECTORY;
     for (size_t index = 0; index < count; ++index) {
-        entry.subItems.push_back(MakeFile(7, "file-" + std::to_string(index)));
+        entry.subItems.push_back(MakeFile(DEFAULT_FILE_SIZE, "file-" + std::to_string(index)));
     }
     return entry;
 }
