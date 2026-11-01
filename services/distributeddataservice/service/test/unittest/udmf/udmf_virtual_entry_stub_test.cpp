@@ -32,7 +32,7 @@ constexpr uint32_t RECORD_INDEX = 3;
 constexpr int64_t MODIFY_TIME = 123456;
 constexpr const char *TEST_KEY = "udmf://drag/com.example.virtual/0123456789abcdef0123456789abcdef";
 
-class VirtualEntryDispatchMock final : public UdmfServiceStub {
+class VirtualEntryDispatchMock : public UdmfServiceStub {
 public:
     MOCK_METHOD(int32_t, SetData, (CustomOption &, UnifiedData &, Summary &, std::string &), (override));
     MOCK_METHOD(int32_t, GetData, (const QueryOption &, UnifiedData &), (override));
@@ -58,17 +58,19 @@ public:
 
 class RejectParcelAllocator final : public Allocator {
 public:
-    void *Alloc(size_t size) override
+    void *Alloc(size_t) override
     {
         return nullptr;
     }
 
-    void *Realloc(void *data, size_t size) override
+    void *Realloc(void *, size_t) override
     {
         return nullptr;
     }
 
-    void Dealloc(void *data) override {}
+    void Dealloc(void *) override
+    {
+    }
 };
 
 VirtualEntry MakeStubFile()
@@ -98,9 +100,9 @@ VirtualEntry MakeStubDirectory(uint32_t childCount)
 bool WriteEntryHeader(MessageParcel &parcel, const VirtualEntry &entry, uint32_t fields = 6)
 {
     return (fields < 1 || parcel.WriteString(entry.id)) && (fields < 2 || parcel.WriteString(entry.name)) &&
-        (fields < 3 || parcel.WriteInt32(static_cast<int32_t>(entry.type))) &&
-        (fields < 4 || parcel.WriteInt64(entry.modifyTime)) && (fields < 5 || parcel.WriteInt64(entry.size)) &&
-        (fields < 6 || parcel.WriteUint32(static_cast<uint32_t>(entry.subItems.size())));
+           (fields < 3 || parcel.WriteInt32(static_cast<int32_t>(entry.type))) &&
+           (fields < 4 || parcel.WriteInt64(entry.modifyTime)) && (fields < 5 || parcel.WriteInt64(entry.size)) &&
+           (fields < 6 || parcel.WriteUint32(static_cast<uint32_t>(entry.subItems.size())));
 }
 
 bool WriteEntryTree(MessageParcel &parcel, const VirtualEntry &entry)
@@ -119,7 +121,7 @@ bool WriteEntryTree(MessageParcel &parcel, const VirtualEntry &entry)
 bool WriteRegisterPrefix(MessageParcel &parcel, const std::string &key = TEST_KEY)
 {
     return parcel.WriteInterfaceToken(UdmfServiceStub::GetDescriptor()) && parcel.WriteString(key) &&
-        parcel.WriteUint32(RECORD_INDEX);
+           parcel.WriteUint32(RECORD_INDEX);
 }
 } // namespace
 
@@ -323,8 +325,8 @@ HWTEST_F(UdmfVirtualEntryStubTest, RegisterVirtualEntry_ValidFile_PreserveMetada
  * @tc.type: FUNC
  * @tc.author: agent
  */
-HWTEST_F(UdmfVirtualEntryStubTest, RegisterVirtualEntry_ZeroSizeAndEmptyDirectory_DispatchBothValidShapes,
-    TestSize.Level0)
+HWTEST_F(
+    UdmfVirtualEntryStubTest, RegisterVirtualEntry_ZeroSizeAndEmptyDirectory_DispatchBothValidShapes, TestSize.Level0)
 {
     auto file = MakeStubFile();
     file.size = 0;
@@ -335,8 +337,7 @@ HWTEST_F(UdmfVirtualEntryStubTest, RegisterVirtualEntry_ZeroSizeAndEmptyDirector
         ASSERT_TRUE(WriteRegisterPrefix(request));
         ASSERT_TRUE(WriteEntryTree(request, entry));
         ASSERT_TRUE(request.WriteRemoteObject(provider_));
-        EXPECT_CALL(service_, RegisterVirtualEntry(_, _, _, _))
-            .WillOnce(DoAll(SaveArg<2>(&received), Return(E_OK)));
+        EXPECT_CALL(service_, RegisterVirtualEntry(_, _, _, _)).WillOnce(DoAll(SaveArg<2>(&received), Return(E_OK)));
         EXPECT_EQ(service_.OnRemoteRequest(REGISTER_CODE, request, reply), E_OK);
         EXPECT_EQ(received.type, entry.type);
         EXPECT_EQ(received.size, entry.size);
@@ -361,8 +362,7 @@ HWTEST_F(UdmfVirtualEntryStubTest, RegisterVirtualEntry_NestedDirectory_Preserve
     ASSERT_TRUE(WriteRegisterPrefix(request));
     ASSERT_TRUE(WriteEntryTree(request, entry));
     ASSERT_TRUE(request.WriteRemoteObject(provider_));
-    EXPECT_CALL(service_, RegisterVirtualEntry(_, _, _, _))
-        .WillOnce(DoAll(SaveArg<2>(&received), Return(E_OK)));
+    EXPECT_CALL(service_, RegisterVirtualEntry(_, _, _, _)).WillOnce(DoAll(SaveArg<2>(&received), Return(E_OK)));
 
     EXPECT_EQ(service_.OnRemoteRequest(REGISTER_CODE, request, reply), E_OK);
     ASSERT_EQ(received.subItems.size(), 2u);
@@ -393,8 +393,7 @@ HWTEST_F(UdmfVirtualEntryStubTest, RegisterVirtualEntry_DepthBoundary_Accept64An
         ASSERT_TRUE(WriteRegisterPrefix(request));
         ASSERT_TRUE(WriteEntryTree(request, root));
         ASSERT_TRUE(request.WriteRemoteObject(provider_));
-        EXPECT_CALL(service_, RegisterVirtualEntry(_, _, _, _))
-            .Times(depth == DEPTH_LIMIT ? 1 : 0).WillRepeatedly(Return(E_OK));
+        EXPECT_CALL(service_, RegisterVirtualEntry(_, _, _, _)).Times(depth == DEPTH_LIMIT ? 1 : 0);
         EXPECT_EQ(service_.OnRemoteRequest(REGISTER_CODE, request, reply),
             depth == DEPTH_LIMIT ? E_OK : E_READ_PARCEL_ERROR);
     }
@@ -421,10 +420,8 @@ HWTEST_F(UdmfVirtualEntryStubTest, RegisterVirtualEntry_NodeCountBoundary_Accept
         ASSERT_TRUE(WriteRegisterPrefix(request));
         ASSERT_TRUE(WriteEntryTree(request, root));
         ASSERT_TRUE(request.WriteRemoteObject(provider_));
-        EXPECT_CALL(service_, RegisterVirtualEntry(_, _, _, _))
-            .Times(oversized ? 0 : 1).WillRepeatedly(Return(E_OK));
-        EXPECT_EQ(service_.OnRemoteRequest(REGISTER_CODE, request, reply),
-            oversized ? E_READ_PARCEL_ERROR : E_OK);
+        EXPECT_CALL(service_, RegisterVirtualEntry(_, _, _, _)).Times(oversized ? 0 : 1);
+        EXPECT_EQ(service_.OnRemoteRequest(REGISTER_CODE, request, reply), oversized ? E_READ_PARCEL_ERROR : E_OK);
     }
 }
 
