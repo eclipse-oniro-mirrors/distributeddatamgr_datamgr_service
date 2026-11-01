@@ -84,6 +84,9 @@ private:
     ~CryptoManager();
 
     uint32_t GetStorageLevel(int32_t area);
+    uint32_t GetLegacyStorageLevel(int32_t area);
+    std::vector<uint8_t> DecryptWithLevel(
+        const std::vector<uint8_t> &source, CryptoParams &decryptParams, uint32_t storageLevel);
     int32_t GenerateRootKey(uint32_t storageLevel, const std::string &userId);
     int32_t CheckRootKey(uint32_t storageLevel, const std::string &userId);
     int32_t PrepareRootKey(uint32_t storageLevel, const std::string &userId);

@@ -194,13 +194,85 @@ int32_t CryptoManager::CheckRootKey(uint32_t storageLevel, const std::string &us
 
 uint32_t CryptoManager::GetStorageLevel(int32_t area)
 {
-    if (area >= EL4 && area <= EL5) {
-        return HKS_AUTH_STORAGE_LEVEL_ECE;
-    }
-    if (area >= EL2 && area <= EL3) {
+    if (area == Area::EL2 || area == Area::EL3 || area == Area::EL5) {
         return HKS_AUTH_STORAGE_LEVEL_CE;
     }
+    if (area == Area::EL4) {
+        return HKS_AUTH_STORAGE_LEVEL_ECE;
+    }
     return HKS_AUTH_STORAGE_LEVEL_DE;
+}
+
+uint32_t CryptoManager::GetLegacyStorageLevel(int32_t area)
+{
+    if (area == Area::EL5) {
+        return HKS_AUTH_STORAGE_LEVEL_ECE;
+    }
+    return GetStorageLevel(area);
+}
+
+std::vector<uint8_t> CryptoManager::DecryptWithLevel(
+    const std::vector<uint8_t> &source, CryptoParams &decryptParams, uint32_t storageLevel)
+{
+    if (PrepareRootKey(storageLevel, decryptParams.userId) != ErrCode::SUCCESS) {
+        return {};
+    }
+
+    struct HksParamSet *params = nullptr;
+    int32_t ret = HksInitParamSet(&params);
+    if (ret != HKS_SUCCESS) {
+        ZLOGE("HksInitParamSet failed with error %{public}d", ret);
+        return {};
+    }
+
+    ParamConfig paramConfig = { .purpose = HKS_KEY_PURPOSE_DECRYPT,
+        .storageLevel = storageLevel,
+        .userId = decryptParams.userId,
+        .nonce = decryptParams.nonce.empty() ? vecNonce_ : decryptParams.nonce,
+        .aadValue = vecAad_ };
+    if (!AddHksParams(params, paramConfig)) {
+        return {};
+    }
+    ret = HksBuildParamSet(&params);
+    if (ret != HKS_SUCCESS) {
+        ZLOGE("HksBuildParamSet failed with error %{public}d", ret);
+        HksFreeParamSet(&params);
+        return {};
+    }
+
+    if (decryptParams.keyAlias.empty()) {
+        decryptParams.keyAlias = vecRootKeyAlias_;
+    }
+    struct HksBlob keyName = { uint32_t(decryptParams.keyAlias.size()),
+        const_cast<uint8_t *>(decryptParams.keyAlias.data()) };
+    struct HksBlob encryptedKeyBlob = { uint32_t(source.size()), const_cast<uint8_t *>(source.data()) };
+    uint8_t plainBuf[256] = { 0 };
+    struct HksBlob plainKeyBlob = { sizeof(plainBuf), plainBuf };
+
+    ret = HksDecrypt(&keyName, params, &encryptedKeyBlob, &plainKeyBlob);
+    (void)HksFreeParamSet(&params);
+    if (ret != HKS_SUCCESS) {
+        ZLOGE("HksDecrypt failed with error %{public}d, storageLevel:%{public}u", ret, storageLevel);
+        return {};
+    }
+    std::vector<uint8_t> password(plainKeyBlob.data, plainKeyBlob.data + plainKeyBlob.size);
+    return password;
+}
+
+std::vector<uint8_t> CryptoManager::Decrypt(const std::vector<uint8_t> &source, CryptoParams &decryptParams)
+{
+    uint32_t storageLevel = GetStorageLevel(decryptParams.area);
+    auto password = DecryptWithLevel(source, decryptParams, storageLevel);
+    if (!password.empty()) {
+        return password;
+    }
+    uint32_t legacyLevel = GetLegacyStorageLevel(decryptParams.area);
+    if (legacyLevel == storageLevel) {
+        return password;
+    }
+    ZLOGI("Retry decrypt with legacy storage level, area:%{public}d, level:%{public}u, legacy:%{public}u",
+        decryptParams.area, storageLevel, legacyLevel);
+    return DecryptWithLevel(source, decryptParams, legacyLevel);
 }
 
 int32_t CryptoManager::PrepareRootKey(uint32_t storageLevel, const std::string &userId)
@@ -276,66 +348,27 @@ std::vector<uint8_t> CryptoManager::Encrypt(const std::vector<uint8_t> &password
     return encryptedKey;
 }
 
-std::vector<uint8_t> CryptoManager::Decrypt(const std::vector<uint8_t> &source, CryptoParams &decryptParams)
-{
-    uint32_t storageLevel = GetStorageLevel(decryptParams.area);
-    if (PrepareRootKey(storageLevel, decryptParams.userId) != ErrCode::SUCCESS) {
-        return {};
-    }
-
-    struct HksParamSet *params = nullptr;
-    int32_t ret = HksInitParamSet(&params);
-    if (ret != HKS_SUCCESS) {
-        ZLOGE("HksInitParamSet failed with error %{public}d", ret);
-        return {};
-    }
-
-    ParamConfig paramConfig = {
-        .purpose = HKS_KEY_PURPOSE_DECRYPT,
-        .storageLevel = storageLevel,
-        .userId = decryptParams.userId,
-        .nonce = decryptParams.nonce.empty() ? vecNonce_ : decryptParams.nonce,
-        .aadValue = vecAad_
-    };
-    if (!AddHksParams(params, paramConfig)) {
-        return {};
-    }
-    ret = HksBuildParamSet(&params);
-    if (ret != HKS_SUCCESS) {
-        ZLOGE("HksBuildParamSet failed with error %{public}d", ret);
-        HksFreeParamSet(&params);
-        return {};
-    }
-
-    if (decryptParams.keyAlias.empty()) {
-        decryptParams.keyAlias = vecRootKeyAlias_;
-    }
-    struct HksBlob keyName = { uint32_t(decryptParams.keyAlias.size()),
-        const_cast<uint8_t *>(decryptParams.keyAlias.data()) };
-    struct HksBlob encryptedKeyBlob = { uint32_t(source.size()), const_cast<uint8_t*>(source.data()) };
-    uint8_t plainBuf[256] = { 0 };
-    struct HksBlob plainKeyBlob = { sizeof(plainBuf), plainBuf };
-
-    ret = HksDecrypt(&keyName, params, &encryptedKeyBlob, &plainKeyBlob);
-    (void)HksFreeParamSet(&params);
-    if (ret != HKS_SUCCESS) {
-        ZLOGE("HksDecrypt failed with error %{public}d", ret);
-        return {};
-    }
-    std::vector<uint8_t> password(plainKeyBlob.data, plainKeyBlob.data + plainKeyBlob.size);
-    return password;
-}
-
 void CryptoManager::UpdateSecretMeta(const std::vector<uint8_t> &password, const StoreMetaData &metaData,
     const std::string &metaKey, SecretKeyMetaData &secretKey, MetaDataSaver &saver)
 {
-    if (password.empty() || (!secretKey.nonce.empty() && secretKey.area >= 0)) {
+    if (password.empty()) {
+        return;
+    }
+    // EL5 had its storage level remapped (legacy != current), so the stored
+    // sKey may still be under the legacy level and must be migrated to the current one.
+    bool needMigrate = (GetLegacyStorageLevel(secretKey.area) != GetStorageLevel(secretKey.area));
+    if (!needMigrate && !secretKey.nonce.empty() && secretKey.area >= 0) {
         return;
     }
     CryptoParams encryptParams = { .area = metaData.area, .userId = metaData.user,
         .nonce = secretKey.nonce };
     auto encryptKey = Encrypt(password, encryptParams);
     if (encryptKey.empty()) {
+        return;
+    }
+    // Idempotent: GCM is deterministic for fixed key/nonce/plaintext, so a stored sKey
+    // already at the current level reproduces the same ciphertext. Skip the redundant write.
+    if (needMigrate && encryptKey == secretKey.sKey) {
         return;
     }
     secretKey.sKey = encryptKey;
