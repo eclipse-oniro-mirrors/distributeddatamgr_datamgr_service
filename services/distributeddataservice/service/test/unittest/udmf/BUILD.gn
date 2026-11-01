@@ -653,6 +653,7 @@ ohos_unittest("UdmfVirtualEntryServiceTest") {
     "googletest:gtest_main",
     "hilog:libhilog",
     "hisysevent:libhisysevent",
+    "hitrace:hitrace_meter",
     "hitrace:libhitracechain",
     "ipc:ipc_core",
     "json:nlohmann_json_static",
