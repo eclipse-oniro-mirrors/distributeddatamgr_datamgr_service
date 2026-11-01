@@ -430,8 +430,8 @@ int32_t UdmfServiceImpl::ProcessVirtualData(const QueryOption &query, UnifiedKey
         virtualSession.recordIndex >= records.size()) {
         return E_NO_PERMISSION;
     }
-    ret = ActivateVirtualData(query, unifiedData, virtualSession.recordIndex, virtualSession.userId, result.uri,
-        __FUNCTION__);
+    VirtualActivationContext context{ virtualSession.recordIndex, virtualSession.userId, __FUNCTION__ };
+    ret = ActivateVirtualData(query, unifiedData, context, result.uri);
     if (ret != E_OK) {
         return ret;
     }
@@ -443,23 +443,22 @@ int32_t UdmfServiceImpl::ProcessVirtualData(const QueryOption &query, UnifiedKey
     return E_OK;
 }
 
-int32_t UdmfServiceImpl::ActivateVirtualData(const QueryOption &query, const UnifiedData &data,
-    uint32_t recordIndex, int32_t userId, std::string &uri, const char *caller)
+int32_t UdmfServiceImpl::ActivateVirtualData(
+    const QueryOption &query, const UnifiedData &data, const VirtualActivationContext &context, std::string &uri)
 {
     UnifiedData authorizationData = data;
     auto authorizationRecords = authorizationData.GetRecords();
-    authorizationRecords.erase(authorizationRecords.begin() + recordIndex);
+    authorizationRecords.erase(authorizationRecords.begin() + context.recordIndex);
     authorizationData.SetRecords(std::move(authorizationRecords));
     int32_t ret = ProcessUri(query, authorizationData);
     if (ret != E_OK) {
-        RadarReporterAdapter::ReportFail(
-            std::string(caller), BizScene::GET_DATA, GetDataStage::GRANT_URI_PERMISSION, StageRes::FAILED, ret);
+        RadarReporterAdapter::ReportFail(std::string(context.caller), BizScene::GET_DATA,
+            GetDataStage::GRANT_URI_PERMISSION, StageRes::FAILED, ret);
         ZLOGE("ProcessUri failed:%{public}d", ret);
         return ret;
     }
     int32_t targetUserId = -1;
-    if (PreProcessUtils::GetHapUidByToken(query.tokenId, targetUserId) != E_OK ||
-        targetUserId != userId) {
+    if (PreProcessUtils::GetHapUidByToken(query.tokenId, targetUserId) != E_OK || targetUserId != context.userId) {
         ZLOGE("Virtual entry does not support cross-user access");
         return E_NO_PERMISSION;
     }

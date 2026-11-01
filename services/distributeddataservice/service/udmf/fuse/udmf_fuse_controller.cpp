@@ -1156,27 +1156,27 @@ void UdmfFuseController::Release(fuse_req_t req, fuse_ino_t inode, struct fuse_f
     fuse_reply_err(req, 0);
 }
 
-int32_t UdmfFuseController::ProviderRead(const sptr<IRemoteObject> &provider, const std::string &sessionId,
-    const std::string &id, int64_t offset, int32_t length, const std::chrono::steady_clock::time_point &deadline,
-    std::vector<uint8_t> &bytes)
+int32_t UdmfFuseController::ProviderRead(const sptr<IRemoteObject> &provider, const ProviderReadRequest &request,
+    const std::chrono::steady_clock::time_point &deadline, std::vector<uint8_t> &bytes)
 {
-    if (provider == nullptr || length < 0 || static_cast<size_t>(length) > PROVIDER_BLOCK_BYTES) {
+    if (provider == nullptr || request.length < 0 || static_cast<size_t>(request.length) > PROVIDER_BLOCK_BYTES) {
         return -EINVAL;
     }
-    int32_t ret = providerGate_->Acquire(provider, sessionId, deadline);
+    int32_t ret = providerGate_->Acquire(provider, request.sessionId, deadline);
     if (ret != 0) {
-        ZLOGW("Acquire virtual entry provider read slot failed, length:%{public}d, ret:%{public}d", length, ret);
+        ZLOGW(
+            "Acquire virtual entry provider read slot failed, length:%{public}d, ret:%{public}d", request.length, ret);
         return ret;
     }
     auto result = std::make_shared<ProviderReadCallback::Result>();
     sptr<ProviderReadCallback> callback = new (std::nothrow)
-        ProviderReadCallback(result, providerGate_, provider, sessionId, static_cast<size_t>(length));
+        ProviderReadCallback(result, providerGate_, provider, request.sessionId, static_cast<size_t>(request.length));
     if (callback == nullptr) {
-        providerGate_->Release(provider, sessionId, false);
+        providerGate_->Release(provider, request.sessionId, false);
         return -ENOMEM;
     }
     VirtualEntryProviderProxy providerProxy(provider);
-    ret = providerProxy.ReadAsync(id, offset, length, callback->AsObject());
+    ret = providerProxy.ReadAsync(request.id, request.offset, request.length, callback->AsObject());
     if (ret != 0) {
         return ret;
     }
@@ -1184,7 +1184,8 @@ int32_t UdmfFuseController::ProviderRead(const sptr<IRemoteObject> &provider, co
     if (!result->condition.wait_until(lock, deadline, [&result] { return result->done; })) {
         result->timedOut = true;
         callback->RecordTimeout();
-        ZLOGW("Virtual entry provider read timed out, offset:%{public}" PRId64 ", length:%{public}d", offset, length);
+        ZLOGW("Virtual entry provider read timed out, offset:%{public}" PRId64 ", length:%{public}d", request.offset,
+            request.length);
         return -ETIMEDOUT;
     }
     bytes = std::move(result->bytes);
@@ -1260,7 +1261,8 @@ int32_t UdmfFuseController::ReadBlockData(const Node &node, const sptr<IRemoteOb
         }
         size_t requestSize = expectedSize - bytes.size();
         std::vector<uint8_t> part;
-        ret = ReadBlockPart(node, provider, block, blockOffset + bytes.size(), static_cast<int32_t>(requestSize), part);
+        ReadRange range{ blockOffset + bytes.size(), static_cast<int32_t>(requestSize) };
+        ret = ReadBlockPart(node, provider, block, range, part);
         if (ret != 0) {
             break;
         }
@@ -1274,18 +1276,18 @@ int32_t UdmfFuseController::ReadBlockData(const Node &node, const sptr<IRemoteOb
 }
 
 int32_t UdmfFuseController::ReadBlockPart(const Node &node, const sptr<IRemoteObject> &provider,
-    const std::shared_ptr<BlockEntry> &block, uint64_t offset, int32_t length, std::vector<uint8_t> &part)
+    const std::shared_ptr<BlockEntry> &block, const ReadRange &range, std::vector<uint8_t> &part)
 {
+    ProviderReadRequest request{ node.sessionId, node.entry.id, static_cast<int64_t>(range.offset), range.length };
     int32_t ret = 0;
     for (int32_t attempt = 1; attempt <= PROVIDER_READ_MAX_ATTEMPTS; ++attempt) {
-        ret = ProviderRead(provider, node.sessionId, node.entry.id, static_cast<int64_t>(offset), length,
-            block->deadline, part);
+        ret = ProviderRead(provider, request, block->deadline, part);
         if (ret == 0 || !IsTransientReadError(ret) || attempt >= PROVIDER_READ_MAX_ATTEMPTS) {
             return ret;
         }
         ZLOGW("Retry virtual entry block read, inode:%{public}" PRIu64 ", block:%{public}" PRIu64
               ", attempt:%{public}d, ret:%{public}d",
-            static_cast<uint64_t>(node.inode), offset / PROVIDER_BLOCK_BYTES, attempt, ret);
+            static_cast<uint64_t>(node.inode), range.offset / PROVIDER_BLOCK_BYTES, attempt, ret);
         auto now = std::chrono::steady_clock::now();
         if (now >= block->deadline) {
             return -ETIMEDOUT;

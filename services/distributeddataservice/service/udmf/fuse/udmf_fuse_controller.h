@@ -129,6 +129,18 @@ private:
     struct ProviderGate;
     class ProviderReadCallback;
 
+    struct ProviderReadRequest {
+        std::string sessionId;
+        std::string id;
+        int64_t offset = 0;
+        int32_t length = 0;
+    };
+
+    struct ReadRange {
+        uint64_t offset = 0;
+        int32_t length = 0;
+    };
+
     static void Init(void *userdata, struct fuse_conn_info *connection);
     static void Lookup(fuse_req_t req, fuse_ino_t parent, const char *name);
     static void Forget(fuse_req_t req, fuse_ino_t inode, uint64_t nlookup);
@@ -164,9 +176,8 @@ private:
         std::vector<uint8_t> &result);
     int32_t AddTreeLocked(fuse_ino_t parent, const VirtualEntry &entry, Session &session, fuse_ino_t &inode);
     void RemoveNodeLocked(fuse_ino_t inode);
-    int32_t ProviderRead(const sptr<IRemoteObject> &provider, const std::string &sessionId, const std::string &id,
-        int64_t offset, int32_t length, const std::chrono::steady_clock::time_point &deadline,
-        std::vector<uint8_t> &bytes);
+    int32_t ProviderRead(const sptr<IRemoteObject> &provider, const ProviderReadRequest &request,
+        const std::chrono::steady_clock::time_point &deadline, std::vector<uint8_t> &bytes);
     static void ProviderCancel(const sptr<IRemoteObject> &provider, const std::vector<std::string> &ids);
     int32_t GetOrLoadBlock(const Node &node, const sptr<IRemoteObject> &provider, uint64_t blockIndex,
         std::shared_ptr<BlockEntry> &block);
@@ -174,7 +185,7 @@ private:
     int32_t ReadBlockData(const Node &node, const sptr<IRemoteObject> &provider, uint64_t blockOffset,
         const std::shared_ptr<BlockEntry> &block, std::vector<uint8_t> &bytes);
     int32_t ReadBlockPart(const Node &node, const sptr<IRemoteObject> &provider,
-        const std::shared_ptr<BlockEntry> &block, uint64_t offset, int32_t length, std::vector<uint8_t> &part);
+        const std::shared_ptr<BlockEntry> &block, const ReadRange &range, std::vector<uint8_t> &part);
     int32_t FinishBlockLoad(const BlockKey &key, const std::shared_ptr<BlockEntry> &block,
         std::vector<uint8_t> &bytes, int32_t status);
     bool EvictOldestBlockLocked();

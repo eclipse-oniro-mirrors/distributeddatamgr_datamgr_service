@@ -1040,7 +1040,8 @@ HWTEST_F(UdmfServiceImplMockTest, ProviderRead_CallbackMissing_ReturnTimeout, Te
     std::vector<uint8_t> bytes;
     auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(10);
 
-    EXPECT_EQ(controller.ProviderRead(provider->AsObject(), "timeout-session", "timeout-file", 0, 1, deadline, bytes),
+    EXPECT_EQ(controller.ProviderRead(provider->AsObject(),
+                  UdmfFuseController::ProviderReadRequest{ "timeout-session", "timeout-file", 0, 1 }, deadline, bytes),
         -ETIMEDOUT);
     EXPECT_TRUE(bytes.empty());
 }
@@ -1061,8 +1062,9 @@ HWTEST_F(UdmfServiceImplMockTest, ProviderGate_SingleSessionBorrowIdleSlots_Read
     for (size_t index = 0; index < 3; ++index) {
         reads.emplace_back([&controller, &provider, deadline] {
             std::vector<uint8_t> bytes;
-            EXPECT_EQ(
-                controller.ProviderRead(provider->AsObject(), "single-session", "file", 0, 1, deadline, bytes), 0);
+            EXPECT_EQ(controller.ProviderRead(provider->AsObject(),
+                          UdmfFuseController::ProviderReadRequest{ "single-session", "file", 0, 1 }, deadline, bytes),
+                0);
             EXPECT_EQ(bytes, (std::vector<uint8_t>{ 1 }));
         });
     }
@@ -1097,8 +1099,9 @@ HWTEST_F(UdmfServiceImplMockTest, ProviderGate_GlobalConcurrencyLimit_QueueUntil
     for (size_t index = 0; index < 3; ++index) {
         reads.emplace_back([&firstController, &firstProvider, deadline] {
             std::vector<uint8_t> bytes;
-            EXPECT_EQ(firstController.ProviderRead(
-                          firstProvider->AsObject(), "active-session", "active-file", 0, 1, deadline, bytes),
+            EXPECT_EQ(
+                firstController.ProviderRead(firstProvider->AsObject(),
+                    UdmfFuseController::ProviderReadRequest{ "active-session", "active-file", 0, 1 }, deadline, bytes),
                 0);
         });
     }
@@ -1110,8 +1113,8 @@ HWTEST_F(UdmfServiceImplMockTest, ProviderGate_GlobalConcurrencyLimit_QueueUntil
     std::atomic<int32_t> waitingResult = -EIO;
     std::thread waitingRead([&secondController, &waitingProvider, &waitingResult, deadline] {
         std::vector<uint8_t> bytes;
-        waitingResult = secondController.ProviderRead(
-            waitingProvider->AsObject(), "waiting-session", "waiting-file", 0, 1, deadline, bytes);
+        waitingResult = secondController.ProviderRead(waitingProvider->AsObject(),
+            UdmfFuseController::ProviderReadRequest{ "waiting-session", "waiting-file", 0, 1 }, deadline, bytes);
     });
     {
         std::unique_lock<std::mutex> lock(waitingProvider->asyncMutex_);
@@ -1153,22 +1156,25 @@ HWTEST_F(UdmfServiceImplMockTest, ProviderGate_WaitingSessionGetsFairSlot_AvoidS
     for (size_t index = 0; index < 3; ++index) {
         activeReads.emplace_back([&controller, &activeProvider, deadline] {
             std::vector<uint8_t> bytes;
-            EXPECT_EQ(controller.ProviderRead(
-                          activeProvider->AsObject(), "active-session", "active-file", 0, 1, deadline, bytes),
+            EXPECT_EQ(
+                controller.ProviderRead(activeProvider->AsObject(),
+                    UdmfFuseController::ProviderReadRequest{ "active-session", "active-file", 0, 1 }, deadline, bytes),
                 0);
         });
     }
     EXPECT_TRUE(WaitForAsyncRequests(activeProvider, 3, deadline));
     std::thread borrowedRead([&controller, &borrowedProvider, deadline] {
         std::vector<uint8_t> bytes;
-        EXPECT_EQ(controller.ProviderRead(
-                      borrowedProvider->AsObject(), "active-session", "borrowed-file", 0, 1, deadline, bytes),
+        EXPECT_EQ(
+            controller.ProviderRead(borrowedProvider->AsObject(),
+                UdmfFuseController::ProviderReadRequest{ "active-session", "borrowed-file", 0, 1 }, deadline, bytes),
             0);
     });
     std::thread waitingRead([&controller, &waitingProvider, deadline] {
         std::vector<uint8_t> bytes;
-        EXPECT_EQ(controller.ProviderRead(
-                      waitingProvider->AsObject(), "waiting-session", "waiting-file", 0, 1, deadline, bytes),
+        EXPECT_EQ(
+            controller.ProviderRead(waitingProvider->AsObject(),
+                UdmfFuseController::ProviderReadRequest{ "waiting-session", "waiting-file", 0, 1 }, deadline, bytes),
             0);
     });
 
@@ -1204,11 +1210,13 @@ HWTEST_F(UdmfServiceImplMockTest, ProviderGate_ConsecutiveTimeouts_OpenCircuit, 
     for (size_t index = 0; index < 3; ++index) {
         auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(5);
         EXPECT_EQ(
-            controller.ProviderRead(provider->AsObject(), "circuit-session", "timeout-file", 0, 1, deadline, bytes),
+            controller.ProviderRead(provider->AsObject(),
+                UdmfFuseController::ProviderReadRequest{ "circuit-session", "timeout-file", 0, 1 }, deadline, bytes),
             -ETIMEDOUT);
     }
     auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(50);
-    EXPECT_EQ(controller.ProviderRead(provider->AsObject(), "circuit-session", "timeout-file", 0, 1, deadline, bytes),
+    EXPECT_EQ(controller.ProviderRead(provider->AsObject(),
+                  UdmfFuseController::ProviderReadRequest{ "circuit-session", "timeout-file", 0, 1 }, deadline, bytes),
         -ETIMEDOUT);
     EXPECT_EQ(provider->asyncRequestCount_, 3);
 }
