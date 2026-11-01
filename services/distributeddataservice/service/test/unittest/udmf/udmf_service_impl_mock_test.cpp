@@ -849,6 +849,7 @@ HWTEST_F(UdmfServiceImplMockTest, IsFuseUidAllowed_DifferentAppUid_ReturnFalse, 
  * @tc.name: LoadFuseBlock_ProviderShortRead_FillExpectedBlock
  * @tc.desc: Verify provider short reads are joined with advancing offsets until the block is complete.
  * @tc.type: FUNC
+ * @tc.author: agent
  */
 HWTEST_F(UdmfServiceImplMockTest, LoadFuseBlock_ProviderShortRead_FillExpectedBlock, TestSize.Level0)
 {
@@ -858,6 +859,7 @@ HWTEST_F(UdmfServiceImplMockTest, LoadFuseBlock_ProviderShortRead_FillExpectedBl
     UdmfFuseController::Node node;
     node.inode = FUSE_ROOT_ID + 1;
     node.entry.id = "short-read-file";
+    node.sessionId = "short-read-session";
     node.entry.type = VirtualEntryType::FILE;
     node.entry.size = static_cast<int64_t>(content.size());
     std::shared_ptr<UdmfFuseController::BlockEntry> block;

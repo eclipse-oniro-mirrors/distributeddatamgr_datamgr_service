@@ -22,7 +22,6 @@
 
 #include "access_token_mock.h"
 #include "account_delegate_mock.h"
-#include "file.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "ipc_skeleton.h"
@@ -35,6 +34,7 @@
 #include "udmf_fuse_mount_adapter_mock.h"
 #include "udmf_fuse_session_manager.h"
 #include "udmf_service_impl.h"
+#include "unified_record.h"
 #include "virtual_entry_provider.h"
 
 using namespace testing;
@@ -73,6 +73,8 @@ std::string FileManagerBundle()
 
 class VirtualEntryStoreMock : public Store {
 public:
+    virtual ~VirtualEntryStoreMock() = default;
+
     MOCK_METHOD(Status, Put, (const UnifiedData &, Summary &), (override));
     MOCK_METHOD(Status, Get, (const std::string &, UnifiedData &), (override));
     MOCK_METHOD(Status, GetSummary, (UnifiedKey &, Summary &), (override));
@@ -160,7 +162,9 @@ std::shared_ptr<UnifiedRecord> MakeMarkedRecord(bool marker = true)
     object->value_[ORI_URI] = std::string("file:///virtual/example.bin");
     object->value_[FILE_TYPE] = std::string("general.file");
     object->value_[DETAILS] = details;
-    return std::make_shared<File>(FILE, object);
+    auto record = std::make_shared<UnifiedRecord>(FILE, object);
+    record->SetUtdId2(GENERAL_FILE_URI);
+    return record;
 }
 } // namespace
 

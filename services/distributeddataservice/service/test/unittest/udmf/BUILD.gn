@@ -654,7 +654,6 @@ ohos_unittest("UdmfVirtualEntryServiceTest") {
     "hilog:libhilog",
     "hisysevent:libhisysevent",
     "hitrace:libhitracechain",
-    "image_framework:image",
     "ipc:ipc_core",
     "json:nlohmann_json_static",
     "kv_store:distributeddata_inner",
