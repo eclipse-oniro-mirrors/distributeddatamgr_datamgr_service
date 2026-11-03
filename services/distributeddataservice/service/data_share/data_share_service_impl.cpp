@@ -206,18 +206,21 @@ bool DataShareServiceImpl::VerifyPredicates(const DataSharePredicates &predicate
 bool DataShareServiceImpl::VerifyColumns(const std::vector<std::string> &columns, uint32_t callingTokenId,
     DataProviderConfig::ProviderInfo &providerInfo, std::string &func)
 {
-    DataSharePredicatesVerify predicatesVerify;
-    if (predicatesVerify.VerifyColumns(columns)) {
-        return true;
+    for (const auto &column : columns) {
+        if (column.empty() || (!std::regex_search(column, DANGEROUS_SQL_KEYWORDS) &&
+                                  !std::regex_search(column, DANGEROUS_SQL_PATTERNS))) {
+            continue;
+        }
+        std::string callingName = HiViewFaultAdapter::GetCallingName(callingTokenId).first;
+        std::string appendix = "callingName:" + callingName + " columns:" + std::to_string(columns.size());
+        DataShareFaultInfo faultInfo = { HiViewFaultAdapter::invalidColumns, providerInfo.bundleName,
+            providerInfo.moduleName, providerInfo.storeName, func, E_FIELD_ILLEGAL, appendix };
+        HiViewFaultAdapter::ReportDataFault(faultInfo);
+        ZLOGW("callingName:%{public}s %{public}s columns:%{public}zu invalid, bundle:%{public}s", callingName.c_str(),
+            func.c_str(), columns.size(), providerInfo.bundleName.c_str());
+        return false;
     }
-    std::string callingName = HiViewFaultAdapter::GetCallingName(callingTokenId).first;
-    std::string appendix = "callingName:" + callingName + " columns:" + std::to_string(columns.size());
-    DataShareFaultInfo faultInfo = {HiViewFaultAdapter::invalidColumns, providerInfo.bundleName,
-        providerInfo.moduleName, providerInfo.storeName, func, E_FIELD_ILLEGAL, appendix};
-    HiViewFaultAdapter::ReportDataFault(faultInfo);
-    ZLOGW("callingName:%{public}s %{public}s columns:%{public}zu invalid, bundle:%{public}s",
-        callingName.c_str(), func.c_str(), columns.size(), providerInfo.bundleName.c_str());
-    return false;
+    return true;
 }
 
 bool DataShareServiceImpl::VerifyQueryLanguage(const DataSharePredicates &predicates, uint32_t callingTokenId,
