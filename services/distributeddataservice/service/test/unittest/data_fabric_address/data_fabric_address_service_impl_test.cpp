@@ -190,7 +190,8 @@ HWTEST_F(DataFabricAddressServiceImplTest, DataFabricAddressServiceImplTest008, 
     NativePreferences::DataFabricAddressParams params =
         DataFabricAddressTest::MakeCommuteSubscriptionParams(DataFabricAddressTest::MakeWgs84HomePoint(),
             DataFabricAddressTest::MakeWgs84CompanyPoint());
-    params.scenarioType = BusinessScenario::OTHERS;
+    // Scenario type outside the valid range of BusinessScenario.
+    params.scenarioType = static_cast<BusinessScenario>(1);
     NativePreferences::LocationPoint homePoint;
     NativePreferences::LocationPoint companyPoint;
     int32_t result = service.ValidateParams(params, homePoint, companyPoint);
