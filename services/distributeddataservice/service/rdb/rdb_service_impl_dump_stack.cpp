@@ -39,7 +39,7 @@ void RdbServiceImpl::SetDumpStackTags(const StoreMetaData &meta)
     auto tokenType = AccessTokenKit::GetTokenTypeFlag(tokenId);
     if (tokenType != Security::AccessToken::TOKEN_NATIVE &&
         !TokenIdKit::IsSystemAppByFullTokenID(IPCSkeleton::GetCallingFullTokenID())) {
-        ZLOGW("dumpStackOnFileDel is only for system apps and SAs, bundleName:%{public}s",
+        ZLOGW("dumpStackOnFileDeletion is only for system apps and SAs, bundleName:%{public}s",
             meta.bundleName.c_str());
         return;
     }

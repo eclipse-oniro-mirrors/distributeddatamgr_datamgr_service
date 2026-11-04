@@ -1286,7 +1286,7 @@ int32_t RdbServiceImpl::AfterOpen(const RdbSyncerParam &param)
     meta.customSwitch = isCreated ? old.customSwitch : meta.customSwitch;
     meta.autoSyncSwitch = isCreated ? old.autoSyncSwitch : meta.autoSyncSwitch;
     SaveOpenedMeta(param, meta, old, isCreated);
-    if (param.dumpStackOnFileDel_) {
+    if (param.dumpStackOnFileDeletion_) {
         SetDumpStackTags(meta);
     }
     GetCloudSchema(meta);
@@ -2377,7 +2377,7 @@ int32_t RdbServiceImpl::Enable(const RdbSyncerParam &param)
     auto storeId = RemoveSuffix(param.storeName_);
     auto meta = GetStoreMetaData(param);
     AutoCache::GetInstance().Enable(tokenId, meta.dataDir, storeId);
-    if (param.dumpStackOnFileDel_) {
+    if (param.dumpStackOnFileDeletion_) {
         SetDumpStackTags(meta);
     }
     return RDB_OK;
