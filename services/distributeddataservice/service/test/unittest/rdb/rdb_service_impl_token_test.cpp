@@ -15,6 +15,13 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include <cerrno>
+#include <cstring>
+#include <dirent.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
 #include "account/account_delegate.h"
 #include "bootstrap.h"
 #include "checker_mock.h"
@@ -36,6 +43,7 @@
 #include "mock/general_store_mock.h"
 #include "rdb_common_utils.h"
 #include "rdb_general_store.h"
+#include "hmfs_tag_util.h"
 #include "rdb_service_impl.h"
 #include "rdb_types.h"
 #include "relational_store_manager.h"
@@ -56,6 +64,43 @@ namespace DistributedRDBTest {
 static constexpr const char *TEST_BUNDLE = "test_rdb_service_impl_bundleName";
 static constexpr const char *TEST_APPID = "test_rdb_service_impl_appid";
 static constexpr const char *TEST_STORE = "test_rdb_service_impl_store";
+
+namespace {
+// Creates a fresh writable directory under the first base that exists ("/data/local/tmp" on
+// device, "/tmp" on host). Reuses the directory if it already exists. Returns "" if no base
+// is usable, so callers can ASSERT_FALSE(result.empty()) to skip file-dependent cases safely.
+std::string CreateDumpStackTempDir(const std::string &leaf)
+{
+    for (const auto *base : { "/data/local/tmp", "/tmp" }) {
+        std::string dir = std::string(base) + "/" + leaf;
+        if (mkdir(dir.c_str(), S_IRWXU) == 0 || errno == EEXIST) {
+            return dir;
+        }
+    }
+    return {};
+}
+
+// Removes a directory together with its immediate file entries (test scratch space only).
+void RemoveDumpStackTempDir(const std::string &dir)
+{
+    if (dir.empty()) {
+        return;
+    }
+    DIR *dirPtr = opendir(dir.c_str());
+    if (dirPtr != nullptr) {
+        struct dirent *entry = nullptr;
+        while ((entry = readdir(dirPtr)) != nullptr) {
+            if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+                continue;
+            }
+            std::string path = dir + "/" + entry->d_name;
+            unlink(path.c_str());
+        }
+        closedir(dirPtr);
+    }
+    rmdir(dir.c_str());
+}
+} // namespace
 
 class RdbServiceImplTokenTest : public testing::Test {
 public:
@@ -1391,6 +1436,190 @@ HWTEST_F(RdbServiceImplTokenTest, Enable_DumpStackOnFileDeletion_FlagTrue_Return
 
     EXPECT_EQ(result, RDB_OK);
     EXPECT_EQ(MetaDataManager::GetInstance().DelMeta(metaData_.GetKeyWithoutPath(), false), true);
+}
+
+/**
+ * @tc.name: Enable_DumpStackOnFileDeletion_FlagFalse_ReturnOk
+ * @tc.desc: Test Enable with dumpStackOnFileDeletion disabled keeps the legacy behavior
+ * @tc.type: FUNC
+ * @tc.require:
+ * @tc.author: agent
+ */
+HWTEST_F(RdbServiceImplTokenTest, Enable_DumpStackOnFileDeletion_FlagFalse_ReturnOk, TestSize.Level0)
+{
+    EXPECT_EQ(MetaDataManager::GetInstance().SaveMeta(metaData_.GetKeyWithoutPath(), metaData_, false), true);
+    RdbServiceImpl service;
+    RdbSyncerParam param;
+    param.bundleName_ = metaData_.bundleName;
+    param.storeName_ = metaData_.storeId;
+    param.dumpStackOnFileDeletion_ = false;
+    int32_t result = service.Enable(param);
+
+    EXPECT_EQ(result, RDB_OK);
+    EXPECT_EQ(MetaDataManager::GetInstance().DelMeta(metaData_.GetKeyWithoutPath(), false), true);
+}
+
+/**
+ * @tc.name: AfterOpen_DumpStackOnFileDeletion_RepeatOpen_Idempotent
+ * @tc.desc: Test repeated AfterOpen with dumpStackOnFileDeletion enabled is idempotent (EX-5/BR-6)
+ * @tc.type: FUNC
+ * @tc.require:
+ * @tc.author: agent
+ */
+HWTEST_F(RdbServiceImplTokenTest, AfterOpen_DumpStackOnFileDeletion_RepeatOpen_Idempotent, TestSize.Level0)
+{
+    EXPECT_EQ(MetaDataManager::GetInstance().SaveMeta(metaData_.GetKeyWithoutPath(), metaData_, false), true);
+    RdbServiceImpl service;
+    RdbSyncerParam param;
+    param.bundleName_ = metaData_.bundleName;
+    param.storeName_ = metaData_.storeId;
+    param.dumpStackOnFileDeletion_ = true;
+
+    // EX-5/BR-6: a second AfterOpen for the same store must be idempotent — SetDumpStackTags
+    // queries GETFLAGS first and skips SETFLAGS when the tag is already set. On non-HMFS
+    // hosts both calls degrade silently (BR-5/EX-1) and must return RDB_OK.
+    int32_t firstResult = service.AfterOpen(param);
+    EXPECT_EQ(firstResult, RDB_OK);
+
+    int32_t secondResult = service.AfterOpen(param);
+    EXPECT_EQ(secondResult, RDB_OK);
+
+    EXPECT_EQ(MetaDataManager::GetInstance().DelMeta(metaData_.GetKeyWithoutPath(), false), true);
+}
+
+/**
+ * @tc.name: AfterOpen_DumpStackOnFileDeletion_WithReplicaPath_ReturnOk
+ * @tc.desc: Test AfterOpen with dumpStackOnFileDeletion and a replica path does not crash (BR-3)
+ * @tc.type: FUNC
+ * @tc.require:
+ * @tc.author: agent
+ */
+HWTEST_F(RdbServiceImplTokenTest, AfterOpen_DumpStackOnFileDeletion_WithReplicaPath_ReturnOk, TestSize.Level0)
+{
+    EXPECT_EQ(MetaDataManager::GetInstance().SaveMeta(metaData_.GetKeyWithoutPath(), metaData_, false), true);
+    // BR-3: SetDumpStackTags must handle both the default replica layout (<dbPath>-slave)
+    // and a custom replicaPath (<replicaDir>/<storeId>-slave). The replica db is created
+    // lazily, so when it does not exist access() returns non-zero and it is skipped; the
+    // primary path degrades silently on non-HMFS hosts. The flow must return RDB_OK.
+    std::string savedReplicaPath = metaData_.replicaPath;
+    metaData_.replicaPath = "/data/test/dump_stack_replica_test";
+    EXPECT_EQ(MetaDataManager::GetInstance().SaveMeta(metaData_.GetKeyWithoutPath(), metaData_, false), true);
+
+    RdbServiceImpl service;
+    RdbSyncerParam param;
+    param.bundleName_ = metaData_.bundleName;
+    param.storeName_ = metaData_.storeId;
+    param.dumpStackOnFileDeletion_ = true;
+    int32_t result = service.AfterOpen(param);
+
+    EXPECT_EQ(result, RDB_OK);
+
+    metaData_.replicaPath = savedReplicaPath;
+    EXPECT_EQ(MetaDataManager::GetInstance().DelMeta(metaData_.GetKeyWithoutPath(), false), true);
+}
+
+/**
+ * @tc.name: AfterOpen_DumpStackOnFileDeletion_PermissionDenied_SkipsTagging
+ * @tc.desc: A non-system HAP caller cannot register a replica path; IsValidReplicaPath fails and
+ *           AfterOpen returns RDB_ERROR before SetDumpStackTags is reached. Ensures the dump-stack
+ *           flag never bypasses the permission gate (the gate-fail early-return branch).
+ * @tc.type: FUNC
+ * @tc.require:
+ * @tc.author: agent
+ */
+HWTEST_F(RdbServiceImplTokenTest, AfterOpen_DumpStackOnFileDeletion_PermissionDenied_SkipsTagging, TestSize.Level0)
+{
+    EXPECT_CALL(*accTokenMock, GetTokenTypeFlag(testing::_)).WillRepeatedly(testing::Return(TOKEN_HAP));
+    EXPECT_CALL(*tokenIdMock, IsSystemAppByFullTokenID(testing::_)).WillRepeatedly(testing::Return(false));
+    RdbServiceImpl service;
+    RdbSyncerParam param;
+    GetRdbSyncerParam(param);
+    param.storeName_ = "dump_stack_denied";
+    param.replicaPath_ = "/data/service/el1/public/database/" + std::string(TEST_BUNDLE) + "/replica";
+    param.dumpStackOnFileDeletion_ = true;
+    // The gate is consulted first; the dump-stack flag must not let an unauthorized caller through.
+    EXPECT_EQ(service.AfterOpen(param), RDB_ERROR);
+}
+
+/**
+ * @tc.name: AfterOpen_DumpStackOnFileDeletion_ReplicaExists_TagsSlave
+ * @tc.desc: When the replica db exists, SetDumpStackTags adds db/wal/shm of the slave path too
+ *           (BR-3 access()==0 branch). meta.dataDir is redirected via dbPath_ (TOKEN_NATIVE +
+ *           bundleName-bearing path, no "..") to a real temp dir, and the slave file is created so
+ *           access()==0; on a non-HMFS host the ioctl degrades silently. AfterOpen returns RDB_OK.
+ * @tc.type: FUNC
+ * @tc.require:
+ * @tc.author: agent
+ */
+HWTEST_F(RdbServiceImplTokenTest, AfterOpen_DumpStackOnFileDeletion_ReplicaExists_TagsSlave, TestSize.Level0)
+{
+    EXPECT_CALL(*accTokenMock, GetTokenTypeFlag(testing::_)).WillRepeatedly(testing::Return(TOKEN_NATIVE));
+    std::string base = CreateDumpStackTempDir("dump_stack_replica_exists");
+    ASSERT_FALSE(base.empty());
+    std::string storeDir = base + "/" + std::string(TEST_BUNDLE);
+    ASSERT_TRUE(mkdir(storeDir.c_str(), S_IRWXU) == 0 || errno == EEXIST);
+    std::string dbPath = storeDir + "/store.db";
+    // Default replica layout: slavePath = RemoveSuffix(meta.dataDir) + "-slave".
+    std::string slavePath = storeDir + "/store-slave";
+    int fd = open(slavePath.c_str(), O_CREAT | O_RDWR | O_CLOEXEC, S_IRUSR | S_IWUSR);
+    ASSERT_GE(fd, 0);
+    close(fd);
+
+    RdbServiceImpl service;
+    RdbSyncerParam param;
+    GetRdbSyncerParam(param);
+    param.storeName_ = "dump_stack_replica_exists";
+    param.dbPath_ = dbPath;
+    param.dumpStackOnFileDeletion_ = true;
+    EXPECT_EQ(service.AfterOpen(param), RDB_OK);
+
+    auto [exists, stored] = service.LoadStoreMetaData(param);
+    if (exists) {
+        EXPECT_TRUE(MetaDataManager::GetInstance().DelMeta(stored.GetKey(), true));
+        MetaDataManager::GetInstance().DelMeta(stored.GetKeyWithoutPath(), true);
+        StoreMetaMapping mapping(stored);
+        MetaDataManager::GetInstance().DelMeta(mapping.GetKey(), true);
+    }
+    unlink(slavePath.c_str());
+    RemoveDumpStackTempDir(storeDir);
+    RemoveDumpStackTempDir(base);
+}
+
+/**
+ * @tc.name: HmfsTagUtil_InvalidPath_ReturnsError
+ * @tc.desc: ExecuteByPath rejects empty paths, paths without a separator, root "/", and a trailing
+ *           slash "/dir/" (empty file name) with a negative value, never crashing.
+ * @tc.type: FUNC
+ * @tc.require:
+ * @tc.author: agent
+ */
+HWTEST_F(RdbServiceImplTokenTest, HmfsTagUtil_InvalidPath_ReturnsError, TestSize.Level0)
+{
+    EXPECT_LT(HmfsTagUtil::SetKeyFileFlag(""), 0);
+    EXPECT_LT(HmfsTagUtil::GetKeyFileFlag(""), 0);
+    EXPECT_LT(HmfsTagUtil::ClearKeyFileFlag(""), 0);
+    EXPECT_LT(HmfsTagUtil::SetKeyFileFlag("plainname"), 0); // no separator
+    EXPECT_LT(HmfsTagUtil::SetKeyFileFlag("/"), 0);         // root only
+    EXPECT_LT(HmfsTagUtil::SetKeyFileFlag("/data/local/tmp/"), 0); // trailing slash
+}
+
+/**
+ * @tc.name: HmfsTagUtil_InvalidFileName_ReturnsError
+ * @tc.desc: IsValidFileName rejects ".", ".." and names longer than 255 bytes; with the parent
+ *           directory opened, ExecuteIoctl returns a negative value without invoking the ioctl.
+ * @tc.type: FUNC
+ * @tc.require:
+ * @tc.author: agent
+ */
+HWTEST_F(RdbServiceImplTokenTest, HmfsTagUtil_InvalidFileName_ReturnsError, TestSize.Level0)
+{
+    std::string dir = CreateDumpStackTempDir("hmfs_tag_invalid_name");
+    ASSERT_FALSE(dir.empty());
+    EXPECT_LT(HmfsTagUtil::SetKeyFileFlag(dir + "/."), 0);
+    EXPECT_LT(HmfsTagUtil::SetKeyFileFlag(dir + "/.."), 0);
+    std::string longName(256, 'a'); // 256 bytes > MAX_FILE_NAME_LEN (255)
+    EXPECT_LT(HmfsTagUtil::SetKeyFileFlag(dir + "/" + longName), 0);
+    RemoveDumpStackTempDir(dir);
 }
 
 } // namespace DistributedRDBTest
