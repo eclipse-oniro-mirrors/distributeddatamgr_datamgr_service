@@ -15,8 +15,11 @@
 
 #include "data_fabric_address_service_impl.h"
 
+#include <vector>
+
 #include "data_fabric_address_errors.h"
 #include "data_fabric_address_types.h"
+#include "ipc_skeleton.h"
 #include "log_print.h"
 #include "navigation_common_utils.h"
 #include "navigation_manager.h"
@@ -101,6 +104,15 @@ int32_t DataFabricAddressServiceImpl::Subscribe(const DataFabricAddressParams& i
         return INTERNAL_EXCEPTION;
     }
     ActionType actionType = inputParams.locationInfo.actionType;
+    if (actionType == ActionType::UPDATE) {
+        // The SA may have restarted and lost the subscription state, re-establish it before the update.
+        int32_t subRet = NavigationManager::GetInstance().SubscribeNavigationManager(ActionType::SUBSCRIPTION,
+            homePoint, companyPoint, callback);
+        if (subRet != RUN_OK) {
+            ZLOGE("Failed to re-establish the subscription state.");
+            return subRet;
+        }
+    }
     return NavigationManager::GetInstance().SubscribeNavigationManager(actionType, homePoint, companyPoint, callback);
 }
 
@@ -119,7 +131,8 @@ bool DataFabricAddressServiceImpl::AddCallback(const DataFabricAddressParams& in
         return false;
     }
     object->AddDeathRecipient(cbDeathRecipient);
-    subscribeCacheMap_.emplace(inputParams, SubscribeCacheData{cbDeathRecipient, callback});
+    subscribeCacheMap_.emplace(inputParams, SubscribeCacheData{cbDeathRecipient, callback,
+        IPCSkeleton::GetCallingFullTokenID()});
     ZLOGI("Service AddCallback exit.");
     return true;
 }
@@ -127,30 +140,47 @@ bool DataFabricAddressServiceImpl::AddCallback(const DataFabricAddressParams& in
 int32_t DataFabricAddressServiceImpl::Unsubscribe(const DataFabricAddressParams& inputParams)
 {
     ZLOGI("Service Unsubscribe enter.");
-    std::lock_guard<std::mutex> lock(subscribersMutex_);
-    if (!factory_.IsInited()) {
-        ZLOGE("System ability not initialized.");
-        return INTERNAL_EXCEPTION;
+    sptr<IRemoteObject> callbackObject { nullptr };
+    sptr<IRemoteObject::DeathRecipient> deathRecipient { nullptr };
+    {
+        std::lock_guard<std::mutex> lock(subscribersMutex_);
+        if (!factory_.IsInited()) {
+            ZLOGE("System ability not initialized.");
+            return INTERNAL_EXCEPTION;
+        }
+        int32_t result = RemoveCallback(inputParams, callbackObject, deathRecipient);
+        if (result != RUN_OK) {
+            return result;
+        }
     }
-    if (!RemoveCallback(inputParams)) {
-        return INTERNAL_EXCEPTION;
+
+    if (callbackObject != nullptr && deathRecipient != nullptr) {
+        callbackObject->RemoveDeathRecipient(deathRecipient);
     }
     return NavigationManager::GetInstance().UnsubscribeNavigationManager();
 }
 
-bool DataFabricAddressServiceImpl::RemoveCallback(const DataFabricAddressParams& inputParams)
+int32_t DataFabricAddressServiceImpl::RemoveCallback(const DataFabricAddressParams& inputParams,
+    sptr<IRemoteObject>& callbackObject, sptr<IRemoteObject::DeathRecipient>& deathRecipient)
 {
     ZLOGI("Service RemoveCallback enter.");
     const auto iter = subscribeCacheMap_.find(inputParams);
     if (iter == subscribeCacheMap_.end()) {
-        ZLOGI("The inputParams not exist in the subscribeCacheMap_, do not need to remove.");
-        return true;
+        ZLOGW("The inputParams not exist in the subscribeCacheMap_, treat as already unsubscribed.");
+        return RUN_OK;
     }
     auto &cacheData = iter->second;
-    cacheData.callback_->AsObject()->RemoveDeathRecipient(cacheData.cbDeathRecipient_);
+    if (cacheData.callerFullTokenId != IPCSkeleton::GetCallingFullTokenID()) {
+        ZLOGE("The caller is not the origin subscriber of the params, can not remove the callback.");
+        return UNSUBSCRIBE_EXCEPTION;
+    }
+    if (cacheData.callback != nullptr && cacheData.cbDeathRecipient != nullptr) {
+        callbackObject = cacheData.callback->AsObject();
+        deathRecipient = cacheData.cbDeathRecipient;
+    }
     subscribeCacheMap_.erase(iter);
     ZLOGI("Service RemoveCallback exit.");
-    return true;
+    return RUN_OK;
 }
 
 int32_t DataFabricAddressServiceImpl::ValidateParams(const DataFabricAddressParams &inputParams,
@@ -169,16 +199,16 @@ int32_t DataFabricAddressServiceImpl::ValidateParams(const DataFabricAddressPara
         return NativePreferences::PARAMETER_EXCEPTION;
     }
 
-    if (!ObtainWgs84ReferencePoints(inputParams.locationInfo, homePoint, companyPoint)) {
-        ZLOGE("Obtain wgs84 reference points failed.");
-        return NativePreferences::INTERNAL_EXCEPTION;
+    int32_t obtainError = ObtainWgs84ReferencePoints(inputParams.locationInfo, homePoint, companyPoint);
+    if (obtainError != NativePreferences::RUN_OK) {
+        return obtainError;
     }
 
     // Home-company distance: too short a distance does not support the navigation service.
     return IsSupportedCommuteDistance(homePoint, companyPoint);
 }
 
-bool DataFabricAddressServiceImpl::ObtainWgs84ReferencePoints(const ReferenceLocationInfo &referenceInfo,
+int32_t DataFabricAddressServiceImpl::ObtainWgs84ReferencePoints(const ReferenceLocationInfo &referenceInfo,
     NativePreferences::LocationPoint& homePoint, NativePreferences::LocationPoint& companyPoint)
 {
     ZLOGI("ObtainWgs84ReferencePoints enter.");
@@ -199,7 +229,7 @@ bool DataFabricAddressServiceImpl::ObtainWgs84ReferencePoints(const ReferenceLoc
     }
     if (!hasHomePoint || !hasCompanyPoint) {
         ZLOGE("The input reference points are missing home or company location info.");
-        return false;
+        return NativePreferences::PARAMETER_EXCEPTION;
     }
 
     homePoint = homePointInfo.locationPoint;
@@ -208,7 +238,7 @@ bool DataFabricAddressServiceImpl::ObtainWgs84ReferencePoints(const ReferenceLoc
         NativePreferences::LocationPoint homePointGcj02 = homePointInfo.locationPoint;
         if (!NavigationCommonUtil::Gcj02ToWgs84(homePointGcj02, homePoint)) {
             ZLOGE("The input home reference point coordinate system transform failed.");
-            return false;
+            return NativePreferences::INTERNAL_EXCEPTION;
         }
     }
 
@@ -218,10 +248,10 @@ bool DataFabricAddressServiceImpl::ObtainWgs84ReferencePoints(const ReferenceLoc
         NativePreferences::LocationPoint companyPointGcj02 = companyPointInfo.locationPoint;
         if (!NavigationCommonUtil::Gcj02ToWgs84(companyPointGcj02, companyPoint)) {
             ZLOGE("The input company reference point coordinate system transform failed.");
-            return false;
+            return NativePreferences::INTERNAL_EXCEPTION;
         }
     }
-    return true;
+    return NativePreferences::RUN_OK;
 }
 
 int32_t DataFabricAddressServiceImpl::IsSupportedCommuteDistance(const NativePreferences::LocationPoint& homePoint,
@@ -234,7 +264,7 @@ int32_t DataFabricAddressServiceImpl::IsSupportedCommuteDistance(const NativePre
         ZLOGE("Failed to get distance.");
         return NativePreferences::INTERNAL_EXCEPTION;
     }
-    ZLOGI("The distance between home and the company is %{public}f", distance);
+
     if (distance < MIN_SUPPORTED_COMMUTE_DISTANCE) {
         ZLOGE("The distance between home and the company is too short, This operation is not supported.");
         return NativePreferences::ABNORMAL_OPERATION_EXCEPTION;
@@ -250,27 +280,33 @@ void DataFabricAddressServiceImpl::DeathRecipientListener::OnRemoteDied(const wp
         ZLOGW("The service has been destroyed.");
         return;
     }
-    std::lock_guard<std::mutex> lock(service->subscribersMutex_);
     sptr<IRemoteObject> client = remote.promote();
     if (client == nullptr) {
         ZLOGW("The remote promote is null.");
         return;
     }
-    auto iter = service->subscribeCacheMap_.begin();
-    while (iter != service->subscribeCacheMap_.end()) {
-        auto &cacheData = iter->second;
-        if (cacheData.callback_ == nullptr || cacheData.cbDeathRecipient_ == nullptr) {
-            ZLOGW("The cached callback_ or cbDeathRecipient_ is null, remove it from cache map.");
-            iter = service->subscribeCacheMap_.erase(iter);
-            continue;
+    std::vector<sptr<IRemoteObject::DeathRecipient>> toRemove;
+    {
+        std::lock_guard<std::mutex> lock(service->subscribersMutex_);
+        auto iter = service->subscribeCacheMap_.begin();
+        while (iter != service->subscribeCacheMap_.end()) {
+            auto &cacheData = iter->second;
+            if (cacheData.callback == nullptr || cacheData.cbDeathRecipient == nullptr) {
+                ZLOGW("The cached callback or cbDeathRecipient is null, remove it from cache map.");
+                iter = service->subscribeCacheMap_.erase(iter);
+                continue;
+            }
+            if (cacheData.callback->AsObject() == client) {
+                ZLOGI("The callback will be remove.");
+                toRemove.push_back(cacheData.cbDeathRecipient);
+                iter = service->subscribeCacheMap_.erase(iter);
+                continue;
+            }
+            ++iter;
         }
-        if (cacheData.callback_->AsObject() == client) {
-            ZLOGI("The callback will be remove.");
-            cacheData.callback_->AsObject()->RemoveDeathRecipient(cacheData.cbDeathRecipient_);
-            iter = service->subscribeCacheMap_.erase(iter);
-            continue;
-        }
-        ++iter;
+    }
+    for (auto &deathRecipient : toRemove) {
+        client->RemoveDeathRecipient(deathRecipient);
     }
 }
 } // End of namespace DataFabricAddress

@@ -63,6 +63,7 @@ constexpr double COORD_TRANSFORM_SINE_LNG_SLOW1_AMPLITUDE = 150.0;
 // Amplitude of the slowly varying sine term of the longitude offset (1/30 angular frequency)
 constexpr double COORD_TRANSFORM_SINE_LNG_SLOW2_AMPLITUDE = 300.0;
 constexpr double PI_NUM = 3.14159265358979323846;
+constexpr double POLE_COS_EPSILON = 1e-10; // Threshold of the cos value near the poles
 
 bool NavigationCommonUtil::GetDistance(const NativePreferences::LocationPoint& startPoint,
     const NativePreferences::LocationPoint& endPoint, double& distance)
@@ -150,16 +151,27 @@ bool NavigationCommonUtil::CalculateGcj02Delta(double lng, double lat, double& d
     double radLat = lat / COORD_TRANSFORM_DEGREE * PI_NUM;
     double magic = std::sin(radLat);
     magic = 1 - COORD_TRANSFORM_EE * magic * magic;
-    double sqrtMagic = std::sqrt(magic);
-    if (sqrtMagic == 0) {
-        ZLOGE("The magic or sqrtMagic can not be zero.");
-        dlat = 0;
-        dlng = 0;
+    double cosRadLat = std::cos(radLat);
+    if (magic <= 0.0 || std::abs(cosRadLat) < POLE_COS_EPSILON) {
+        ZLOGE("The latitude is invalid, magic:%{public}f, cosRadLat:%{public}f", magic, cosRadLat);
+        dlat = 0.0;
+        dlng = 0.0;
         return false;
     }
-    dlat = (dLat * COORD_TRANSFORM_DEGREE) / ((COORD_TRANSFORM_A *
-        (1 - COORD_TRANSFORM_EE)) / (magic * sqrtMagic) * PI_NUM);
-    dlng = (dLng * COORD_TRANSFORM_DEGREE) / (COORD_TRANSFORM_A / sqrtMagic * std::cos(radLat) * PI_NUM);
+    double sqrtMagic = std::sqrt(magic);
+    // The expressions below are algebraically equivalent to the standard GCJ02 forms
+    // (dLat * 180) / ((A * (1 - EE)) / (magic * sqrtMagic) * PI) and
+    // (dLng * 180) / (A / sqrtMagic * cosRadLat * PI), but avoid taking sqrtMagic as a divisor.
+    dlat = (dLat * COORD_TRANSFORM_DEGREE * magic * sqrtMagic) /
+        (COORD_TRANSFORM_A * (1 - COORD_TRANSFORM_EE) * PI_NUM);
+    double dlngDivisor = COORD_TRANSFORM_A * cosRadLat * PI_NUM;
+    if (dlngDivisor <= 0.0) {
+        ZLOGE("The divisor of the longitude delta is invalid, dlngDivisor:%{public}f", dlngDivisor);
+        dlat = 0.0;
+        dlng = 0.0;
+        return false;
+    }
+    dlng = (dLng * COORD_TRANSFORM_DEGREE * sqrtMagic) / dlngDivisor;
     return true;
 }
 } // End of namespace DataFabricAddress

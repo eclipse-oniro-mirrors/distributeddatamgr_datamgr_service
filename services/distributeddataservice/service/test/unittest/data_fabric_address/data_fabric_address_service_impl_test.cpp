@@ -165,7 +165,7 @@ HWTEST_F(DataFabricAddressServiceImplTest, DataFabricAddressServiceImplTest006, 
 
 /**
  * @tc.name: DataFabricAddressServiceImplTest007
- * @tc.desc: Test Unsubscribe succeeds when the system ability is initialized.
+ * @tc.desc: Test Unsubscribe succeeds when the params are not subscribed.
  * @tc.type: FUNC
  */
 HWTEST_F(DataFabricAddressServiceImplTest, DataFabricAddressServiceImplTest007, TestSize.Level0)
@@ -236,7 +236,7 @@ HWTEST_F(DataFabricAddressServiceImplTest, DataFabricAddressServiceImplTest010, 
     NativePreferences::LocationPoint homePoint;
     NativePreferences::LocationPoint companyPoint;
     int32_t result = service.ValidateParams(params, homePoint, companyPoint);
-    EXPECT_EQ(result, INTERNAL_EXCEPTION);
+    EXPECT_EQ(result, PARAMETER_EXCEPTION);
 }
 
 /**
@@ -257,7 +257,7 @@ HWTEST_F(DataFabricAddressServiceImplTest, DataFabricAddressServiceImplTest011, 
     NativePreferences::LocationPoint homePoint;
     NativePreferences::LocationPoint companyPoint;
     int32_t result = service.ValidateParams(params, homePoint, companyPoint);
-    EXPECT_EQ(result, INTERNAL_EXCEPTION);
+    EXPECT_EQ(result, PARAMETER_EXCEPTION);
 }
 
 /**
@@ -372,7 +372,7 @@ HWTEST_F(DataFabricAddressServiceImplTest, DataFabricAddressServiceImplTest017, 
     referenceInfo.actionType = ActionType::SUBSCRIPTION;
     NativePreferences::LocationPoint homePoint;
     NativePreferences::LocationPoint companyPoint;
-    EXPECT_FALSE(service.ObtainWgs84ReferencePoints(referenceInfo, homePoint, companyPoint));
+    EXPECT_EQ(PARAMETER_EXCEPTION, service.ObtainWgs84ReferencePoints(referenceInfo, homePoint, companyPoint));
 }
 
 /**
@@ -391,7 +391,7 @@ HWTEST_F(DataFabricAddressServiceImplTest, DataFabricAddressServiceImplTest018, 
     };
     NativePreferences::LocationPoint homePoint;
     NativePreferences::LocationPoint companyPoint;
-    EXPECT_TRUE(service.ObtainWgs84ReferencePoints(referenceInfo, homePoint, companyPoint));
+    EXPECT_EQ(RUN_OK, service.ObtainWgs84ReferencePoints(referenceInfo, homePoint, companyPoint));
     EXPECT_EQ(homePoint.latitude, DataFabricAddressTest::MakeWgs84HomePoint().latitude);
     EXPECT_EQ(companyPoint.latitude, DataFabricAddressTest::MakeWgs84CompanyPoint().latitude);
 }
@@ -413,7 +413,7 @@ HWTEST_F(DataFabricAddressServiceImplTest, DataFabricAddressServiceImplTest019, 
     };
     NativePreferences::LocationPoint homePoint;
     NativePreferences::LocationPoint companyPoint;
-    EXPECT_TRUE(service.ObtainWgs84ReferencePoints(referenceInfo, homePoint, companyPoint));
+    EXPECT_EQ(RUN_OK, service.ObtainWgs84ReferencePoints(referenceInfo, homePoint, companyPoint));
     EXPECT_EQ(homePoint.latitude, DataFabricAddressTest::MakeWgs84HomePoint().latitude - 0.001);
     EXPECT_EQ(companyPoint.latitude, DataFabricAddressTest::MakeWgs84CompanyPoint().latitude - 0.001);
 }
@@ -435,7 +435,7 @@ HWTEST_F(DataFabricAddressServiceImplTest, DataFabricAddressServiceImplTest020, 
     };
     NativePreferences::LocationPoint homePoint;
     NativePreferences::LocationPoint companyPoint;
-    EXPECT_FALSE(service.ObtainWgs84ReferencePoints(referenceInfo, homePoint, companyPoint));
+    EXPECT_EQ(INTERNAL_EXCEPTION, service.ObtainWgs84ReferencePoints(referenceInfo, homePoint, companyPoint));
 }
 
 /**
@@ -513,13 +513,13 @@ HWTEST_F(DataFabricAddressServiceImplTest, DataFabricAddressServiceImplTest025, 
             DataFabricAddressTest::MakeWgs84CompanyPoint());
     EXPECT_TRUE(service->AddCallback(params, callback));
     ASSERT_EQ(service->subscribeCacheMap_.size(), 1u);
-    EXPECT_TRUE(service->subscribeCacheMap_[params].callback_ != nullptr);
-    EXPECT_TRUE(service->subscribeCacheMap_[params].cbDeathRecipient_ != nullptr);
+    EXPECT_TRUE(service->subscribeCacheMap_[params].callback != nullptr);
+    EXPECT_TRUE(service->subscribeCacheMap_[params].cbDeathRecipient != nullptr);
 }
 
 /**
  * @tc.name: DataFabricAddressServiceImplTest026
- * @tc.desc: Test RemoveCallback when the params are not cached.
+ * @tc.desc: Test RemoveCallback treats the params as already unsubscribed when they are not cached.
  * @tc.type: FUNC
  */
 HWTEST_F(DataFabricAddressServiceImplTest, DataFabricAddressServiceImplTest026, TestSize.Level0)
@@ -528,7 +528,12 @@ HWTEST_F(DataFabricAddressServiceImplTest, DataFabricAddressServiceImplTest026, 
     NativePreferences::DataFabricAddressParams params =
         DataFabricAddressTest::MakeCommuteSubscriptionParams(DataFabricAddressTest::MakeWgs84HomePoint(),
             DataFabricAddressTest::MakeWgs84CompanyPoint());
-    EXPECT_TRUE(service->RemoveCallback(params));
+    sptr<IRemoteObject> callbackObject { nullptr };
+    sptr<IRemoteObject::DeathRecipient> deathRecipient { nullptr };
+    int32_t result = service->RemoveCallback(params, callbackObject, deathRecipient);
+    EXPECT_EQ(result, RUN_OK);
+    EXPECT_TRUE(callbackObject == nullptr);
+    EXPECT_TRUE(deathRecipient == nullptr);
 }
 
 /**
@@ -545,7 +550,12 @@ HWTEST_F(DataFabricAddressServiceImplTest, DataFabricAddressServiceImplTest027, 
             DataFabricAddressTest::MakeWgs84CompanyPoint());
     ASSERT_TRUE(service->AddCallback(params, callback));
     ASSERT_EQ(service->subscribeCacheMap_.size(), 1u);
-    EXPECT_TRUE(service->RemoveCallback(params));
+    sptr<IRemoteObject> callbackObject { nullptr };
+    sptr<IRemoteObject::DeathRecipient> deathRecipient { nullptr };
+    int32_t result = service->RemoveCallback(params, callbackObject, deathRecipient);
+    EXPECT_EQ(result, RUN_OK);
+    EXPECT_TRUE(callbackObject != nullptr);
+    EXPECT_TRUE(deathRecipient != nullptr);
     EXPECT_TRUE(service->subscribeCacheMap_.empty());
 }
 
@@ -564,7 +574,10 @@ HWTEST_F(DataFabricAddressServiceImplTest, DataFabricAddressServiceImplTest028, 
     EXPECT_TRUE(service->AddCallback(params1, new TestDataFabricAddressCallbackStub()));
     EXPECT_TRUE(service->AddCallback(params2, new TestDataFabricAddressCallbackStub()));
     ASSERT_EQ(service->subscribeCacheMap_.size(), 2u);
-    EXPECT_TRUE(service->RemoveCallback(params1));
+    sptr<IRemoteObject> callbackObject { nullptr };
+    sptr<IRemoteObject::DeathRecipient> deathRecipient { nullptr };
+    int32_t result = service->RemoveCallback(params1, callbackObject, deathRecipient);
+    EXPECT_EQ(result, RUN_OK);
     ASSERT_EQ(service->subscribeCacheMap_.size(), 1u);
     EXPECT_TRUE(service->subscribeCacheMap_.find(params2) != service->subscribeCacheMap_.end());
 }
@@ -675,4 +688,68 @@ HWTEST_F(DataFabricAddressServiceImplTest, DataFabricAddressServiceImplTest033, 
     ASSERT_EQ(service->subscribeCacheMap_.size(), 2u);
     EXPECT_TRUE(service->subscribeCacheMap_.find(params1) != service->subscribeCacheMap_.end());
     EXPECT_TRUE(service->subscribeCacheMap_.find(params3) != service->subscribeCacheMap_.end());
+}
+
+/**
+ * @tc.name: DataFabricAddressServiceImplTest034
+ * @tc.desc: Test Unsubscribe when the caller is not the origin subscriber, the cached entry is kept.
+ * @tc.type: FUNC
+ */
+HWTEST_F(DataFabricAddressServiceImplTest, DataFabricAddressServiceImplTest034, TestSize.Level0)
+{
+    auto service = std::make_shared<DataFabricAddressServiceImpl>();
+    sptr<IDataFabricAddressCallback> callback = new TestDataFabricAddressCallbackStub();
+    NativePreferences::DataFabricAddressParams params =
+        DataFabricAddressTest::MakeCommuteSubscriptionParams(DataFabricAddressTest::MakeWgs84HomePoint(),
+            DataFabricAddressTest::MakeWgs84CompanyPoint());
+    ASSERT_TRUE(service->AddCallback(params, callback));
+    // Simulate that the entry was registered by a different caller.
+    service->subscribeCacheMap_[params].callerFullTokenId = 0xFFFF8888FFFF6666ULL;
+    InitFactory();
+    DataFabricAddressTest::SetUnsubscribeNavigationManagerResult(ABNORMAL_OPERATION_EXCEPTION);
+    int32_t result = service->Unsubscribe(params);
+    EXPECT_EQ(result, UNSUBSCRIBE_EXCEPTION);
+    ASSERT_EQ(service->subscribeCacheMap_.size(), 1u);
+    EXPECT_TRUE(service->subscribeCacheMap_[params].callback == callback);
+}
+
+/**
+ * @tc.name: DataFabricAddressServiceImplTest035
+ * @tc.desc: Test Unsubscribe of the origin subscriber still triggers the navigation unsubscribe.
+ * @tc.type: FUNC
+ */
+HWTEST_F(DataFabricAddressServiceImplTest, DataFabricAddressServiceImplTest035, TestSize.Level0)
+{
+    auto service = std::make_shared<DataFabricAddressServiceImpl>();
+    sptr<IDataFabricAddressCallback> callback = new TestDataFabricAddressCallbackStub();
+    NativePreferences::DataFabricAddressParams params =
+        DataFabricAddressTest::MakeCommuteSubscriptionParams(DataFabricAddressTest::MakeWgs84HomePoint(),
+            DataFabricAddressTest::MakeWgs84CompanyPoint());
+    ASSERT_TRUE(service->AddCallback(params, callback));
+    InitFactory();
+    DataFabricAddressTest::SetUnsubscribeNavigationManagerResult(ABNORMAL_OPERATION_EXCEPTION);
+    int32_t result = service->Unsubscribe(params);
+    EXPECT_EQ(result, ABNORMAL_OPERATION_EXCEPTION);
+    EXPECT_TRUE(service->subscribeCacheMap_.empty());
+}
+
+/**
+ * @tc.name: DataFabricAddressServiceImplTest036
+ * @tc.desc: Test Subscribe with the update action re-subscribes the navigation manager before the update.
+ * @tc.type: FUNC
+ */
+HWTEST_F(DataFabricAddressServiceImplTest, DataFabricAddressServiceImplTest036, TestSize.Level0)
+{
+    InitFactory();
+    DataFabricAddressTest::SetGetDistanceResult(true, 5000.0);
+    DataFabricAddressServiceImpl service;
+    sptr<IDataFabricAddressCallback> callback = new TestDataFabricAddressCallbackStub();
+    NativePreferences::DataFabricAddressParams params =
+        DataFabricAddressTest::MakeCommuteUpdateParams(DataFabricAddressTest::MakeWgs84HomePoint(),
+            DataFabricAddressTest::MakeWgs84CompanyPoint());
+    int32_t result = service.Subscribe(params, callback);
+    EXPECT_EQ(result, RUN_OK);
+    EXPECT_EQ(DataFabricAddressTest::GetSubscribeActionCount(), 2);
+    EXPECT_EQ(DataFabricAddressTest::GetLastSubscribeAction(),
+        static_cast<int32_t>(NativePreferences::ActionType::UPDATE));
 }
