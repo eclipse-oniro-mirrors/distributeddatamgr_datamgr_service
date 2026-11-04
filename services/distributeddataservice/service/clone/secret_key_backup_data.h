@@ -25,6 +25,7 @@ public:
         std::string dbName;
         std::string user;
         std::string sKey;
+        std::string nonce; // optional per-item GCM nonce (Base64, 12 bytes); its absence marks the pre-7.1 format
         int32_t instanceId;
         int32_t storeType;
         int32_t area = -1;

@@ -38,6 +38,7 @@ struct CloneBackupInfo final : public Serializable {
     CloneEncryptionInfo encryptionInfo;
     std::vector<CloneBundleInfo> bundleInfos;
     std::string userId;
+    std::string peerDeviceVersion; // optional; placeholder contract pending alignment with the backup framework
     bool Marshal(json &node) const override;
     bool Unmarshal(const json &node) override;
 };
