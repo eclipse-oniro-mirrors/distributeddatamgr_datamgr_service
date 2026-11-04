@@ -53,6 +53,7 @@ ohos_shared_library("distributeddata_clone") {
     "bounds_checking_function:libsec_shared",
     "c_utils:utils",
     "hilog:libhilog",
+    "hisysevent:libhisysevent",
     "ipc:ipc_single",
     "kv_store:distributeddata_inner",
     "json:nlohmann_json_static",

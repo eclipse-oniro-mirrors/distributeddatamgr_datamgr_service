@@ -90,22 +90,26 @@ bool WriteBackupInfo(const std::string &content, const std::string &backupPath);
  * @param key The metadata key for loading secret key metadata
  * @param secretKeyMeta Output parameter for secret key metadata
  * @param metaData Store metadata containing user info
- * @param iv The initialization vector for encryption
+ * @param iv The initialization vector for encryption; empty for the new format
+ * @param nonce Output parameter receiving the nonce actually used by the encryption;
+ *              non-empty only for the new format (per-item random nonce)
  * @return Re-encrypted key bytes, empty if failed
  */
 std::vector<uint8_t> ReEncryptKey(const std::string &key, SecretKeyMetaData &secretKeyMeta,
-    const StoreMetaData &metaData, const std::vector<uint8_t> &iv);
+    const StoreMetaData &metaData, const std::vector<uint8_t> &iv, std::vector<uint8_t> &nonce);
 
 /**
  * @brief Get secret key backup for specified bundles
  * @param bundleInfos The bundle information list
  * @param userId The user ID
- * @param iv The initialization vector for encryption
+ * @param iv The shared initialization vector for the old format
  * @param localDeviceId The local device ID
+ * @param useNewFormat Whether to emit per-item nonces (peer version at least 7.1)
  * @return Serialized secret key backup data
  */
 std::string GetSecretKeyBackup(const std::vector<DistributedData::CloneBundleInfo> &bundleInfos,
-    const std::string &userId, const std::vector<uint8_t> &iv, const std::string &localDeviceId);
+    const std::string &userId, const std::vector<uint8_t> &iv, const std::string &localDeviceId,
+    bool useNewFormat = false);
 
 
 /**
@@ -133,6 +137,14 @@ bool ParseSecretKeyFile(MessageParcel &data, SecretKeyBackupData &backupData);
  */
 bool RestoreSecretKey(
     const SecretKeyBackupData::BackupItem &item, const std::string &userId, const std::vector<uint8_t> &iv);
+
+/**
+ * @brief Check whether the peer device version is at least 7.1
+ * @param peerDeviceVersion The peer device version parsed from CloneBackupInfo
+ * @return true only for parseable "major.minor" forms at or above 7.1; false for
+ *         pre-7.1 versions, empty or unparseable forms (backup falls back to the old format)
+ */
+bool IsPeerAtLeast71(const std::string &peerDeviceVersion);
 
 /**
  * @brief Check if a string contains only numeric characters (0-9)

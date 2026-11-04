@@ -17,6 +17,7 @@
 #include <fcntl.h>
 
 #include "crypto/crypto_manager.h"
+#include "hisysevent.h"
 #include "unique_fd.h"
 #include "directory/directory_manager.h"
 #include "log_print.h"
@@ -33,6 +34,7 @@ using SecretKeyMeta = DistributedData::SecretKeyMetaData;
 constexpr const char *CLONE_KEY_ALIAS = "distributed_db_backup_key";
 constexpr int KEY_SIZE = 32;
 constexpr int AES_256_NONCE_SIZE = 32;
+constexpr int AES_GCM_NONCE_SIZE = 12;
 
 std::string GetBackupReplyCode(int replyCode, const std::string &info)
 {
@@ -101,8 +103,9 @@ bool WriteBackupInfo(const std::string &content, const std::string &backupPath)
 }
 
 std::vector<uint8_t> ReEncryptKey(const std::string &key, SecretKeyMetaData &secretKeyMeta,
-    const StoreMetaData &metaData, const std::vector<uint8_t> &iv)
+    const StoreMetaData &metaData, const std::vector<uint8_t> &iv, std::vector<uint8_t> &nonce)
 {
+    nonce.clear();
     if (!MetaDataManager::GetInstance().LoadMeta(key, secretKeyMeta, true)) {
         return {};
     };
@@ -120,13 +123,30 @@ std::vector<uint8_t> ReEncryptKey(const std::string &key, SecretKeyMetaData &sec
     if (reEncryptedKey.size() == 0) {
         return {};
     };
+    // The backfilled value is the very nonce HksEncrypt used for this item, so storing it
+    // alongside the ciphertext lets restore decrypt with the same nonce.
+    nonce = encryptParams.nonce;
     return reEncryptedKey;
 }
 
+// Item-level failures are skipped by design, so the flow result alone cannot reveal them;
+// emit a summary log and a fault event whenever any item was skipped.
+void ReportClonePartialFail(const char *eventName, const std::string &userId, int32_t total, int32_t skipped)
+{
+    ZLOGE("Clone partial fail, total:%{public}d, skipped:%{public}d, userId:%{public}s", total, skipped,
+        Anonymous::Change(userId).c_str());
+    HiSysEventWrite(OHOS::HiviewDFX::HiSysEvent::Domain::DISTRIBUTED_DATAMGR, eventName,
+        OHOS::HiviewDFX::HiSysEvent::EventType::FAULT, "USER_ID", Anonymous::Change(userId).c_str(),
+        "TOTAL_COUNT", total, "SKIPPED_COUNT", skipped);
+}
+
 std::string GetSecretKeyBackup(const std::vector<DistributedData::CloneBundleInfo> &bundleInfos,
-    const std::string &userId, const std::vector<uint8_t> &iv, const std::string &localDeviceId)
+    const std::string &userId, const std::vector<uint8_t> &iv, const std::string &localDeviceId,
+    bool useNewFormat)
 {
     SecretKeyBackupData backupInfos;
+    int32_t total = 0;
+    int32_t skipped = 0;
     for (const auto &bundleInfo : bundleInfos) {
         std::string metaPrefix = StoreMetaData::GetKey({ localDeviceId, userId, "default", bundleInfo.bundleName });
         std::vector<StoreMetaData> StoreMetas;
@@ -137,10 +157,17 @@ std::string GetSecretKeyBackup(const std::vector<DistributedData::CloneBundleInf
             if (!storeMeta.isEncrypt) {
                 continue;
             };
+            ++total;
             auto key = storeMeta.GetSecretKey();
             SecretKeyMetaData secretKeyMeta;
-            auto reEncryptedKey = ReEncryptKey(key, secretKeyMeta, storeMeta, iv);
+            std::vector<uint8_t> nonce;
+            // New format: keep the iv empty so Encrypt generates a per-item random nonce and
+            // reports it back; old format keeps the shared iv handed in by the framework.
+            const std::vector<uint8_t> emptyIv;
+            const std::vector<uint8_t> &encryptIv = useNewFormat ? emptyIv : iv;
+            auto reEncryptedKey = ReEncryptKey(key, secretKeyMeta, storeMeta, encryptIv, nonce);
             if (reEncryptedKey.size() == 0) {
+                ++skipped;
                 continue;
             };
             SecretKeyBackupData::BackupItem item;
@@ -152,8 +179,14 @@ std::string GetSecretKeyBackup(const std::vector<DistributedData::CloneBundleInf
             item.storeType = secretKeyMeta.storeType;
             item.user = userId;
             item.area = storeMeta.area;
+            if (useNewFormat) {
+                item.nonce = DistributedData::Base64::Encode(nonce);
+            }
             backupInfos.infos.push_back(std::move(item));
         }
+    }
+    if (skipped > 0) {
+        ReportClonePartialFail("CLONE_BACKUP_PARTIAL_FAIL", userId, total, skipped);
     }
     return Serializable::Marshall(backupInfos);
 }
@@ -165,10 +198,6 @@ int32_t OnBackup(MessageParcel &data, MessageParcel &reply, const std::string &l
         return -1;
     }
 
-    if (!ImportCloneKey(backupInfo.encryptionInfo.symkey)) {
-        return -1;
-    }
-
     auto iv = ConvertDecStrToVec(backupInfo.encryptionInfo.iv);
     SecureClearGuard<std::vector<uint8_t>> ivGuard(iv);
     if (iv.size() != AES_256_NONCE_SIZE) {
@@ -176,7 +205,12 @@ int32_t OnBackup(MessageParcel &data, MessageParcel &reply, const std::string &l
         return -1;
     }
 
-    auto content = GetSecretKeyBackup(backupInfo.bundleInfos, backupInfo.userId, iv, localDeviceId);
+    if (!ImportCloneKey(backupInfo.encryptionInfo.symkey)) {
+        return -1;
+    }
+
+    bool useNewFormat = IsPeerAtLeast71(backupInfo.peerDeviceVersion);
+    auto content = GetSecretKeyBackup(backupInfo.bundleInfos, backupInfo.userId, iv, localDeviceId, useNewFormat);
     DeleteCloneKey();
 
     if (!IsNumber(backupInfo.userId)) {
@@ -254,6 +288,17 @@ bool RestoreSecretKey(
     SecureClearGuard<std::vector<uint8_t>> sKeyGuard(sKey);
     auto cloneKeyAlias = std::vector<uint8_t>(CLONE_KEY_ALIAS, CLONE_KEY_ALIAS + strlen(CLONE_KEY_ALIAS));
     CryptoManager::CryptoParams decryptParams = { .keyAlias = cloneKeyAlias, .nonce = iv };
+    // New format: a per-item nonce that decodes to exactly 12 bytes decrypts this item with
+    // that nonce. An absent nonce, or one that decodes to nothing, falls back to the shared
+    // iv (pre-7.1 format); any other decoded length fails the item.
+    auto itemNonce = DistributedData::Base64::Decode(item.nonce);
+    if (itemNonce.size() == AES_GCM_NONCE_SIZE) {
+        decryptParams.nonce = itemNonce;
+    } else if (!itemNonce.empty()) {
+        ZLOGW("Item nonce size invalid, skip item, nonceSize:%{public}zu, bundleName:%{public}s",
+            itemNonce.size(), item.bundleName.c_str());
+        return false;
+    }
     auto rawKey = CryptoManager::GetInstance().Decrypt(sKey, decryptParams);
     if (rawKey.empty()) {
         ZLOGE("Decrypt failed, bundleName:%{public}s, storeName:%{public}s, storeType:%{public}d",
@@ -308,13 +353,43 @@ int32_t OnRestore(MessageParcel &data, MessageParcel &reply)
         return ReplyForRestore(reply, -1);
     }
 
+    int32_t total = 0;
+    int32_t skipped = 0;
     for (const auto &item : backupData.infos) {
+        ++total;
         if (!item.IsValid() || !RestoreSecretKey(item, backupInfo.userId, iv)) {
+            ++skipped;
             continue;
         }
     }
+    if (skipped > 0) {
+        ReportClonePartialFail("CLONE_RESTORE_PARTIAL_FAIL", backupInfo.userId, total, skipped);
+    }
     DeleteCloneKey();
     return ReplyForRestore(reply, 0);
+}
+
+bool IsPeerAtLeast71(const std::string &peerDeviceVersion)
+{
+    if (peerDeviceVersion.empty()) {
+        return false;
+    }
+    // Placeholder contract: the peer version form is pending alignment with the backup
+    // framework. Only "<major>.<minor>[...]" forms are accepted; anything else is treated
+    // as pre-7.1 so the backup falls back to the old shared-iv format.
+    auto tokens = Constant::Split(peerDeviceVersion, ".");
+    auto isDigits = [](const std::string &token) {
+        return !token.empty() && std::all_of(token.begin(), token.end(),
+            [](unsigned char c) { return std::isdigit(c); });
+    };
+    if (tokens.size() < 2 || !isDigits(tokens[0]) || !isDigits(tokens[1])) {
+        ZLOGW("Peer device version form is unparseable, use old backup format, version:%{public}s",
+            peerDeviceVersion.c_str());
+        return false;
+    }
+    long major = atol(tokens[0].c_str());
+    long minor = atol(tokens[1].c_str());
+    return major > 7 || (major == 7 && minor >= 1);
 }
 
 bool IsNumber(const std::string& str)

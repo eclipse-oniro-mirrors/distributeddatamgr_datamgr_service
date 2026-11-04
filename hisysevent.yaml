@@ -132,3 +132,14 @@ DATA_SHARE_ACCESS_STATISTIC:
   PROVIDER_BUNDLE_NAME: {type: STRING, desc: provider bundle name }
   CALLER_BUNDLE_NAME: {type: STRING, arrsize: 100, desc: caller bundle name array }
   API_CALL_COUNT: {type: STRING, arrsize: 100, desc: api call count per caller }
+CLONE_BACKUP_PARTIAL_FAIL:
+  __BASE: {type: FAULT, level: CRITICAL, desc: The event is clone backup partial failure }
+  USER_ID: {type: STRING, desc: user id with anonymous }
+  TOTAL_COUNT: {type: INT32, desc: total item count of clone backup }
+  SKIPPED_COUNT: {type: INT32, desc: skipped item count of clone backup }
+
+CLONE_RESTORE_PARTIAL_FAIL:
+  __BASE: {type: FAULT, level: CRITICAL, desc: The event is clone restore partial failure }
+  USER_ID: {type: STRING, desc: user id with anonymous }
+  TOTAL_COUNT: {type: INT32, desc: total item count of clone restore }
+  SKIPPED_COUNT: {type: INT32, desc: skipped item count of clone restore }
