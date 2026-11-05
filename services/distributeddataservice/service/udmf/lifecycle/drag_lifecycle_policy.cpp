@@ -16,8 +16,9 @@
 
 #include "drag_lifecycle_policy.h"
 
-#include "lifecycle_policy.h"
+#include "fuse/udmf_fuse_session_manager.h"
 #include "lifecycle_manager.h"
+#include "lifecycle_policy.h"
 #include "log_print.h"
 #include "preprocess/preprocess_utils.h"
 
@@ -49,6 +50,9 @@ Status DragLifeCyclePolicy::OnTimeout(const std::string &intention)
         return E_DB_ERROR;
     }
     for (const auto &[udkey, runtime] : timeoutRuntimes) {
+        auto runtimeKey = runtime.key;
+        std::string unifiedKey = runtimeKey.GetUnifiedKey();
+        UdmfFuseSessionManager::GetInstance().Remove(unifiedKey);
         LifeCycleManager::GetInstance().EraseUdkey(runtime.key.key, runtime.tokenId);
     }
     return E_OK;
