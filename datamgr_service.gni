@@ -77,7 +77,7 @@ declare_args() {
   } else {
     dm_part_is_enabled = false
   }
- 
+
   if (!defined(global_parts_info) || defined(global_parts_info.security_dataclassification)) {
     dataclassification_part_is_enabled = true
   } else {

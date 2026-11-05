@@ -867,6 +867,36 @@ ohos_unittest("UdmfObserverTest") {
   ]
 }
 
+ohos_unittest("AuditHelperTest") {
+  module_out_path = module_output_path
+  sources = [
+    "${data_service_path}/service/udmf/audit/audit_helper.cpp",
+    "audit_helper_test.cpp",
+  ]
+
+  include_dirs = [
+    "${data_service_path}/service/udmf",
+    "${data_service_path}/service/udmf/audit",
+  ]
+
+  cflags = [
+    "-fno-access-control",
+    "-Werror=vla",
+  ]
+
+  external_deps = [
+    "ability_base:want",
+    "ability_base:zuri",
+    "common_event_service:cesfwk_innerkits",
+    "googletest:gtest_main",
+    "hilog:libhilog",
+    "image_framework:image",
+    "json:nlohmann_json_static",
+    "kv_store:datamgr_common",
+    "udmf:udmf_client",
+  ]
+}
+
 ###############################################################################
 # UDMF Test Collection Group
 ###############################################################################
@@ -874,6 +904,7 @@ ohos_unittest("UdmfObserverTest") {
 group("unittests") {
   testonly = true
   deps = [
+    ":AuditHelperTest",
     ":UdmfCheckerManagerTest",
     ":UdmfDelayDataContainerTest",
     ":UdmfObserverTest",
