@@ -27,11 +27,9 @@
 namespace OHOS {
 namespace UDMF {
 
-namespace {
 constexpr const char *IS_ENTERPRISE_DEVICE = "const.edm.is_enterprise_device";
 constexpr const char *ENTERPRISE_DEVICE_FALSE = "false";
 constexpr const char *ENTERPRISE_DEVICE_TRUE = "true";
-} // namespace
 
 using Creator = std::shared_ptr<OHOS::UDMF::IAuditHelper> (*)();
 

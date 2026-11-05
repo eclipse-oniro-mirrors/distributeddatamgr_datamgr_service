@@ -130,7 +130,6 @@ void ClearVirtualEntryMarker(const std::shared_ptr<UnifiedRecord> &record)
     }
 }
 
->>>>>>> master
 __attribute__((used)) UdmfServiceImpl::Factory UdmfServiceImpl::factory_;
 UdmfServiceImpl::Factory::Factory()
 {

@@ -23,7 +23,7 @@
 
 #include "application_defined_record.h"
 #include "audit_helper.h"
-#include "foundation/distributeddatamgr/udmf/interfaces/innerkits/data/file.h"
+#include "folder.h"
 #include "log_print.h"
 #include "pixel_map.h"
 #include "plain_text.h"

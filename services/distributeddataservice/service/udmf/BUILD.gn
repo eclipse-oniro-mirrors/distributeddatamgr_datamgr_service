@@ -42,7 +42,7 @@ ohos_source_set("udmf_server") {
     debug = false
   }
   sources = [
-    "audit_loader.cpp",
+    "audit/audit_loader.cpp",
     "delay_data/delay_data_acquire_container.cpp",
     "delay_data/delay_data_prepare_container.cpp",
     "delay_data/synced_device_container.cpp",
