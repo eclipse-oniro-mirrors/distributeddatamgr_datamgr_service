@@ -20,8 +20,11 @@
 #include <algorithm>
 #include <atomic>
 
+#include <parameter.h>
+
 #include "accesstoken_kit.h"
 #include "account/account_delegate.h"
+#include "audit_loader.h"
 #include "bootstrap.h"
 #include "bundle_info.h"
 #include "bundlemgr/bundle_mgr_proxy.h"
@@ -77,7 +80,17 @@ constexpr const char *DEVICE_PHONE_TAG = "phone";
 constexpr const char *DEVICE_DEFAULT_TAG = "default";
 constexpr const char *HAP_LIST[] = { "com.ohos.pasteboarddialog" };
 constexpr uint32_t FOUNDATION_UID = 5523;
+constexpr int32_t UID_TRANSFORM_DIVISOR = 200000;
+constexpr const char *IS_ENTERPRISE_DEVICE = "const.edm.is_enterprise_device";
+constexpr const char *ENTERPRISE_DEVICE_TRUE = "true";
 std::atomic<uint64_t> g_virtualEntryGeneration{ 1 };
+
+bool IsEnterpriseDevice()
+{
+    char isEnterpriseDeviceValue[PARAM_VALUE_LEN_MAX] = { 0 };
+    GetParameter(IS_ENTERPRISE_DEVICE, "", isEnterpriseDeviceValue, PARAM_VALUE_LEN_MAX);
+    return std::string(isEnterpriseDeviceValue) == ENTERPRISE_DEVICE_TRUE;
+}
 
 bool IsVirtualEntryRecord(const std::shared_ptr<UnifiedRecord> &record)
 {
@@ -347,6 +360,9 @@ int32_t UdmfServiceImpl::GetData(const QueryOption &query, UnifiedData &unifiedD
     Reporter::GetInstance()->GetBehaviourReporter()->UDMFReport(msg);
     if (res != E_OK) {
         ZLOGE("GetData failed, res:%{public}d, key:%{public}s", res, query.key.c_str());
+    } else if (IsEnterpriseDevice()) {
+        int32_t userId = IPCSkeleton::GetCallingUid() / UID_TRANSFORM_DIVISOR;
+        AuditLoader::GetInstance().ReportDragAuditEvent(unifiedData, userId, query.tokenId, executors_);
     }
     return res;
 }

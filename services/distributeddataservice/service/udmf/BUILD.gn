@@ -20,6 +20,7 @@ config("module_public_config") {
     "${data_service_path}/adapter/include/communicator",
     "${data_service_path}/service/matrix/include",
     "${data_service_path}/service/permission/include",
+    "${data_service_path}/service/udmf/audit",
     "${data_service_path}/service/udmf/delay_data",
     "${data_service_path}/service/udmf/fuse",
     "${data_service_path}/service/udmf/lifecycle",
@@ -41,6 +42,7 @@ ohos_source_set("udmf_server") {
     debug = false
   }
   sources = [
+    "audit/audit_loader.cpp",
     "delay_data/delay_data_acquire_container.cpp",
     "delay_data/delay_data_prepare_container.cpp",
     "delay_data/synced_device_container.cpp",
@@ -99,6 +101,7 @@ ohos_source_set("udmf_server") {
     "hitrace:libhitracechain",
     "ipc:ipc_core",
     "image_framework:image",
+    "init:libbegetutil",
     "kv_store:datamgr_common",
     "kv_store:distributeddb",
     "libfuse:libfuse",
