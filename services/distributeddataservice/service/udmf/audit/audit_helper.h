@@ -46,7 +46,7 @@ private:
     static nlohmann::json ConvertPixelMapToJson(std::shared_ptr<OHOS::Media::PixelMap> pixelMap);
     static nlohmann::json ConvertObjectToJson(std::shared_ptr<Object> object);
     static nlohmann::json ConvertEntriesToJson(const std::map<std::string, ValueType> &entries);
-    static nlohmann::json ConvertRecordToJson(std::shared_ptr<UnifiedRecord> record, size_t index);
+    static nlohmann::json ConvertRecordToJson(std::shared_ptr<UnifiedRecord> record);
     static int32_t PublishAuditEvent(const std::string &auditData);
 };
 

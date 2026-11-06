@@ -41,6 +41,13 @@ class AuditHelperTest : public testing::Test {
 public:
     void SetUp() override {}
     void TearDown() override {}
+
+    static std::shared_ptr<ExecutorPool> GetExecutor()
+    {
+        static std::shared_ptr<ExecutorPool> executor =
+            std::make_shared<ExecutorPool>(4, 1, "AuditTestExecutor");
+        return executor;
+    }
 };
 
 /**
@@ -281,7 +288,7 @@ HWTEST_F(AuditHelperTest, ConvertRecordToJson001, TestSize.Level1)
     details.insert(std::make_pair("key2", int32_t(456)));
     text->SetDetails(details);
 
-    auto json = AuditHelper::ConvertRecordToJson(text, 0);
+    auto json = AuditHelper::ConvertRecordToJson(text);
     EXPECT_TRUE(json.is_object());
 
     ZLOGI("ConvertRecordToJson001 end.");
@@ -301,7 +308,7 @@ HWTEST_F(AuditHelperTest, ConvertRecordToJson002, TestSize.Level1)
     plainText->SetContent("test content");
     plainText->SetAbstract("test abstract");
 
-    auto json = AuditHelper::ConvertRecordToJson(plainText, 1);
+    auto json = AuditHelper::ConvertRecordToJson(plainText);
     EXPECT_TRUE(json.is_object());
 
     ZLOGI("ConvertRecordToJson002 end.");
@@ -321,7 +328,7 @@ HWTEST_F(AuditHelperTest, ConvertRecordToJson003, TestSize.Level1)
     file->SetUri("file:///data/test.txt");
     file->SetRemoteUri("file:///data/remote/test.txt");
 
-    auto json = AuditHelper::ConvertRecordToJson(file, 2);
+    auto json = AuditHelper::ConvertRecordToJson(file);
     EXPECT_TRUE(json.is_object());
 
     ZLOGI("ConvertRecordToJson003 end.");
@@ -342,7 +349,7 @@ HWTEST_F(AuditHelperTest, ConvertRecordToJson004, TestSize.Level1)
     std::vector<uint8_t> rawData = {0x01, 0x02, 0x03, 0x04};
     appRecord->SetRawData(rawData);
 
-    auto json = AuditHelper::ConvertRecordToJson(appRecord, 5);
+    auto json = AuditHelper::ConvertRecordToJson(appRecord);
     EXPECT_TRUE(json.is_object());
 
     ZLOGI("ConvertRecordToJson004 end.");
@@ -521,7 +528,7 @@ HWTEST_F(AuditHelperTest, MultiRecordLimitTest001, TestSize.Level1)
         data.AddRecord(text);
     }
 
-    EXPECT_NO_FATAL_FAILURE(AuditHelper().ReportDragAuditEvent(data, 100, 12345));
+    EXPECT_NO_FATAL_FAILURE(AuditHelper().ReportDragAuditEvent(data, 100, 12345, GetExecutor()));
 
     ZLOGI("MultiRecordLimitTest001 end.");
 }
@@ -568,4 +575,20 @@ HWTEST_F(AuditHelperTest, JsonTypePreservationTest001, TestSize.Level1)
     ZLOGI("JsonTypePreservationTest001 end.");
 }
 
+/**
+* @tc.name: ConvertRecordToJson_NullRecord_EmptyObject
+* @tc.desc: Test ConvertRecordToJson with nullptr record returns empty object without crash
+* @tc.type: FUNC
+* @tc.author: agent
+*/
+HWTEST_F(AuditHelperTest, ConvertRecordToJson_NullRecord_EmptyObject, TestSize.Level1)
+{
+    ZLOGI("ConvertRecordToJson_NullRecord_EmptyObject begin.");
+
+    auto json = AuditHelper::ConvertRecordToJson(nullptr);
+    EXPECT_TRUE(json.is_object());
+    EXPECT_TRUE(json.empty());
+
+    ZLOGI("ConvertRecordToJson_NullRecord_EmptyObject end.");
+}
 } // namespace OHOS::Test

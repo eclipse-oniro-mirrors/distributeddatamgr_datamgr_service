@@ -36,10 +36,6 @@ namespace OHOS {
 namespace UDMF {
 
 constexpr const char *DRAG_AUDIT_EVENT = "usual.event.DRAG_AUDIT";
-constexpr const char *AUDIT_EXECUTOR_UNAVAILABLE = "AUDIT_EXECUTOR_UNAVAILABLE";
-constexpr const char *AUDIT_TASK_REJECTED = "AUDIT_TASK_REJECTED";
-constexpr const char *AUDIT_PUBLISH_FAILED = "AUDIT_PUBLISH_FAILED";
-constexpr const char *AUDIT_DATA_RESTORE_FAILED = "AUDIT_DATA_RESTORE_FAILED";
 static constexpr size_t MAX_DATA_SIZE = 10 * 1024;
 static constexpr size_t ENTRIES_BUDGET_RATIO = 60;
 static constexpr size_t JSON_NULL_SIZE = 4;
@@ -283,7 +279,7 @@ nlohmann::json AuditHelper::ConvertEntriesToJson(const std::map<std::string, Val
     return entriesJson;
 }
 
-nlohmann::json AuditHelper::ConvertRecordToJson(std::shared_ptr<UnifiedRecord> record, size_t index)
+nlohmann::json AuditHelper::ConvertRecordToJson(std::shared_ptr<UnifiedRecord> record)
 {
     if (record == nullptr) {
         return nlohmann::json::object();
@@ -306,7 +302,7 @@ int32_t AuditHelper::PublishAuditEvent(const std::string &auditData)
     publishInfo.SetOrdered(true);
     int32_t ret = EventFwk::CommonEventManager::NewPublishCommonEvent(event, publishInfo);
     if (ret != 0) {
-        ZLOGE("Failed to publish drag audit event, ret = %{public}d, reason = %{public}s", ret, AUDIT_PUBLISH_FAILED);
+        ZLOGE("Failed to publish drag audit event, ret = %{public}d", ret);
     } else {
         ZLOGI("Drag audit event published successfully");
     }
@@ -317,7 +313,7 @@ void AuditHelper::ReportDragAuditEvent(const UnifiedData &unifiedData, int32_t u
     const std::shared_ptr<ExecutorPool> &executors)
 {
     if (executors == nullptr) {
-        ZLOGE("Audit task unavailable: %{public}s", AUDIT_EXECUTOR_UNAVAILABLE);
+        ZLOGE("Audit executor is unavailable");
         return;
     }
     uint32_t sourceTokenId = 0;
@@ -331,7 +327,7 @@ void AuditHelper::ReportDragAuditEvent(const UnifiedData &unifiedData, int32_t u
         if (TempUDataLoader::IsTempUData(data)) {
             UnifiedData decoded;
             if (!TempUDataLoader::Decode(data, decoded)) {
-                ZLOGE("Restore temp unified data failed: %{public}s", AUDIT_DATA_RESTORE_FAILED);
+                ZLOGE("Restore temp unified data failed");
                 return;
             }
             records = decoded.GetRecords();
@@ -352,7 +348,7 @@ void AuditHelper::ReportDragAuditEvent(const UnifiedData &unifiedData, int32_t u
 
         nlohmann::json recordsJson = nlohmann::json::array();
         for (size_t i = 0; i < records.size(); ++i) {
-            nlohmann::json recordJson = ConvertRecordToJson(records[i], i);
+            nlohmann::json recordJson = ConvertRecordToJson(records[i]);
             std::string recordStr = recordJson.dump();
             size_t cost = recordStr.size() + JSON_ARRAY_SEPARATOR_SIZE;
             if (cost > budget) {
@@ -380,7 +376,7 @@ void AuditHelper::ReportDragAuditEvent(const UnifiedData &unifiedData, int32_t u
 
     ExecutorPool::TaskId taskId = executors->Execute(std::move(task));
     if (taskId == ExecutorPool::INVALID_TASK_ID) {
-        ZLOGE("Audit task rejected: %{public}s", AUDIT_TASK_REJECTED);
+        ZLOGE("Audit task rejected");
     }
 }
 } // namespace UDMF
