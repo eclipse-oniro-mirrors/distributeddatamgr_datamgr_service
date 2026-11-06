@@ -193,22 +193,19 @@ static void CleanupStoreMeta(const std::string &localDeviceId, const std::string
     MetaDataManager::GetInstance().DelMeta(storeMeta.GetSecretKey(), true);
 }
 
-// Mirrors the backup framework's real input shape (PR !4131 review comment): a top-level
-// object with unicast "infos" entries; the peer OS version arrives as an "OSVersion" entry
-// inside its own unicast element, e.g. {"type": "unicast", "details": [{"type": "OSVersion",
-// "detail": "7.0.0.115"}]}.
+// The framework's real input is a flat array of typed entries; the peer OS version is a
+// sibling entry in the same type/detail shape, e.g. {"type": "OSVersion", "detail": "7.0.0.115"}.
 static std::string BuildCloneInfo(const std::string &bundleName, const std::string &userId,
     const std::string &osVersion, const std::string &iv)
 {
-    std::string info = "{\"infos\":[{\"type\":\"unicast\",\"details\":["
-        "{\"type\":\"encryption_info\",\"detail\":{\"encryption_symkey\":\"" + VALID_SYMKEY +
+    std::string info = "[{\"type\":\"encryption_info\",\"detail\":{\"encryption_symkey\":\"" + VALID_SYMKEY +
         "\",\"encryption_algname\":\"AES256\",\"gcmParams_iv\":\"" + iv +
         "\"}},{\"type\":\"application_selection\",\"detail\":[{\"bundleName\":\"" + bundleName +
-        "\",\"accessTokenId\":100}]},{\"type\":\"user_info\",\"detail\":\"" + userId + "\"}]}";
+        "\",\"accessTokenId\":100}]},{\"type\":\"userId\",\"detail\":\"" + userId + "\"}";
     if (!osVersion.empty()) {
-        info += ",{\"type\":\"unicast\",\"details\":[{\"type\":\"OSVersion\",\"detail\":\"" + osVersion + "\"}]}";
+        info += ",{\"type\":\"OSVersion\",\"detail\":\"" + osVersion + "\"}";
     }
-    return info + "],\"concurrentId\":\"unittest\"}";
+    return info + "]";
 }
 
 static std::string ReadBackupFileFromReply(MessageParcel &reply)
@@ -560,47 +557,37 @@ HWTEST_F(CloneManagerTest, BackupItemUnmarshal_MissingNonce_DoesNotFailChain, Te
 }
 
 /**
- * @tc.name: CloneBackupInfoUnmarshal_WithAndWithoutPeerVersion
- * @tc.desc: CloneBackupInfo parses the framework unicast shape (with/without OSVersion) and the legacy flat shape
+ * @tc.name: CloneBackupInfoUnmarshal_WithAndWithoutOSVersion
+ * @tc.desc: CloneBackupInfo parses the flat entry array with and without the OSVersion entry
  * @tc.type: FUNC
  * @tc.require:
  * @tc.author: htt1997
  */
-HWTEST_F(CloneManagerTest, CloneBackupInfoUnmarshal_FrameworkAndLegacyFormats, TestSize.Level0)
+HWTEST_F(CloneManagerTest, CloneBackupInfoUnmarshal_WithAndWithoutOSVersion, TestSize.Level0)
 {
     const std::string encryptionDetail =
         "{\"encryption_symkey\":\"1,2,3\",\"encryption_algname\":\"AES256\","
         "\"gcmParams_iv\":\"97,160,201,177,46,37,129,18,112,220,107,106,25,231,15,15,"
         "58,85,31,83,123,216,211,2,222,49,122,72,21,251,83,16\"}";
-    const std::string unicastDetails = "[{\"type\":\"encryption_info\",\"detail\":" + encryptionDetail +
+    const std::string withoutVersion = "[{\"type\":\"encryption_info\",\"detail\":" + encryptionDetail +
         "},{\"type\":\"application_selection\",\"detail\":[{\"bundleName\":\"com.example.app\","
-        "\"accessTokenId\":100}]},{\"type\":\"user_info\",\"detail\":\"100\"}]";
-
-    // Framework shape without the OSVersion entry: osVersion stays empty.
+        "\"accessTokenId\":100}]},{\"type\":\"userId\",\"detail\":\"100\"}]";
     CloneBackupInfo backupInfo;
-    EXPECT_TRUE(backupInfo.Unmarshal("{\"infos\":[{\"type\":\"unicast\",\"details\":" + unicastDetails +
-        "}],\"concurrentId\":\"x\"}"));
+    EXPECT_TRUE(backupInfo.Unmarshal(withoutVersion));
     EXPECT_TRUE(backupInfo.osVersion.empty());
     EXPECT_EQ(backupInfo.userId, "100");
     ASSERT_EQ(backupInfo.bundleInfos.size(), 1u);
     EXPECT_EQ(backupInfo.bundleInfos[0].bundleName, "com.example.app");
     EXPECT_EQ(backupInfo.encryptionInfo.algName, "AES256");
 
-    // Framework shape with the OSVersion entry in its own unicast element (four-segment form).
+    const std::string withVersion = "[{\"type\":\"encryption_info\",\"detail\":" + encryptionDetail +
+        "},{\"type\":\"userId\",\"detail\":\"100\"},{\"type\":\"OSVersion\",\"detail\":\"7.0.0.115\"}]";
     CloneBackupInfo versioned;
-    EXPECT_TRUE(versioned.Unmarshal("{\"infos\":[{\"type\":\"unicast\",\"details\":" + unicastDetails +
-        "},{\"type\":\"unicast\",\"details\":[{\"type\":\"OSVersion\",\"detail\":\"7.0.0.115\"}]}],"
-        "\"concurrentId\":\"x\"}"));
+    EXPECT_TRUE(versioned.Unmarshal(withVersion));
     EXPECT_EQ(versioned.osVersion, "7.0.0.115");
     EXPECT_EQ(versioned.userId, "100");
-
-    // Legacy flat shape (old framework) still parses, including the OSVersion tag.
-    CloneBackupInfo legacy;
-    EXPECT_TRUE(legacy.Unmarshal("[{\"type\":\"encryption_info\",\"detail\":" + encryptionDetail +
-        "},{\"type\":\"userId\",\"detail\":\"100\"},{\"type\":\"OSVersion\",\"detail\":\"7.1.0.1\"}]"));
-    EXPECT_EQ(legacy.userId, "100");
-    EXPECT_EQ(legacy.osVersion, "7.1.0.1");
 }
+
 
 /**
  * @tc.name: IsOldOsVersion_Matrix
