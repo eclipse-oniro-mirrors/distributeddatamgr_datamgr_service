@@ -51,24 +51,43 @@ bool CloneBundleInfo::Marshal(json &node) const
 bool CloneBackupInfo::Unmarshal(const json &node)
 {
     auto items = DistributedData::Serializable::ToJson(node);
-    if (!items.is_array()) {
+    // Parses a list of typed entries ({"type": ..., "detail": ...}) shared by both input
+    // shapes: the framework's nested unicast "details" list and the legacy flat array.
+    auto parseDetails = [this](const json &entries) {
+        std::string type;
+        for (const auto &entry : entries) {
+            if (!GetValue(entry, GET_NAME(type), type) || type.empty()) {
+                continue;
+            }
+            if (type == "encryption_info") {
+                GetValue(entry, "detail", encryptionInfo);
+            } else if (type == "application_selection") {
+                GetValue(entry, "detail", bundleInfos);
+            } else if (type == "user_info" || type == "userId") {
+                GetValue(entry, "detail", userId);
+            } else if (type == "OSVersion") {
+                GetValue(entry, "detail", osVersion);
+            }
+        }
+    };
+    if (items.is_array()) {
+        // Legacy shape: a flat top-level array of typed entries.
+        parseDetails(items);
+        return true;
+    }
+    if (!items.is_object()) {
         return false;
     }
-    std::string type;
-    auto size = items.size();
-    for (size_t i = 0; i < size; i++) {
-        bool result = GetValue(items[i], GET_NAME(type), type);
-        if (!result || type.empty()) {
-            continue;
-        }
-        if (type == "encryption_info") {
-            GetValue(items[i], "detail", encryptionInfo);
-        } else if (type == "application_selection") {
-            GetValue(items[i], "detail", bundleInfos);
-        } else if (type == "userId") {
-            GetValue(items[i], "detail", userId);
-        } else if (type == "peerDeviceVersion") {
-            GetValue(items[i], "detail", peerDeviceVersion);
+    // Framework shape: {"infos": [{"type": "unicast", "details": [typed entries...]}, ...],
+    // "concurrentId": "..."}; the peer OS version arrives as an "OSVersion" entry.
+    auto infos = items.find("infos");
+    if (infos == items.end() || !infos->is_array()) {
+        return false;
+    }
+    for (const auto &info : *infos) {
+        auto details = info.find("details");
+        if (details != info.end() && details->is_array()) {
+            parseDetails(*details);
         }
     }
     return true;

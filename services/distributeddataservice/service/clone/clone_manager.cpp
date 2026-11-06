@@ -145,12 +145,12 @@ void ReportClonePartialFail(const char *eventName, const std::string &userId, in
 
 std::string GetSecretKeyBackup(const std::vector<DistributedData::CloneBundleInfo> &bundleInfos,
     const std::string &userId, const std::vector<uint8_t> &iv, const std::string &localDeviceId,
-    const std::string &peerDeviceVersion)
+    const std::string &osVersion)
 {
     SecretKeyBackupData backupInfos;
     int32_t total = 0;
     int32_t skipped = 0;
-    bool oldFormat = IsOldOsVersion(peerDeviceVersion);
+    bool oldFormat = IsOldOsVersion(osVersion);
     for (const auto &bundleInfo : bundleInfos) {
         std::string metaPrefix = StoreMetaData::GetKey({ localDeviceId, userId, "default", bundleInfo.bundleName });
         std::vector<StoreMetaData> StoreMetas;
@@ -212,7 +212,7 @@ int32_t OnBackup(MessageParcel &data, MessageParcel &reply, const std::string &l
     }
 
     auto content = GetSecretKeyBackup(backupInfo.bundleInfos, backupInfo.userId, iv, localDeviceId,
-        backupInfo.peerDeviceVersion);
+        backupInfo.osVersion);
     DeleteCloneKey();
 
     if (!IsNumber(backupInfo.userId)) {
@@ -371,22 +371,22 @@ int32_t OnRestore(MessageParcel &data, MessageParcel &reply)
     return ReplyForRestore(reply, 0);
 }
 
-bool IsOldOsVersion(const std::string &peerDeviceVersion)
+bool IsOldOsVersion(const std::string &osVersion)
 {
-    if (peerDeviceVersion.empty()) {
+    if (osVersion.empty()) {
         return true;
     }
-    // Placeholder contract: the peer version form is pending alignment with the backup
-    // framework. Only "<major>.<minor>[...]" forms are accepted; anything else is treated
-    // as an old version so the backup falls back to the old shared-iv format.
-    auto tokens = Constant::Split(peerDeviceVersion, ".");
+    // The backup framework sends the OSVersion entry in four-segment form (e.g. "7.0.0.115");
+    // only the leading "<major>.<minor>" is compared. Anything unparseable is treated as an
+    // old version so the backup falls back to the old shared-iv format.
+    auto tokens = Constant::Split(osVersion, ".");
     auto isDigits = [](const std::string &token) {
         return !token.empty() && std::all_of(token.begin(), token.end(),
             [](unsigned char c) { return std::isdigit(c); });
     };
     if (tokens.size() < 2 || !isDigits(tokens[0]) || !isDigits(tokens[1])) {
         ZLOGW("Peer device version form is unparseable, use old backup format, version:%{public}s",
-            peerDeviceVersion.c_str());
+            osVersion.c_str());
         return true;
     }
     long major = atol(tokens[0].c_str());

@@ -27,6 +27,8 @@
 #include "bootstrap.h"
 #include "crypto/crypto_manager.h"
 #include "device_manager_adapter.h"
+#include "directory/directory_manager.h"
+#include "directory/directory_manager.h"
 #include "clone_manager.h"
 #include "db_store_mock.h"
 #include "hks_api.h"
@@ -191,17 +193,22 @@ static void CleanupStoreMeta(const std::string &localDeviceId, const std::string
     MetaDataManager::GetInstance().DelMeta(storeMeta.GetSecretKey(), true);
 }
 
+// Mirrors the backup framework's real input shape (PR !4131 review comment): a top-level
+// object with unicast "infos" entries; the peer OS version arrives as an "OSVersion" entry
+// inside its own unicast element, e.g. {"type": "unicast", "details": [{"type": "OSVersion",
+// "detail": "7.0.0.115"}]}.
 static std::string BuildCloneInfo(const std::string &bundleName, const std::string &userId,
-    const std::string &peerDeviceVersion, const std::string &iv)
+    const std::string &osVersion, const std::string &iv)
 {
-    std::string info = "[{\"type\":\"encryption_info\",\"detail\":{\"encryption_symkey\":\"" + VALID_SYMKEY +
+    std::string info = "{\"infos\":[{\"type\":\"unicast\",\"details\":["
+        "{\"type\":\"encryption_info\",\"detail\":{\"encryption_symkey\":\"" + VALID_SYMKEY +
         "\",\"encryption_algname\":\"AES256\",\"gcmParams_iv\":\"" + iv +
         "\"}},{\"type\":\"application_selection\",\"detail\":[{\"bundleName\":\"" + bundleName +
-        "\",\"accessTokenId\":100}]},{\"type\":\"userId\",\"detail\":\"" + userId + "\"}";
-    if (!peerDeviceVersion.empty()) {
-        info += ",{\"type\":\"peerDeviceVersion\",\"detail\":\"" + peerDeviceVersion + "\"}";
+        "\",\"accessTokenId\":100}]},{\"type\":\"user_info\",\"detail\":\"" + userId + "\"}]}";
+    if (!osVersion.empty()) {
+        info += ",{\"type\":\"unicast\",\"details\":[{\"type\":\"OSVersion\",\"detail\":\"" + osVersion + "\"}]}";
     }
-    return info + "]";
+    return info + "],\"concurrentId\":\"unittest\"}";
 }
 
 static std::string ReadBackupFileFromReply(MessageParcel &reply)
@@ -554,30 +561,45 @@ HWTEST_F(CloneManagerTest, BackupItemUnmarshal_MissingNonce_DoesNotFailChain, Te
 
 /**
  * @tc.name: CloneBackupInfoUnmarshal_WithAndWithoutPeerVersion
- * @tc.desc: CloneBackupInfo parses with and without the optional peerDeviceVersion entry
+ * @tc.desc: CloneBackupInfo parses the framework unicast shape (with/without OSVersion) and the legacy flat shape
  * @tc.type: FUNC
  * @tc.require:
  * @tc.author: htt1997
  */
-HWTEST_F(CloneManagerTest, CloneBackupInfoUnmarshal_WithAndWithoutPeerVersion, TestSize.Level0)
+HWTEST_F(CloneManagerTest, CloneBackupInfoUnmarshal_FrameworkAndLegacyFormats, TestSize.Level0)
 {
     const std::string encryptionDetail =
         "{\"encryption_symkey\":\"1,2,3\",\"encryption_algname\":\"AES256\","
         "\"gcmParams_iv\":\"97,160,201,177,46,37,129,18,112,220,107,106,25,231,15,15,"
         "58,85,31,83,123,216,211,2,222,49,122,72,21,251,83,16\"}";
-    const std::string withoutVersion = "[{\"type\":\"encryption_info\",\"detail\":" + encryptionDetail +
-        "},{\"type\":\"userId\",\"detail\":\"100\"}]";
-    CloneBackupInfo backupInfo;
-    EXPECT_TRUE(backupInfo.Unmarshal(withoutVersion));
-    EXPECT_TRUE(backupInfo.peerDeviceVersion.empty());
-    EXPECT_EQ(backupInfo.userId, "100");
+    const std::string unicastDetails = "[{\"type\":\"encryption_info\",\"detail\":" + encryptionDetail +
+        "},{\"type\":\"application_selection\",\"detail\":[{\"bundleName\":\"com.example.app\","
+        "\"accessTokenId\":100}]},{\"type\":\"user_info\",\"detail\":\"100\"}]";
 
-    const std::string withVersion = "[{\"type\":\"encryption_info\",\"detail\":" + encryptionDetail +
-        "},{\"type\":\"userId\",\"detail\":\"100\"},{\"type\":\"peerDeviceVersion\",\"detail\":\"7.1\"}]";
+    // Framework shape without the OSVersion entry: osVersion stays empty.
+    CloneBackupInfo backupInfo;
+    EXPECT_TRUE(backupInfo.Unmarshal("{\"infos\":[{\"type\":\"unicast\",\"details\":" + unicastDetails +
+        "}],\"concurrentId\":\"x\"}"));
+    EXPECT_TRUE(backupInfo.osVersion.empty());
+    EXPECT_EQ(backupInfo.userId, "100");
+    ASSERT_EQ(backupInfo.bundleInfos.size(), 1u);
+    EXPECT_EQ(backupInfo.bundleInfos[0].bundleName, "com.example.app");
+    EXPECT_EQ(backupInfo.encryptionInfo.algName, "AES256");
+
+    // Framework shape with the OSVersion entry in its own unicast element (four-segment form).
     CloneBackupInfo versioned;
-    EXPECT_TRUE(versioned.Unmarshal(withVersion));
-    EXPECT_EQ(versioned.peerDeviceVersion, "7.1");
+    EXPECT_TRUE(versioned.Unmarshal("{\"infos\":[{\"type\":\"unicast\",\"details\":" + unicastDetails +
+        "},{\"type\":\"unicast\",\"details\":[{\"type\":\"OSVersion\",\"detail\":\"7.0.0.115\"}]}],"
+        "\"concurrentId\":\"x\"}"));
+    EXPECT_EQ(versioned.osVersion, "7.0.0.115");
     EXPECT_EQ(versioned.userId, "100");
+
+    // Legacy flat shape (old framework) still parses, including the OSVersion tag.
+    CloneBackupInfo legacy;
+    EXPECT_TRUE(legacy.Unmarshal("[{\"type\":\"encryption_info\",\"detail\":" + encryptionDetail +
+        "},{\"type\":\"userId\",\"detail\":\"100\"},{\"type\":\"OSVersion\",\"detail\":\"7.1.0.1\"}]"));
+    EXPECT_EQ(legacy.userId, "100");
+    EXPECT_EQ(legacy.osVersion, "7.1.0.1");
 }
 
 /**
@@ -591,7 +613,9 @@ HWTEST_F(CloneManagerTest, IsOldOsVersion_Matrix, TestSize.Level0)
 {
     EXPECT_FALSE(IsOldOsVersion("7.1"));
     EXPECT_FALSE(IsOldOsVersion("7.1.0"));
+    EXPECT_FALSE(IsOldOsVersion("7.1.0.115"));
     EXPECT_FALSE(IsOldOsVersion("7.2.1"));
+    EXPECT_TRUE(IsOldOsVersion("7.0.0.115"));
     EXPECT_FALSE(IsOldOsVersion("8.0"));
     EXPECT_TRUE(IsOldOsVersion("7.0"));
     EXPECT_TRUE(IsOldOsVersion("6.10"));
@@ -1307,5 +1331,66 @@ HWTEST_F(CloneManagerTest, DeployedCloneSoLoadTest, TestSize.Level0)
     EXPECT_NE(dlsym(handle, "DistributedDataOnBackup"), nullptr);
     EXPECT_NE(dlsym(handle, "DistributedDataOnRestore"), nullptr);
     dlclose(handle);
+}
+
+/**
+ * @tc.name: CloneManagerBackupFdDemoTest
+ * @tc.desc: Demo: capture the backup file returned as fd by the real OnBackup flow for both
+ *           formats (mocked inputs: two stores sharing one password, old/new peer versions)
+ * @tc.type: FUNC
+ * @tc.require:
+ * @tc.author: htt1997
+ */
+HWTEST_F(CloneManagerTest, CloneManagerBackupFdDemoTest, TestSize.Level0)
+{
+    const std::string localDeviceId = "local_device_id";
+    const std::string userId = "100";
+    const std::string bundleName = "com.fd.demo";
+    const std::string passwordStr = "demo-pass";
+    const std::vector<uint8_t> password(passwordStr.begin(), passwordStr.end());
+    // Mock input metadata: two encrypted stores holding the SAME password.
+    ASSERT_TRUE(SaveEncryptedStoreMeta(localDeviceId, bundleName, "store1", userId, password));
+    ASSERT_TRUE(SaveEncryptedStoreMeta(localDeviceId, bundleName, "store2", userId, password));
+    printf("[demo] mock input: 2 encrypted stores, same password \"%s\", peer shared iv = \"%s...\"\n",
+        passwordStr.c_str(), VALID_IV.substr(0, 12).c_str());
+
+    auto backupPath = DirectoryManager::GetInstance().GetClonePath(userId);
+    printf("[demo] OnBackup writes to (DirectoryManager::GetClonePath): %s\n", backupPath.c_str());
+
+    const std::vector<std::pair<std::string, std::string>> rounds = {
+        {"7.0", "OLD format (shared iv)"},
+        {"7.1", "NEW format (per-item nonce)"},
+    };
+    for (const auto &round : rounds) {
+        MessageParcel data;
+        MessageParcel reply;
+        data.WriteString(BuildCloneInfo(bundleName, userId, round.first, VALID_IV));
+        ASSERT_EQ(OnBackup(data, reply, localDeviceId), 0);
+
+        int32_t fd = reply.ReadFileDescriptor();
+        ASSERT_GE(fd, 0);
+        std::string content;
+        char buffer[4096] = {0};
+        ssize_t size = 0;
+        while ((size = read(fd, buffer, sizeof(buffer))) > 0) {
+            content.append(buffer, static_cast<size_t>(size));
+        }
+        printf("[demo] ===== peerDeviceVersion=\"%s\" -> %s =====\n", round.first.c_str(), round.second.c_str());
+        printf("[demo] fd from reply = %d, backup file size = %zu bytes\n", fd, content.size());
+        printf("[demo] raw file content:\n%s\n", content.c_str());
+
+        SecretKeyBackupData backupData;
+        ASSERT_TRUE(Serializable::Unmarshall(content, backupData));
+        for (size_t i = 0; i < backupData.infos.size(); ++i) {
+            const auto &item = backupData.infos[i];
+            printf("[demo] item[%zu] dbName=%s nonce=\"%s\" (decoded %zu bytes) sKey=%s\n",
+                i, item.dbName.c_str(), item.nonce.c_str(), Base64::Decode(item.nonce).size(),
+                item.sKey.c_str());
+        }
+        close(fd);
+    }
+
+    CleanupStoreMeta(localDeviceId, bundleName, "store1", userId);
+    CleanupStoreMeta(localDeviceId, bundleName, "store2", userId);
 }
 } // namespace OHOS::Test
