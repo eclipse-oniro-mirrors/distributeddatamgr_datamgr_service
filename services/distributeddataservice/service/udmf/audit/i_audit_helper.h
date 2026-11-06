@@ -16,7 +16,9 @@
 #define DISTRIBUTEDDATAMGR_SERVICE_UDMF_AUDIT_I_AUDIT_HELPER_H
 
 #include <cstdint>
+#include <memory>
 
+#include "executor_pool.h"
 #include "unified_data.h"
 
 namespace OHOS {
@@ -25,7 +27,8 @@ namespace UDMF {
 class IAuditHelper {
 public:
     virtual ~IAuditHelper() = default;
-    virtual void ReportDragAuditEvent(const UnifiedData &unifiedData, int32_t userId, uint32_t tokenId) = 0;
+    virtual void ReportDragAuditEvent(const UnifiedData &unifiedData, int32_t userId, uint32_t tokenId,
+        const std::shared_ptr<ExecutorPool> &executors) = 0;
 };
 
 } // namespace UDMF

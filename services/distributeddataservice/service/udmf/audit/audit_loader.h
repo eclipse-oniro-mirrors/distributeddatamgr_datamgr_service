@@ -26,7 +26,8 @@ namespace UDMF {
 class AuditLoader {
 public:
     static AuditLoader &GetInstance();
-    void ReportDragAuditEvent(const UnifiedData &unifiedData, int32_t userId, uint32_t tokenId);
+    void ReportDragAuditEvent(const UnifiedData &unifiedData, int32_t userId, uint32_t tokenId,
+        const std::shared_ptr<ExecutorPool> &executors);
 
 private:
     AuditLoader() = default;
@@ -35,7 +36,6 @@ private:
     AuditLoader &operator=(const AuditLoader &) = delete;
 
     std::shared_ptr<IAuditHelper> GetAuditHelper();
-    bool IsEnterpriseDevice();
 
     std::mutex mutex_;
     std::shared_ptr<IAuditHelper> auditHelper_ = nullptr;

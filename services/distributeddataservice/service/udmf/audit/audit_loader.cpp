@@ -18,18 +18,10 @@
 
 #include <dlfcn.h>
 
-#include <string>
-
-#include <parameter.h>
-
 #include "log_print.h"
 
 namespace OHOS {
 namespace UDMF {
-
-constexpr const char *IS_ENTERPRISE_DEVICE = "const.edm.is_enterprise_device";
-constexpr const char *ENTERPRISE_DEVICE_FALSE = "false";
-constexpr const char *ENTERPRISE_DEVICE_TRUE = "true";
 
 using Creator = std::shared_ptr<OHOS::UDMF::IAuditHelper> (*)();
 
@@ -39,18 +31,8 @@ AuditLoader &AuditLoader::GetInstance()
     return loader;
 }
 
-bool AuditLoader::IsEnterpriseDevice()
-{
-    char isEnterpriseDeviceValue[PARAM_VALUE_LEN_MAX] = {0};
-    GetParameter(IS_ENTERPRISE_DEVICE, ENTERPRISE_DEVICE_FALSE, isEnterpriseDeviceValue, PARAM_VALUE_LEN_MAX);
-    return std::string(isEnterpriseDeviceValue) == ENTERPRISE_DEVICE_TRUE;
-}
-
 std::shared_ptr<IAuditHelper> AuditLoader::GetAuditHelper()
 {
-    if (!IsEnterpriseDevice()) {
-        return nullptr;
-    }
     std::lock_guard<std::mutex> lock(mutex_);
     if (auditHelper_ != nullptr) {
         return auditHelper_;
@@ -72,14 +54,15 @@ std::shared_ptr<IAuditHelper> AuditLoader::GetAuditHelper()
     return auditHelper_;
 }
 
-void AuditLoader::ReportDragAuditEvent(const UnifiedData &unifiedData, int32_t userId, uint32_t tokenId)
+void AuditLoader::ReportDragAuditEvent(const UnifiedData &unifiedData, int32_t userId, uint32_t tokenId,
+    const std::shared_ptr<ExecutorPool> &executors)
 {
     auto helper = GetAuditHelper();
     if (helper == nullptr) {
         ZLOGW("audit helper is nullptr");
         return;
     }
-    helper->ReportDragAuditEvent(unifiedData, userId, tokenId);
+    helper->ReportDragAuditEvent(unifiedData, userId, tokenId, executors);
 }
 } // namespace UDMF
 } // namespace OHOS

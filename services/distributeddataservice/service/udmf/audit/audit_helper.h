@@ -31,7 +31,8 @@ namespace UDMF {
 
 class AuditHelper : public IAuditHelper {
 public:
-    void ReportDragAuditEvent(const UnifiedData &unifiedData, int32_t userId, uint32_t tokenId) override;
+    void ReportDragAuditEvent(const UnifiedData &unifiedData, int32_t userId, uint32_t tokenId,
+        const std::shared_ptr<ExecutorPool> &executors) override;
 
 private:
     static size_t GetUtf8PrefixLength(const std::string &value, size_t maxBytes);
@@ -46,7 +47,7 @@ private:
     static nlohmann::json ConvertObjectToJson(std::shared_ptr<Object> object);
     static nlohmann::json ConvertEntriesToJson(const std::map<std::string, ValueType> &entries);
     static nlohmann::json ConvertRecordToJson(std::shared_ptr<UnifiedRecord> record, size_t index);
-    static void PublishAuditEvent(const std::string &auditData);
+    static int32_t PublishAuditEvent(const std::string &auditData);
 };
 
 } // namespace UDMF

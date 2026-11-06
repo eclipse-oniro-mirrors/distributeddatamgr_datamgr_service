@@ -26,6 +26,7 @@
 #include "executor_pool.h"
 #include "log_print.h"
 #include "pixelmap_loader.h"
+#include "temp_udata_loader.h"
 #include "unified_meta.h"
 #include "unified_record.h"
 #include "visibility.h"
@@ -35,9 +36,11 @@ namespace OHOS {
 namespace UDMF {
 
 constexpr const char *DRAG_AUDIT_EVENT = "usual.event.DRAG_AUDIT";
+constexpr const char *AUDIT_EXECUTOR_UNAVAILABLE = "AUDIT_EXECUTOR_UNAVAILABLE";
+constexpr const char *AUDIT_TASK_REJECTED = "AUDIT_TASK_REJECTED";
+constexpr const char *AUDIT_PUBLISH_FAILED = "AUDIT_PUBLISH_FAILED";
+constexpr const char *AUDIT_DATA_RESTORE_FAILED = "AUDIT_DATA_RESTORE_FAILED";
 static constexpr size_t MAX_DATA_SIZE = 10 * 1024;
-static constexpr size_t MAX_THREADS = 10;
-static constexpr size_t MIN_THREADS = 0;
 static constexpr size_t ENTRIES_BUDGET_RATIO = 60;
 static constexpr size_t JSON_NULL_SIZE = 4;
 static constexpr size_t JSON_BOOL_SIZE = 5;
@@ -55,12 +58,6 @@ static constexpr size_t JSON_BINARY_OVERHEAD = 25;
 static constexpr size_t JSON_PRINTABLE_CHAR_MIN = 0x20;
 static constexpr size_t PERCENTAGE_DENOMINATOR = 100;
 static constexpr size_t MAX_WANT_TRUNCATE_ITERATIONS = 20;
-
-static ExecutorPool &GetAuditExecutor()
-{
-    static ExecutorPool auditExecutor(MAX_THREADS, MIN_THREADS, "AuditExecutor");
-    return auditExecutor;
-}
 
 size_t AuditHelper::GetUtf8PrefixLength(const std::string &value, size_t maxBytes)
 {
@@ -288,6 +285,9 @@ nlohmann::json AuditHelper::ConvertEntriesToJson(const std::map<std::string, Val
 
 nlohmann::json AuditHelper::ConvertRecordToJson(std::shared_ptr<UnifiedRecord> record, size_t index)
 {
+    if (record == nullptr) {
+        return nlohmann::json::object();
+    }
     auto entries = record->GetEntries();
     if (entries != nullptr && !entries->empty()) {
         return ConvertEntriesToJson(*entries);
@@ -295,7 +295,7 @@ nlohmann::json AuditHelper::ConvertRecordToJson(std::shared_ptr<UnifiedRecord> r
     return nlohmann::json::object();
 }
 
-void AuditHelper::PublishAuditEvent(const std::string &auditData)
+int32_t AuditHelper::PublishAuditEvent(const std::string &auditData)
 {
     AAFwk::Want want;
     want.SetAction(DRAG_AUDIT_EVENT);
@@ -306,22 +306,36 @@ void AuditHelper::PublishAuditEvent(const std::string &auditData)
     publishInfo.SetOrdered(true);
     int32_t ret = EventFwk::CommonEventManager::NewPublishCommonEvent(event, publishInfo);
     if (ret != 0) {
-        ZLOGE("Failed to publish drag audit event, ret = %{public}d", ret);
+        ZLOGE("Failed to publish drag audit event, ret = %{public}d, reason = %{public}s", ret, AUDIT_PUBLISH_FAILED);
     } else {
         ZLOGI("Drag audit event published successfully");
     }
+    return ret;
 }
 
-void AuditHelper::ReportDragAuditEvent(const UnifiedData &unifiedData, int32_t userId, uint32_t tokenId)
+void AuditHelper::ReportDragAuditEvent(const UnifiedData &unifiedData, int32_t userId, uint32_t tokenId,
+    const std::shared_ptr<ExecutorPool> &executors)
 {
-    auto records = unifiedData.GetRecords();
+    if (executors == nullptr) {
+        ZLOGE("Audit task unavailable: %{public}s", AUDIT_EXECUTOR_UNAVAILABLE);
+        return;
+    }
     uint32_t sourceTokenId = 0;
     auto runtime = unifiedData.GetRuntime();
     if (runtime != nullptr) {
         sourceTokenId = runtime->tokenId;
     }
 
-    auto task = [records = std::move(records), userId, tokenId, sourceTokenId]() {
+    auto task = [data = unifiedData, userId, tokenId, sourceTokenId]() {
+        std::vector<std::shared_ptr<UnifiedRecord>> records = data.GetRecords();
+        if (TempUDataLoader::IsTempUData(data)) {
+            UnifiedData decoded;
+            if (!TempUDataLoader::Decode(data, decoded)) {
+                ZLOGE("Restore temp unified data failed: %{public}s", AUDIT_DATA_RESTORE_FAILED);
+                return;
+            }
+            records = decoded.GetRecords();
+        }
         nlohmann::json root;
         root["sourceTokenId"] = sourceTokenId;
         root["targetTokenId"] = tokenId;
@@ -364,7 +378,10 @@ void AuditHelper::ReportDragAuditEvent(const UnifiedData &unifiedData, int32_t u
         PublishAuditEvent(auditData);
     };
 
-    GetAuditExecutor().Execute(std::move(task));
+    ExecutorPool::TaskId taskId = executors->Execute(std::move(task));
+    if (taskId == ExecutorPool::INVALID_TASK_ID) {
+        ZLOGE("Audit task rejected: %{public}s", AUDIT_TASK_REJECTED);
+    }
 }
 } // namespace UDMF
 } // namespace OHOS
