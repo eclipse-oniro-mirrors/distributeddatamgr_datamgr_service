@@ -1021,15 +1021,7 @@ HWTEST_F(CloneManagerTest, CloneManagerRestoreNonceTriStateTest, TestSize.Level0
     backupData.infos[2].nonce = DistributedData::Base64::Encode(shortNonce);
     content = Serializable::Marshall(backupData);
 
-    MessageParcel data;
-    MessageParcel reply;
-    EXPECT_EQ(WriteContentToFile(SECRETKEY_BACKUP_FILE, content), 0);
-    int32_t fd = open(SECRETKEY_BACKUP_FILE.c_str(), O_RDONLY);
-    ASSERT_GE(fd, 0);
-    data.WriteFileDescriptor(fd);
-    data.WriteString(BuildCloneInfo(bundleName, userId, "", VALID_IV));
-    EXPECT_EQ(OnRestore(data, reply), 0);
-    close(fd);
+    EXPECT_EQ(RestoreBackupContent(bundleName, userId, content), 0);
 
     std::vector<uint8_t> restoredPassword;
     // Absent nonce and a nonce decoding to empty both fall back to the shared iv.
@@ -1284,28 +1276,12 @@ HWTEST_F(CloneManagerTest, CompatMatrix_VersionMisjudgeInjection, TestSize.Level
     ASSERT_TRUE(Serializable::Unmarshall(oldPeerContent, oldSideData));
     oldSideData.infos[0].nonce.clear();
     oldPeerContent = Serializable::Marshall(oldSideData);
-    EXPECT_EQ(WriteContentToFile(SECRETKEY_BACKUP_FILE, oldPeerContent), 0);
-    int32_t fd = open(SECRETKEY_BACKUP_FILE.c_str(), O_RDONLY);
-    ASSERT_GE(fd, 0);
-    MessageParcel oldPeerData;
-    MessageParcel oldPeerReply;
-    oldPeerData.WriteFileDescriptor(fd);
-    oldPeerData.WriteString(BuildCloneInfo(bundleName, userId, "", VALID_IV));
-    EXPECT_EQ(OnRestore(oldPeerData, oldPeerReply), 0);
-    close(fd);
+    EXPECT_EQ(RestoreBackupContent(bundleName, userId, oldPeerContent), 0);
     std::vector<uint8_t> restoredPassword;
     EXPECT_FALSE(LoadRestoredSecret(userId, bundleName, storeId, restoredPassword));
 
     // The same intact file still restores on a 7.1 device through the per-item nonce path.
-    EXPECT_EQ(WriteContentToFile(SECRETKEY_BACKUP_FILE, content), 0);
-    fd = open(SECRETKEY_BACKUP_FILE.c_str(), O_RDONLY);
-    ASSERT_GE(fd, 0);
-    MessageParcel newData;
-    MessageParcel newReply;
-    newData.WriteFileDescriptor(fd);
-    newData.WriteString(BuildCloneInfo(bundleName, userId, "", VALID_IV));
-    EXPECT_EQ(OnRestore(newData, newReply), 0);
-    close(fd);
+    EXPECT_EQ(RestoreBackupContent(bundleName, userId, content), 0);
     restoredPassword.clear();
     EXPECT_TRUE(LoadRestoredSecret(userId, bundleName, storeId, restoredPassword));
     EXPECT_EQ(restoredPassword, password);
