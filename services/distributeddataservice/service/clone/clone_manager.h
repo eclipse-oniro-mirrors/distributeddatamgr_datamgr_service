@@ -87,14 +87,13 @@ bool WriteBackupInfo(const std::string &content, const std::string &backupPath);
 
 /**
  * @brief Re-encrypt secret key with clone key
- * @param key The metadata key for loading secret key metadata
- * @param secretKeyMeta Output parameter for secret key metadata
+ * @param secretKeyMeta The secret key metadata loaded by the caller
  * @param metaData Store metadata containing user info
  * @param nonce In/out nonce: when empty, a fresh random per-item nonce is generated and
  *              written back; when non-empty it is used as-is (the shared iv for the old format)
  * @return Re-encrypted key bytes, empty if failed
  */
-std::vector<uint8_t> ReEncryptKey(const std::string &key, SecretKeyMetaData &secretKeyMeta,
+std::vector<uint8_t> ReEncryptKey(const SecretKeyMetaData &secretKeyMeta,
     const StoreMetaData &metaData, std::vector<uint8_t> &nonce);
 
 /**

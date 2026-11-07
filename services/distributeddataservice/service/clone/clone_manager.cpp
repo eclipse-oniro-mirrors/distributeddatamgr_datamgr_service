@@ -110,12 +110,9 @@ bool WriteBackupInfo(const std::string &content, const std::string &backupPath)
     return true;
 }
 
-std::vector<uint8_t> ReEncryptKey(const std::string &key, SecretKeyMetaData &secretKeyMeta,
+std::vector<uint8_t> ReEncryptKey(const SecretKeyMetaData &secretKeyMeta,
     const StoreMetaData &metaData, std::vector<uint8_t> &nonce)
 {
-    if (!MetaDataManager::GetInstance().LoadMeta(key, secretKeyMeta, true)) {
-        return {};
-    };
     CryptoManager::CryptoParams decryptParams = {
         .area = secretKeyMeta.area, .userId = metaData.user, .nonce = secretKeyMeta.nonce
     };
@@ -139,8 +136,11 @@ std::vector<uint8_t> ReEncryptKey(const std::string &key, SecretKeyMetaData &sec
 
 // Item-level failures are skipped by design, so the flow result alone cannot reveal them;
 // emit a summary log and a fault event whenever any item was skipped.
-void ReportClonePartialFail(const char *eventName, const std::string &userId, int32_t total, int32_t skipped)
+void ReportClone(const char *eventName, const std::string &userId, int32_t total, int32_t skipped)
 {
+    if (skipped <= 0) {
+        return;
+    }
     ZLOGE("Clone partial fail, total:%{public}d, skipped:%{public}d, userId:%{public}s", total, skipped,
         Anonymous::Change(userId).c_str());
     HiSysEventWrite(OHOS::HiviewDFX::HiSysEvent::Domain::DISTRIBUTED_DATAMGR, eventName,
@@ -169,10 +169,14 @@ std::string GetSecretKeyBackup(const std::vector<DistributedData::CloneBundleInf
             ++total;
             auto key = storeMeta.GetSecretKey();
             SecretKeyMetaData secretKeyMeta;
+            if (!MetaDataManager::GetInstance().LoadMeta(key, secretKeyMeta, true)) {
+                ++skipped;
+                continue;
+            };
             // Old format reuses the shared iv handed in by the framework; new format starts
             // with an empty nonce so ReEncryptKey generates a fresh random one per item.
             std::vector<uint8_t> nonce = oldFormat ? iv : std::vector<uint8_t>{};
-            auto reEncryptedKey = ReEncryptKey(key, secretKeyMeta, storeMeta, nonce);
+            auto reEncryptedKey = ReEncryptKey(secretKeyMeta, storeMeta, nonce);
             if (reEncryptedKey.size() == 0) {
                 ++skipped;
                 continue;
@@ -192,9 +196,7 @@ std::string GetSecretKeyBackup(const std::vector<DistributedData::CloneBundleInf
             backupInfos.infos.push_back(std::move(item));
         }
     }
-    if (skipped > 0) {
-        ReportClonePartialFail("CLONE_BACKUP_PARTIAL_FAIL", userId, total, skipped);
-    }
+    ReportClone("CLONE_BACKUP_PARTIAL_FAIL", userId, total, skipped);
     return Serializable::Marshall(backupInfos);
 }
 
@@ -369,9 +371,7 @@ int32_t OnRestore(MessageParcel &data, MessageParcel &reply)
             continue;
         }
     }
-    if (skipped > 0) {
-        ReportClonePartialFail("CLONE_RESTORE_PARTIAL_FAIL", backupInfo.userId, total, skipped);
-    }
+    ReportClone("CLONE_RESTORE_PARTIAL_FAIL", backupInfo.userId, total, skipped);
     DeleteCloneKey();
     return ReplyForRestore(reply, 0);
 }
