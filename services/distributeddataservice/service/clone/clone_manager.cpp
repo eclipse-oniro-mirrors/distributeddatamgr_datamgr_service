@@ -38,6 +38,11 @@ constexpr int KEY_SIZE = 32;
 // size used by CryptoManager's random-nonce path, so the two lengths intentionally differ.
 constexpr int AES_256_NONCE_SIZE = 32;
 constexpr int AES_GCM_NONCE_SIZE = 12;
+// The new per-item-nonce backup format starts at peer OS version 7.1.
+constexpr long NEW_FORMAT_VERSION_MAJOR = 7;
+constexpr long NEW_FORMAT_VERSION_MINOR = 1;
+// A parseable OS version needs at least "major.minor".
+constexpr size_t MIN_VERSION_SEGMENTS = 2;
 
 std::string GetBackupReplyCode(int replyCode, const std::string &info)
 {
@@ -384,14 +389,15 @@ bool IsOldOsVersion(const std::string &osVersion)
         return !token.empty() && std::all_of(token.begin(), token.end(),
             [](unsigned char c) { return std::isdigit(c); });
     };
-    if (tokens.size() < 2 || !isDigits(tokens[0]) || !isDigits(tokens[1])) {
+    if (tokens.size() < MIN_VERSION_SEGMENTS || !isDigits(tokens[0]) || !isDigits(tokens[1])) {
         ZLOGW("Peer device version form is unparseable, use old backup format, version:%{public}s",
             osVersion.c_str());
         return true;
     }
     long major = atol(tokens[0].c_str());
     long minor = atol(tokens[1].c_str());
-    return major < 7 || (major == 7 && minor < 1);
+    return major < NEW_FORMAT_VERSION_MAJOR ||
+        (major == NEW_FORMAT_VERSION_MAJOR && minor < NEW_FORMAT_VERSION_MINOR);
 }
 
 bool IsNumber(const std::string& str)

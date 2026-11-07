@@ -816,6 +816,26 @@ static bool LoadRestoredSecret(const std::string &userId, const std::string &bun
     return !restoredPassword.empty();
 }
 
+// Writes the backup content to the test file and runs OnRestore over it; returns the result.
+static int32_t RestoreBackupContent(const std::string &bundleName, const std::string &userId,
+    const std::string &content)
+{
+    MessageParcel data;
+    MessageParcel reply;
+    if (WriteContentToFile(SECRETKEY_BACKUP_FILE, content) != 0) {
+        return -1;
+    }
+    int32_t fd = open(SECRETKEY_BACKUP_FILE.c_str(), O_RDONLY);
+    if (fd < 0) {
+        return -1;
+    }
+    data.WriteFileDescriptor(fd);
+    data.WriteString(BuildCloneInfo(bundleName, userId, "", VALID_IV));
+    int32_t result = OnRestore(data, reply);
+    close(fd);
+    return result;
+}
+
 /**
  * @tc.name: CloneManagerOldFormatRestoreTest
  * @tc.desc: An old-format backup restores with the shared iv and the password round-trips
@@ -844,15 +864,7 @@ HWTEST_F(CloneManagerTest, CloneManagerOldFormatRestoreTest, TestSize.Level0)
     ASSERT_FALSE(content.empty());
     EXPECT_EQ(content.find("nonce"), std::string::npos);
 
-    MessageParcel data;
-    MessageParcel reply;
-    EXPECT_EQ(WriteContentToFile(SECRETKEY_BACKUP_FILE, content), 0);
-    int32_t fd = open(SECRETKEY_BACKUP_FILE.c_str(), O_RDONLY);
-    ASSERT_GE(fd, 0);
-    data.WriteFileDescriptor(fd);
-    data.WriteString(BuildCloneInfo(bundleName, userId, "", VALID_IV));
-    EXPECT_EQ(OnRestore(data, reply), 0);
-    close(fd);
+    EXPECT_EQ(RestoreBackupContent(bundleName, userId, content), 0);
 
     std::vector<uint8_t> restoredPassword;
     EXPECT_TRUE(LoadRestoredSecret(userId, bundleName, storeId, restoredPassword));
@@ -973,7 +985,7 @@ HWTEST_F(CloneManagerTest, CloneManagerRestoreSkipInvalidItemTest, TestSize.Leve
 
 /**
  * @tc.name: CloneManagerRestoreNonceTriStateTest
- * @tc.desc: Item nonce tri-state: absent or empty-decoding falls back to the shared iv; a wrong-length nonce fails the item
+ * @tc.desc: Item nonce tri-state: absent or empty-decoding falls back to the shared iv; wrong length fails the item
  * @tc.type: FUNC
  * @tc.require:
  * @tc.author: htt1997
