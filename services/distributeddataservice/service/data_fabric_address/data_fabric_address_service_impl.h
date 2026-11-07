@@ -16,6 +16,7 @@
 #ifndef DATA_FABRIC_ADDRESS_SERVICE_IMPL_H
 #define DATA_FABRIC_ADDRESS_SERVICE_IMPL_H
 
+#include <cstdint>
 #include <list>
 #include <map>
 
@@ -47,8 +48,9 @@ private:
         std::weak_ptr<DataFabricAddressServiceImpl> service_;
     };
     struct SubscribeCacheData {
-        sptr<IRemoteObject::DeathRecipient> cbDeathRecipient_ { nullptr };
-        sptr<IDataFabricAddressCallback> callback_ { nullptr };
+        sptr<IRemoteObject::DeathRecipient> cbDeathRecipient { nullptr };
+        sptr<IDataFabricAddressCallback> callback { nullptr };
+        uint64_t callerFullTokenId { 0 };
     };
     class DataFabricAddressStatic : public DistributedData::StaticActs {
     public:
@@ -71,8 +73,9 @@ private:
     int32_t ValidateParams(const DataFabricAddressParams &inputParams, NativePreferences::LocationPoint& homePoint,
         NativePreferences::LocationPoint& companyPoint);
     bool AddCallback(const DataFabricAddressParams& inputParams, sptr<IDataFabricAddressCallback> callback);
-    bool RemoveCallback(const DataFabricAddressParams& inputParams);
-    bool ObtainWgs84ReferencePoints(const ReferenceLocationInfo &referenceInfo,
+    int32_t RemoveCallback(const DataFabricAddressParams& inputParams, sptr<IRemoteObject>& callbackObject,
+        sptr<IRemoteObject::DeathRecipient>& deathRecipient);
+    int32_t ObtainWgs84ReferencePoints(const ReferenceLocationInfo &referenceInfo,
         NativePreferences::LocationPoint& homePoint, NativePreferences::LocationPoint& companyPoint);
     int32_t IsSupportedCommuteDistance(const NativePreferences::LocationPoint& homePoint,
         const NativePreferences::LocationPoint& companyPoint);

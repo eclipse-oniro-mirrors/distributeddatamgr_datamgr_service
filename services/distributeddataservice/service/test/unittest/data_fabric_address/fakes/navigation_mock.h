@@ -24,6 +24,8 @@ namespace DataFabricAddressTest {
 void ResetNavigationManagerMock();
 void SetSubscribeNavigationManagerResult(int32_t result);
 void SetUnsubscribeNavigationManagerResult(int32_t result);
+int32_t GetSubscribeActionCount();
+int32_t GetLastSubscribeAction();
 
 void ResetNavigationCommonUtilsMock();
 void SetGetDistanceResult(bool result, double distance);
