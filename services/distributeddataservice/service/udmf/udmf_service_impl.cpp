@@ -36,7 +36,6 @@
 #include "device_matrix.h"
 #include "drag_proxy_authorization.h"
 #include "ipc_skeleton.h"
-#include "security_guard/drag_auth_event_encoder.h"
 #include "tokenid_kit.h"
 #include "udmf_fuse_session_manager.h"
 #ifdef WITH_DLP
@@ -59,6 +58,11 @@
 #include "unified_html_record_process.h"
 #include "uri_permission_manager.h"
 #include "utils/anonymous.h"
+
+#ifdef UDMF_SECURITY_GUARD_ENABLED
+#include "security_guard/drag_auth_coordinator.h"
+#include "security_guard/drag_auth_event_encoder.h"
+#endif
 
 namespace OHOS {
 namespace UDMF {
@@ -176,16 +180,21 @@ std::shared_ptr<UdmfServiceImpl> UdmfServiceImpl::GetService()
 
 UdmfServiceImpl::UdmfServiceImpl()
 {
+#ifdef UDMF_SECURITY_GUARD_ENABLED
+    authDegradationPolicy_ = std::make_shared<AuthDegradationPolicy>();
     authEventBuilder_ = CreateDragAuthEventBuilder();
+#endif
     CheckerManager::GetInstance().LoadCheckers();
 }
 
 UdmfServiceImpl::~UdmfServiceImpl()
 {
+#ifdef UDMF_SECURITY_GUARD_ENABLED
     auto *delegate = SecurityGuardDelegate::GetInstance();
     if (delegate != nullptr) {
         delegate->Stop();
     }
+#endif
 }
 
 int32_t UdmfServiceImpl::AuthorizeDrag(const UnifiedData &data, uint32_t targetTokenId)
@@ -194,6 +203,7 @@ int32_t UdmfServiceImpl::AuthorizeDrag(const UnifiedData &data, uint32_t targetT
     if (runtime == nullptr) {
         return E_ERROR;
     }
+#ifdef UDMF_SECURITY_GUARD_ENABLED
     // Token equality is meaningful only on this device; validate the saved application identity too.
     bool local = !runtime->deviceId.empty() && runtime->deviceId == PreProcessUtils::GetLocalDeviceId();
     if (local && runtime->tokenId == targetTokenId && VerifySavedTokenId(runtime)) {
@@ -208,6 +218,9 @@ int32_t UdmfServiceImpl::AuthorizeDrag(const UnifiedData &data, uint32_t targetT
         return E_INVALID_PARAMETERS;
     }
     return result.decision == DragAuthDecision::DENY ? E_NO_PERMISSION : E_OK;
+#else
+    return E_OK;
+#endif
 }
 
 int32_t UdmfServiceImpl::RegisterVirtualEntry(
@@ -1283,18 +1296,23 @@ int32_t UdmfServiceImpl::QueryDataCommon(
 
 void UdmfServiceImpl::Factory::BindExecutor(const std::shared_ptr<ExecutorPool> &executors)
 {
+#ifdef UDMF_SECURITY_GUARD_ENABLED
     staticActs_->BindExecutor(executors);
+#endif
 }
 
 void UdmfServiceImpl::UdmfStatic::BindExecutor(const std::shared_ptr<ExecutorPool> &executors)
 {
+#ifdef UDMF_SECURITY_GUARD_ENABLED
     std::lock_guard<std::mutex> lock(abilityMutex_);
     abilityExecutors_ = executors;
     ScheduleRegistration();
+#endif
 }
 
 void UdmfServiceImpl::UdmfStatic::ScheduleRegistration()
 {
+#ifdef UDMF_SECURITY_GUARD_ENABLED
     if (!securityGuardReady_ || !abilityExecutors_) {
         return;
     }
@@ -1304,10 +1322,12 @@ void UdmfServiceImpl::UdmfStatic::ScheduleRegistration()
             DragAuthCoordinator::Diagnose(AuthReason::PROVIDER_UNAVAILABLE);
         }
     });
+#endif
 }
 
 int32_t UdmfServiceImpl::UdmfStatic::OnSystemAbilityAdded(int32_t systemAbilityId, const std::string &deviceId)
 {
+#ifdef UDMF_SECURITY_GUARD_ENABLED
     if (systemAbilityId != DATA_COLLECT_MANAGER_SA_ID || !deviceId.empty()) {
         return FeatureSystem::STUB_SUCCESS;
     }
@@ -1320,11 +1340,13 @@ int32_t UdmfServiceImpl::UdmfStatic::OnSystemAbilityAdded(int32_t systemAbilityI
         delegate->OnServiceAvailable();
     }
     ScheduleRegistration();
+#endif
     return FeatureSystem::STUB_SUCCESS;
 }
 
 int32_t UdmfServiceImpl::UdmfStatic::OnSystemAbilityRemoved(int32_t systemAbilityId, const std::string &deviceId)
 {
+#ifdef UDMF_SECURITY_GUARD_ENABLED
     if (systemAbilityId != DATA_COLLECT_MANAGER_SA_ID || !deviceId.empty()) {
         return FeatureSystem::STUB_SUCCESS;
     }
@@ -1337,13 +1359,15 @@ int32_t UdmfServiceImpl::UdmfStatic::OnSystemAbilityRemoved(int32_t systemAbilit
     if (delegate != nullptr) {
         delegate->OnServiceUnavailable();
     }
+#endif
     return FeatureSystem::STUB_SUCCESS;
 }
 
 int32_t UdmfServiceImpl::OnBind(const BindInfo &bindInfo)
 {
-    ZLOGI("SG provider registration waits for local SA=%{public}d", DATA_COLLECT_MANAGER_SA_ID);
     executors_ = bindInfo.executors;
+#ifdef UDMF_SECURITY_GUARD_ENABLED
+    ZLOGI("SG provider registration waits for local SA=%{public}d", DATA_COLLECT_MANAGER_SA_ID);
     if (auto *delegate = SecurityGuardDelegate::GetInstance()) {
         delegate->BindTaskDispatcher([weak = std::weak_ptr<ExecutorPool>(executors_)](auto task) {
             auto pool = weak.lock();
@@ -1351,6 +1375,7 @@ int32_t UdmfServiceImpl::OnBind(const BindInfo &bindInfo)
         });
     }
     factory_.BindExecutor(executors_);
+#endif
     DelayDataPrepareContainer::GetInstance().BindExecutor(executors_);
     UdmfFuseSessionManager::GetInstance().SetExecutor(bindInfo.executors);
     StoreCache::GetInstance().SetThreadPool(bindInfo.executors);

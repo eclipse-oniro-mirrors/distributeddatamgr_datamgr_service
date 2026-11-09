@@ -60,11 +60,6 @@ ohos_source_set("udmf_server") {
     "preprocess/data_handler.cpp",
     "preprocess/preprocess_utils.cpp",
     "preprocess/udmf_notifier_proxy.cpp",
-    "security_guard/auth_degradation_policy.cpp",
-    "security_guard/auth_event_builder.cpp",
-    "security_guard/auth_timeout_policy.cpp",
-    "security_guard/drag_auth_coordinator.cpp",
-    "security_guard/drag_auth_event_encoder.cpp",
     "store/drag_observer.cpp",
     "store/observer_factory.cpp",
     "store/runtime_store.cpp",
@@ -84,7 +79,6 @@ ohos_source_set("udmf_server") {
 
   deps = [
     "${data_service_path}/adapter/qos:distributeddata_qos",
-    "${data_service_path}/adapter/security_guard:distributeddata_security_guard",
     "${data_service_path}/framework:distributeddatasvcfwk",
     "${data_service_path}/service/permission:distributeddata_permit",
   ]
@@ -120,9 +114,22 @@ ohos_source_set("udmf_server") {
     "udmf:virtual_entry_provider_proxy",
   ]
 
+  defines = []
+  if (udmf_security_guard_enabled) {
+    defines += [ "UDMF_SECURITY_GUARD_ENABLED" ]
+    sources += [
+      "security_guard/auth_degradation_policy.cpp",
+      "security_guard/auth_event_builder.cpp",
+      "security_guard/auth_timeout_policy.cpp",
+      "security_guard/drag_auth_coordinator.cpp",
+      "security_guard/drag_auth_event_encoder.cpp",
+    ]
+    deps += [ "${data_service_path}/adapter/security_guard:distributeddata_security_guard" ]
+  }
+
   if (udmf_dlp_part_enabled) {
     external_deps += [ "dlp_permission_service:libdlp_permission_sdk" ]
-    defines = [ "WITH_DLP" ]
+    defines += [ "WITH_DLP" ]
   }
 
   cflags_cc = [

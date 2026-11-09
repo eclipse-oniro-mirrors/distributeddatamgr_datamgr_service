@@ -23,13 +23,14 @@
 #include "metadata/meta_data_manager.h"
 #include "metadata/store_meta_data.h"
 #include "permission/checker_manager.h"
-#include "security_guard/drag_auth_coordinator.h"
 #include "store_cache.h"
 #include "udmf_notifier_proxy.h"
 #include "udmf_service_stub.h"
 #include "uri.h"
 namespace OHOS {
 namespace UDMF {
+class AuthEventBuilder;
+class AuthDegradationPolicy;
 /*
  * UDMF server implementation
  */
@@ -182,7 +183,7 @@ private:
     };
     static Factory factory_;
     std::shared_ptr<const AuthEventBuilder> authEventBuilder_;
-    std::shared_ptr<AuthDegradationPolicy> authDegradationPolicy_ = std::make_shared<AuthDegradationPolicy>();
+    std::shared_ptr<AuthDegradationPolicy> authDegradationPolicy_;
     mutable std::recursive_mutex cacheMutex_;
     std::map<std::string, std::vector<Privilege>> privilegeCache_{};
     std::shared_ptr<ExecutorPool> executors_;
