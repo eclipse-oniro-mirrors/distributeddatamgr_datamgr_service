@@ -57,6 +57,9 @@ public:
         SecurityGuardDelegate::Result result;
         {
             std::lock_guard<std::mutex> lock(mutex_);
+            if (accepted_ || completed_) {
+                return;
+            }
             accepted_ = true;
             if (status == SecurityGuardDelegate::DispatchStatus::DISPATCHED && !buffered_) {
                 return;
@@ -258,7 +261,8 @@ SecurityGuardDelegate::DispatchStatus SecurityGuardDelegateImpl::Request(const E
     }
     dispatchCount_->fetch_add(1);
     auto permit = std::shared_ptr<void>(nullptr, [count = dispatchCount_](void *) { count->fetch_sub(1); });
-    auto guarded = [weak = std::weak_ptr<PolicyStore>(policyStore_), completion](const Result &result) {
+    auto guarded = [weak = std::weak_ptr<PolicyStore>(policyStore_), completion = std::move(completion)](
+                       const Result &result) {
         auto store = weak.lock();
         if (!store) {
             return;

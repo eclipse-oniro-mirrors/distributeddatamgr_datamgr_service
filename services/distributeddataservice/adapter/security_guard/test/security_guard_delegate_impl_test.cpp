@@ -51,8 +51,8 @@ public:
         stops_++;
     }
     std::function<void()> onRequest_;
-    int requests_ = 0;
-    int stops_ = 0;
+    int32_t requests_ = 0;
+    int32_t stops_ = 0;
     bool respond_ = true;
     bool duplicate_ = false;
     DispatchStatus dispatch_ = DispatchStatus::DISPATCHED;
@@ -776,6 +776,80 @@ HWTEST_F(SecurityGuardDelegateTest, Request_DuplicateInlineAndStoppedAsyncResult
     provider->saved_({ Strategy::ALLOW, {} });
     EXPECT_EQ(completed, 1);
     EXPECT_EQ(delegate.Start(), Status::UNAVAILABLE);
+}
+
+/**
+ * @tc.name: Request_RepeatedInlineDispatch_CompletesOnce
+ * @tc.desc: Repeated task execution cannot invoke a completion already consumed by an inline result.
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(SecurityGuardDelegateTest, Request_RepeatedInlineDispatch_CompletesOnce, TestSize.Level1)
+{
+    auto provider = std::make_shared<FakeAuthProvider>();
+    SecurityGuardDelegateImpl delegate(
+        [&](auto, const auto &, auto &output) {
+            output = provider;
+            return 0;
+        },
+        [](auto task) {
+            task();
+            task();
+            return true;
+        });
+    ASSERT_EQ(delegate.Start(), Status::READY);
+    int32_t completed = 0;
+    SecurityGuardDelegate::Result result;
+    EXPECT_EQ(delegate.Request({},
+                  [&](const auto &response) {
+                      ++completed;
+                      result = response;
+                  }),
+        DispatchStatus::DISPATCHED);
+    EXPECT_EQ(provider->requests_, 2);
+    EXPECT_EQ(completed, 1);
+    EXPECT_EQ(result.dispatchStatus, DispatchStatus::DISPATCHED);
+    EXPECT_EQ(result.mergedStrategy, Strategy::ALLOW);
+}
+
+/**
+ * @tc.name: Request_RepeatedPendingDispatch_PreservesFirstAdmission
+ * @tc.desc: Repeated admission cannot reject an accepted request that is still waiting for its callback.
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(SecurityGuardDelegateTest, Request_RepeatedPendingDispatch_PreservesFirstAdmission, TestSize.Level1)
+{
+    auto provider = std::make_shared<FakeAuthProvider>();
+    provider->respond_ = false;
+    SecurityGuardDelegateImpl delegate(
+        [&](auto, const auto &, auto &output) {
+            output = provider;
+            return 0;
+        },
+        [provider](auto task) {
+            task();
+            provider->dispatch_ = DispatchStatus::REJECTED;
+            task();
+            return true;
+        });
+    ASSERT_EQ(delegate.Start(), Status::READY);
+    int32_t completed = 0;
+    SecurityGuardDelegate::Result result;
+    EXPECT_EQ(delegate.Request({},
+                  [&](const auto &response) {
+                      ++completed;
+                      result = response;
+                  }),
+        DispatchStatus::DISPATCHED);
+    EXPECT_EQ(provider->requests_, 2);
+    EXPECT_EQ(completed, 0);
+    ASSERT_TRUE(provider->saved_);
+    provider->saved_({ Strategy::ALLOW, {} });
+    provider->saved_({ Strategy::DENY, {} });
+    EXPECT_EQ(completed, 1);
+    EXPECT_EQ(result.dispatchStatus, DispatchStatus::DISPATCHED);
+    EXPECT_EQ(result.mergedStrategy, Strategy::ALLOW);
 }
 
 /**
