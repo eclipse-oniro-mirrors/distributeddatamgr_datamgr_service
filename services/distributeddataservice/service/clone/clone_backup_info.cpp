@@ -67,6 +67,8 @@ bool CloneBackupInfo::Unmarshal(const json &node)
             GetValue(items[i], "detail", bundleInfos);
         } else if (type == "userId") {
             GetValue(items[i], "detail", userId);
+        } else if (type == "OSVersion") {
+            GetValue(items[i], "detail", osVersion);
         }
     }
     return true;

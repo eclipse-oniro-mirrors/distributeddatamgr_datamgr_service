@@ -38,6 +38,7 @@ struct CloneBackupInfo final : public Serializable {
     CloneEncryptionInfo encryptionInfo;
     std::vector<CloneBundleInfo> bundleInfos;
     std::string userId;
+    std::string osVersion; // peer OS version from the backup framework's "OSVersion" entry, e.g. "7.0.0.115"
     bool Marshal(json &node) const override;
     bool Unmarshal(const json &node) override;
 };

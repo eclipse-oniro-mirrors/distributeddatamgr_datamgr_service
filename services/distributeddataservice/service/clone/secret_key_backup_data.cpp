@@ -54,6 +54,9 @@ bool SecretKeyBackupData::BackupItem::Marshal(json &node) const
     SetValue(node[GET_NAME(sKey)], sKey);
     SetValue(node[GET_NAME(storeType)], storeType);
     SetValue(node[GET_NAME(area)], area);
+    if (!nonce.empty()) {
+        SetValue(node[GET_NAME(nonce)], nonce);
+    }
     return true;
 }
 
@@ -67,6 +70,9 @@ bool SecretKeyBackupData::BackupItem::Unmarshal(const json &node)
     ret = GetValue(node, GET_NAME(sKey), sKey) && ret;
     ret = GetValue(node, GET_NAME(storeType), storeType) && ret;
     ret = GetValue(node, GET_NAME(area), area) && ret;
+    // nonce is optional: its absence means the pre-7.1 format, so it must stay out of the
+    // required-field chain above.
+    GetValue(node, GET_NAME(nonce), nonce);
     return ret;
 }
 

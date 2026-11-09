@@ -1121,7 +1121,10 @@ HWTEST_F(KvStoreDataServiceTest, ReEncryptKey001, TestSize.Level0)
     SecretKeyMetaData secretKeyMeta;
     StoreMetaData storeMeta;
     std::vector<uint8_t> iv;
-    auto ret = ReEncryptKey("", secretKeyMeta, storeMeta, iv);
+    // Metadata loading moved to the caller: a failed load leaves the meta empty and the
+    // re-encryption yields nothing.
+    EXPECT_FALSE(MetaDataManager::GetInstance().LoadMeta("", secretKeyMeta, true));
+    auto ret = ReEncryptKey(secretKeyMeta, storeMeta, iv);
     EXPECT_TRUE(ret.empty());
 }
 
@@ -1159,7 +1162,8 @@ HWTEST_F(KvStoreDataServiceTest, ReEncryptKey002, TestSize.Level0)
 
     SecretKeyMetaData secretKeyMeta;
     std::vector<uint8_t> iv;
-    auto ret = ReEncryptKey(testMeta.GetSecretKey(), secretKeyMeta, testMeta, iv);
+    MetaDataManager::GetInstance().LoadMeta(testMeta.GetSecretKey(), secretKeyMeta, true);
+    auto ret = ReEncryptKey(secretKeyMeta, testMeta, iv);
     EXPECT_TRUE(ret.empty());
 }
 
@@ -1203,7 +1207,8 @@ HWTEST_F(KvStoreDataServiceTest, ReEncryptKey003, TestSize.Level0)
 
     SecretKeyMetaData secretKeyMeta;
     std::vector<uint8_t> iv;
-    auto ret = ReEncryptKey(testMeta.GetSecretKey(), secretKeyMeta, testMeta, iv);
+    MetaDataManager::GetInstance().LoadMeta(testMeta.GetSecretKey(), secretKeyMeta, true);
+    auto ret = ReEncryptKey(secretKeyMeta, testMeta, iv);
     EXPECT_TRUE(ret.empty());
 }
 
@@ -1340,7 +1345,8 @@ HWTEST_F(KvStoreDataServiceTest, OnExtensionRestore_RestoreSuccess, TestSize.Lev
     ASSERT_EQ(ImportCloneKey(symKey), true);
 
     SecretKeyMetaData secretKeyMeta;
-    auto reEncryptedKey = ReEncryptKey(testMeta.GetSecretKey(), secretKeyMeta, testMeta, iv);
+    MetaDataManager::GetInstance().LoadMeta(testMeta.GetSecretKey(), secretKeyMeta, true);
+    auto reEncryptedKey = ReEncryptKey(secretKeyMeta, testMeta, iv);
     DeleteCloneKey();
     auto encodeEncryptedKey = DistributedData::Base64::Encode(reEncryptedKey);
 

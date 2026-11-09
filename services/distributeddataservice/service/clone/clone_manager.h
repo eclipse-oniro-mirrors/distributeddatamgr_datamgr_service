@@ -87,25 +87,27 @@ bool WriteBackupInfo(const std::string &content, const std::string &backupPath);
 
 /**
  * @brief Re-encrypt secret key with clone key
- * @param key The metadata key for loading secret key metadata
- * @param secretKeyMeta Output parameter for secret key metadata
+ * @param secretKeyMeta The secret key metadata loaded by the caller
  * @param metaData Store metadata containing user info
- * @param iv The initialization vector for encryption
+ * @param nonce In/out nonce: when empty, a fresh random per-item nonce is generated and
+ *              written back; when non-empty it is used as-is (the shared iv for the old format)
  * @return Re-encrypted key bytes, empty if failed
  */
-std::vector<uint8_t> ReEncryptKey(const std::string &key, SecretKeyMetaData &secretKeyMeta,
-    const StoreMetaData &metaData, const std::vector<uint8_t> &iv);
+std::vector<uint8_t> ReEncryptKey(const SecretKeyMetaData &secretKeyMeta,
+    const StoreMetaData &metaData, std::vector<uint8_t> &nonce);
 
 /**
  * @brief Get secret key backup for specified bundles
  * @param bundleInfos The bundle information list
  * @param userId The user ID
- * @param iv The initialization vector for encryption
+ * @param iv The shared initialization vector for the old format
  * @param localDeviceId The local device ID
+ * @param osVersion The peer OS version; old or unknown versions emit the old format
  * @return Serialized secret key backup data
  */
 std::string GetSecretKeyBackup(const std::vector<DistributedData::CloneBundleInfo> &bundleInfos,
-    const std::string &userId, const std::vector<uint8_t> &iv, const std::string &localDeviceId);
+    const std::string &userId, const std::vector<uint8_t> &iv, const std::string &localDeviceId,
+    const std::string &osVersion = "");
 
 
 /**
@@ -133,6 +135,15 @@ bool ParseSecretKeyFile(MessageParcel &data, SecretKeyBackupData &backupData);
  */
 bool RestoreSecretKey(
     const SecretKeyBackupData::BackupItem &item, const std::string &userId, const std::vector<uint8_t> &iv);
+
+/**
+ * @brief Check whether the peer device should be treated as an old (pre-7.1) OS version
+ * @param osVersion The peer OS version parsed from the backup framework's OSVersion entry
+ * @return true for pre-7.1 versions and for empty or unparseable forms (compatibility
+ *         first: backup falls back to the old format); false only for parseable
+ *         "major.minor" forms at or above 7.1
+ */
+bool IsOldOsVersion(const std::string &osVersion);
 
 /**
  * @brief Check if a string contains only numeric characters (0-9)
