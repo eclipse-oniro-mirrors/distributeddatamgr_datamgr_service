@@ -51,11 +51,11 @@ void RdbServiceImpl::SetDumpStackTags(const StoreMetaData &meta)
         replicaDir.pop_back();
     }
     // Mirrors SqliteUtils::GetSlavePath in relational_store (not exported for cross-
-    // component use): <name-without-.db> + "-slave". A custom replicaPath is a directory
-    // holding <store>-slave, while the default replica sits beside the primary db as
-    // <dbPath>-slave. Both the custom-replica and default-replica layouts must be covered.
-    std::string slavePath = replicaDir.empty() ? RemoveSuffix(meta.dataDir) + "-slave"
-                                               : replicaDir + "/" + meta.storeId + "-slave";
+    // component use): <name-without-.db> + "_slave.db". A custom replicaPath is a directory
+    // holding <store>_slave.db, while the default replica sits beside the primary db as
+    // <dbPath>_slave.db. Both the custom-replica and default-replica layouts must be covered.
+    std::string slavePath = replicaDir.empty() ? RemoveSuffix(meta.dataDir) + "_slave.db"
+                                               : replicaDir + "/" + meta.storeId + "_slave.db";
     // The replica db is created lazily (first backup); tag it only when it exists so
     // single-mode stores never produce failed-ioctl noise.
     if (access(slavePath.c_str(), F_OK) == 0) {
