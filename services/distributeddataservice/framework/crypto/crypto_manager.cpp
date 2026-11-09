@@ -272,7 +272,28 @@ std::vector<uint8_t> CryptoManager::Decrypt(const std::vector<uint8_t> &source, 
     }
     ZLOGI("Retry decrypt with legacy storage level, area:%{public}d, level:%{public}u, legacy:%{public}u",
         decryptParams.area, storageLevel, legacyLevel);
-    return DecryptWithLevel(source, decryptParams, legacyLevel);
+    auto legacyPassword = DecryptWithLevel(source, decryptParams, legacyLevel);
+    if (!legacyPassword.empty()) {
+        MarkLegacyKey(source);
+    }
+    return legacyPassword;
+}
+
+void CryptoManager::MarkLegacyKey(const std::vector<uint8_t> &source)
+{
+    std::lock_guard<std::mutex> lock(legacyMutex_);
+    legacyKeys_.insert(source);
+}
+
+bool CryptoManager::PopLegacyKey(const std::vector<uint8_t> &source)
+{
+    std::lock_guard<std::mutex> lock(legacyMutex_);
+    auto it = legacyKeys_.find(source);
+    if (it == legacyKeys_.end()) {
+        return false;
+    }
+    legacyKeys_.erase(it);
+    return true;
 }
 
 int32_t CryptoManager::PrepareRootKey(uint32_t storageLevel, const std::string &userId)
@@ -354,9 +375,10 @@ void CryptoManager::UpdateSecretMeta(const std::vector<uint8_t> &password, const
     if (password.empty()) {
         return;
     }
-    // EL5 had its storage level remapped (legacy != current), so the stored
-    // sKey may still be under the legacy level and must be migrated to the current one.
-    bool needMigrate = (GetLegacyStorageLevel(secretKey.area) != GetStorageLevel(secretKey.area));
+    // needMigrate only when this sKey was just decrypted via the legacy-level fallback:
+    // Decrypt() records the source ciphertext on fallback success, and it is consumed
+    // (cleared) here, so already-migrated stores take the early return below with no extra Encrypt.
+    bool needMigrate = PopLegacyKey(secretKey.sKey);
     if (!needMigrate && !secretKey.nonce.empty() && secretKey.area >= 0) {
         return;
     }
