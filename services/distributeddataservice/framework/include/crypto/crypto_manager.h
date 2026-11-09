@@ -17,7 +17,6 @@
 
 #include <cstdint>
 #include <mutex>
-#include <set>
 #include <vector>
 #include "metadata/meta_data_saver.h"
 #include "metadata/secret_key_meta_data.h"
@@ -86,8 +85,6 @@ private:
 
     uint32_t GetStorageLevel(int32_t area);
     uint32_t GetLegacyStorageLevel(int32_t area);
-    void MarkLegacyKey(const std::vector<uint8_t> &source);
-    bool PopLegacyKey(const std::vector<uint8_t> &source);
     std::vector<uint8_t> DecryptWithLevel(
         const std::vector<uint8_t> &source, CryptoParams &decryptParams, uint32_t storageLevel);
     int32_t GenerateRootKey(uint32_t storageLevel, const std::string &userId);
@@ -98,8 +95,6 @@ private:
     std::vector<uint8_t> vecRootKeyAlias_{};
     std::vector<uint8_t> vecNonce_{};
     std::vector<uint8_t> vecAad_{};
-    std::mutex legacyMutex_;
-    std::set<std::vector<uint8_t>> legacyKeys_{};
 };
 } // namespace OHOS::DistributedData
 #endif // OHOS_DISTRIBUTED_DATA_SERVICES_SERVICE_CRYPTO_CRYPTO_MANAGER_H

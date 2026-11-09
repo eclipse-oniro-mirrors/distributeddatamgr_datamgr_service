@@ -272,28 +272,7 @@ std::vector<uint8_t> CryptoManager::Decrypt(const std::vector<uint8_t> &source, 
     }
     ZLOGI("Retry decrypt with legacy storage level, area:%{public}d, level:%{public}u, legacy:%{public}u",
         decryptParams.area, storageLevel, legacyLevel);
-    auto legacyPassword = DecryptWithLevel(source, decryptParams, legacyLevel);
-    if (!legacyPassword.empty()) {
-        MarkLegacyKey(source);
-    }
-    return legacyPassword;
-}
-
-void CryptoManager::MarkLegacyKey(const std::vector<uint8_t> &source)
-{
-    std::lock_guard<std::mutex> lock(legacyMutex_);
-    legacyKeys_.insert(source);
-}
-
-bool CryptoManager::PopLegacyKey(const std::vector<uint8_t> &source)
-{
-    std::lock_guard<std::mutex> lock(legacyMutex_);
-    auto it = legacyKeys_.find(source);
-    if (it == legacyKeys_.end()) {
-        return false;
-    }
-    legacyKeys_.erase(it);
-    return true;
+    return DecryptWithLevel(source, decryptParams, legacyLevel);
 }
 
 int32_t CryptoManager::PrepareRootKey(uint32_t storageLevel, const std::string &userId)
@@ -375,10 +354,10 @@ void CryptoManager::UpdateSecretMeta(const std::vector<uint8_t> &password, const
     if (password.empty()) {
         return;
     }
-    // needMigrate only when this sKey was just decrypted via the legacy-level fallback:
-    // Decrypt() records the source ciphertext on fallback success, and it is consumed
-    // (cleared) here, so already-migrated stores take the early return below with no extra Encrypt.
-    bool needMigrate = PopLegacyKey(secretKey.sKey);
+    // needMigrate only for EL5 stores whose persisted metadata does not yet carry the
+    // migrated flag. The flag is persisted together with the re-encrypted sKey, so
+    // already-migrated stores take the early return below with no extra Encrypt.
+    bool needMigrate = (metaData.area == Area::EL5 && !secretKey.isMigrated);
     if (!needMigrate && !secretKey.nonce.empty() && secretKey.area >= 0) {
         return;
     }
@@ -389,13 +368,17 @@ void CryptoManager::UpdateSecretMeta(const std::vector<uint8_t> &password, const
         return;
     }
     // Idempotent: GCM is deterministic for fixed key/nonce/plaintext, so a stored sKey
-    // already at the current level reproduces the same ciphertext. Skip the redundant write.
+    // already at the current level reproduces the same ciphertext. Persist the migrated
+    // flag once so that subsequent opens take the early return with zero extra Encrypt.
     if (needMigrate && encryptKey == secretKey.sKey) {
+        secretKey.isMigrated = true;
+        saver.Add(metaKey, secretKey);
         return;
     }
     secretKey.sKey = encryptKey;
     secretKey.nonce = encryptParams.nonce;
     secretKey.area = metaData.area;
+    secretKey.isMigrated = true;
     auto time = system_clock::to_time_t(system_clock::now());
     secretKey.time = { reinterpret_cast<uint8_t *>(&time),
         reinterpret_cast<uint8_t *>(&time) + sizeof(time) };

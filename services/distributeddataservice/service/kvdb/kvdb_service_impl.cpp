@@ -789,6 +789,7 @@ void KVDBServiceImpl::SaveSecretKeyMeta(const StoreMetaData &metaData, const std
         secretKey.area = metaData.area;
         secretKey.sKey = encryptKey;
         secretKey.nonce = encryptParams.nonce;
+        secretKey.isMigrated = true;
         auto time = system_clock::to_time_t(system_clock::now());
         secretKey.time = { reinterpret_cast<uint8_t *>(&time), reinterpret_cast<uint8_t *>(&time) + sizeof(time) };
         MetaDataManager::GetInstance().SaveMeta(metaData.GetSecretKey(), secretKey, true);

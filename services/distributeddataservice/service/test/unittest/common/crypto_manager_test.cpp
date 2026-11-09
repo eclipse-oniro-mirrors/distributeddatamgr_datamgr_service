@@ -608,6 +608,7 @@ HWTEST_F(CryptoManagerTest, UpdateSecretMeta_MigrateLegacyEL5_OneTimeSave, TestS
     EXPECT_EQ(saver1.Size(), 1u);
     EXPECT_NE(secretKey.sKey, legacyKey);
     EXPECT_EQ(secretKey.area, CryptoManager::Area::EL5);
+    EXPECT_TRUE(secretKey.isMigrated);
     savedKeys_.push_back(metaKey);
 
     CryptoManager::CryptoParams newParams = {
@@ -624,6 +625,79 @@ HWTEST_F(CryptoManagerTest, UpdateSecretMeta_MigrateLegacyEL5_OneTimeSave, TestS
     MetaDataSaver saver2(true);
     CryptoManager::GetInstance().UpdateSecretMeta(randomKey, metaData, metaKey, secretKey, saver2);
     EXPECT_EQ(saver2.Size(), 0u);
+}
+
+/**
+ * @tc.name: UpdateSecretMeta_IsMigratedEL5_EarlyReturnNoSave
+ * @tc.desc: EL5 store with isMigrated=true takes the idempotent early return of UpdateSecretMeta,
+ *           no metadata save and no re-encrypt
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(CryptoManagerTest, UpdateSecretMeta_IsMigratedEL5_EarlyReturnNoSave, TestSize.Level0)
+{
+    // Simulate an EL5 store already encrypted (and migrated) under the current CE level.
+    CryptoManager::CryptoParams encryptParams = { .area = CryptoManager::Area::EL5, .userId = TEST_USERID };
+    auto currentKey = CryptoManager::GetInstance().Encrypt(randomKey, encryptParams);
+    ASSERT_FALSE(currentKey.empty());
+    ASSERT_FALSE(encryptParams.nonce.empty());
+
+    SecretKeyMetaData secretKey;
+    secretKey.sKey = currentKey;
+    secretKey.nonce = encryptParams.nonce;
+    secretKey.area = CryptoManager::Area::EL5;
+    secretKey.isMigrated = true;
+
+    StoreMetaData metaData;
+    metaData.bundleName = TEST_BUNDLE_NAME;
+    metaData.user = TEST_USERID;
+    metaData.area = CryptoManager::Area::EL5;
+
+    MetaDataSaver saver(true);
+    CryptoManager::GetInstance().UpdateSecretMeta(randomKey, metaData, "", secretKey, saver);
+    EXPECT_EQ(saver.Size(), 0u);
+    EXPECT_TRUE(secretKey.isMigrated);
+    EXPECT_EQ(secretKey.area, CryptoManager::Area::EL5);
+}
+
+/**
+ * @tc.name: SecretKeyMeta_IsMigrated_UnmarshalTolerant
+ * @tc.desc: isMigrated stays false (and Unmarshal succeeds) when the key is missing or not boolean,
+ *           and a marshalled true value survives the Marshal/Unmarshal round trip
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(CryptoManagerTest, SecretKeyMeta_IsMigrated_UnmarshalTolerant, TestSize.Level0)
+{
+    // missing key: stays default false, Unmarshal succeeds
+    SecretKeyMetaData noFlag;
+    ASSERT_TRUE(noFlag.Unmarshal(Serializable::ToJson(R"({"sKey":[1,2,3],"nonce":[4],"storeType":1,"area":4})")));
+    EXPECT_FALSE(noFlag.isMigrated);
+
+    // non-boolean value: stays false, Unmarshal does not fail
+    SecretKeyMetaData badFlag;
+    ASSERT_TRUE(badFlag.Unmarshal(
+        Serializable::ToJson(R"({"sKey":[1],"nonce":[2],"storeType":1,"area":4,"isMigrated":"yes"})")));
+    EXPECT_FALSE(badFlag.isMigrated);
+
+    // boolean true: parsed
+    SecretKeyMetaData trueFlag;
+    ASSERT_TRUE(trueFlag.Unmarshal(
+        Serializable::ToJson(R"({"sKey":[1],"nonce":[2],"storeType":1,"area":4,"isMigrated":true})")));
+    EXPECT_TRUE(trueFlag.isMigrated);
+
+    // round trip: marshalled flag survives Marshal/Unmarshal
+    SecretKeyMetaData origin;
+    origin.sKey = { 1, 2, 3 };
+    origin.nonce = { 4 };
+    origin.storeType = 1;
+    origin.area = 4;
+    origin.isMigrated = true;
+    Serializable::json node;
+    ASSERT_TRUE(origin.Marshal(node));
+    SecretKeyMetaData decoded;
+    ASSERT_TRUE(decoded.Unmarshal(node));
+    EXPECT_TRUE(decoded.isMigrated);
 }
 
 } // namespace OHOS::Test

@@ -45,6 +45,7 @@ bool SecretKeyMetaData::Marshal(json &node) const
     SetValue(node[GET_NAME(nonce)], nonce);
     SetValue(node[GET_NAME(storeType)], storeType);
     SetValue(node[GET_NAME(area)], area);
+    SetValue(node[GET_NAME(isMigrated)], isMigrated);
     return true;
 }
 
@@ -55,6 +56,7 @@ bool SecretKeyMetaData::Unmarshal(const json &node)
     GetValue(node, GET_NAME(nonce), nonce);
     GetValue(node, GET_NAME(storeType), storeType);
     GetValue(node, GET_NAME(area), area);
+    GetValue(node, GET_NAME(isMigrated), isMigrated);
     return true;
 }
 
