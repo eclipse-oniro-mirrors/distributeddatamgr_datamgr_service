@@ -136,11 +136,12 @@ std::vector<uint8_t> CryptoManagerTest::Random(int32_t len)
 
 uint32_t CryptoManagerTest::GetStorageLevel(int32_t area)
 {
-    if (area >= CryptoManager::Area::EL4 && area <= CryptoManager::Area::EL5) {
-        return HKS_AUTH_STORAGE_LEVEL_ECE;
-    }
-    if (area >= CryptoManager::Area::EL2 && area <= CryptoManager::Area::EL3) {
+    if (area == CryptoManager::Area::EL2 || area == CryptoManager::Area::EL3 ||
+        area == CryptoManager::Area::EL5) {
         return HKS_AUTH_STORAGE_LEVEL_CE;
+    }
+    if (area == CryptoManager::Area::EL4) {
+        return HKS_AUTH_STORAGE_LEVEL_ECE;
     }
     return HKS_AUTH_STORAGE_LEVEL_DE;
 }
@@ -273,6 +274,30 @@ HWTEST_F(CryptoManagerTest, EncryptAndDecryptTest004, TestSize.Level0)
 
     CryptoManager::CryptoParams decryptParams = { .area = CryptoManager::Area::EL4, .userId = TEST_USERID,
         .nonce = encryptParams.nonce };
+    auto decryptKey = CryptoManager::GetInstance().Decrypt(encryptKey, decryptParams);
+    ASSERT_FALSE(decryptKey.empty());
+    for (auto i = 0; i < KEY_LENGTH; ++i) {
+        ASSERT_EQ(decryptKey[i], randomKey[i]);
+    }
+    decryptKey.assign(encryptKey.size(), 0);
+}
+
+/**
+* @tc.name: DecryptLegacyLevelTest002
+* @tc.desc: decrypt EL4-encrypted key (legacy ECE level) as EL5 falls back to ECE
+* @tc.type: FUNC
+* @tc.author: agent
+*/
+HWTEST_F(CryptoManagerTest, Decrypt_LegacyECELevelForEL5_ReturnsPlaintext, TestSize.Level0)
+{
+    CryptoManager::CryptoParams encryptParams = { .area = CryptoManager::Area::EL4, .userId = TEST_USERID };
+    auto encryptKey = CryptoManager::GetInstance().Encrypt(randomKey, encryptParams);
+    ASSERT_FALSE(encryptKey.empty());
+    ASSERT_FALSE(encryptParams.nonce.empty());
+
+    CryptoManager::CryptoParams decryptParams = {
+        .area = CryptoManager::Area::EL5, .userId = TEST_USERID, .nonce = encryptParams.nonce
+    };
     auto decryptKey = CryptoManager::GetInstance().Decrypt(encryptKey, decryptParams);
     ASSERT_FALSE(decryptKey.empty());
     for (auto i = 0; i < KEY_LENGTH; ++i) {
@@ -544,6 +569,135 @@ HWTEST_F(CryptoManagerTest, UpdateSecretMetaTest009, TestSize.Level0)
     ASSERT_EQ(secretKey.area, metaData.area);
 
     savedKeys_.push_back(metaData.GetSecretKey());
+}
+
+/**
+* @tc.name: UpdateSecretMetaMigrateTest002
+* @tc.desc: legacy EL5 secret key is migrated to the current CE level after readback
+* @tc.type: FUNC
+* @tc.author: agent
+*/
+HWTEST_F(CryptoManagerTest, UpdateSecretMeta_MigrateLegacyEL5_OneTimeSave, TestSize.Level0)
+{
+    // Simulate a legacy EL5 store whose sKey was encrypted under the old ECE level.
+    CryptoManager::CryptoParams legacyEncryptParams = { .area = CryptoManager::Area::EL4, .userId = TEST_USERID };
+    auto legacyKey = CryptoManager::GetInstance().Encrypt(randomKey, legacyEncryptParams);
+    ASSERT_FALSE(legacyKey.empty());
+    ASSERT_FALSE(legacyEncryptParams.nonce.empty());
+
+    SecretKeyMetaData secretKey;
+    secretKey.sKey = legacyKey;
+    secretKey.nonce = legacyEncryptParams.nonce;
+    secretKey.area = CryptoManager::Area::EL5;
+
+    StoreMetaData metaData;
+    metaData.bundleName = TEST_BUNDLE_NAME;
+    metaData.storeId = std::string(TEST_STORE_NAME) + "_migrate_el5";
+    metaData.user = TEST_USERID;
+    metaData.area = CryptoManager::Area::EL5;
+    auto metaKey = metaData.GetSecretKey();
+
+    CryptoManager::CryptoParams decryptParams = {
+        .area = CryptoManager::Area::EL5, .userId = TEST_USERID, .nonce = secretKey.nonce
+    };
+    auto password = CryptoManager::GetInstance().Decrypt(secretKey.sKey, decryptParams);
+    ASSERT_FALSE(password.empty());
+
+    MetaDataSaver saver1(true);
+    CryptoManager::GetInstance().UpdateSecretMeta(password, metaData, metaKey, secretKey, saver1);
+    EXPECT_EQ(saver1.Size(), 1u);
+    EXPECT_NE(secretKey.sKey, legacyKey);
+    EXPECT_EQ(secretKey.area, CryptoManager::Area::EL5);
+    EXPECT_TRUE(secretKey.isMigrated);
+    savedKeys_.push_back(metaKey);
+
+    CryptoManager::CryptoParams newParams = {
+        .area = CryptoManager::Area::EL5, .userId = TEST_USERID, .nonce = secretKey.nonce
+    };
+    auto recovered = CryptoManager::GetInstance().Decrypt(secretKey.sKey, newParams);
+    ASSERT_FALSE(recovered.empty());
+    for (auto i = 0; i < KEY_LENGTH; ++i) {
+        ASSERT_EQ(recovered[i], randomKey[i]);
+    }
+    recovered.assign(recovered.size(), 0);
+    password.assign(password.size(), 0);
+
+    MetaDataSaver saver2(true);
+    CryptoManager::GetInstance().UpdateSecretMeta(randomKey, metaData, metaKey, secretKey, saver2);
+    EXPECT_EQ(saver2.Size(), 0u);
+}
+
+/**
+ * @tc.name: UpdateSecretMeta_IsMigratedEL5_EarlyReturnNoSave
+ * @tc.desc: EL5 store with isMigrated=true takes the idempotent early return of UpdateSecretMeta,
+ *           no metadata save and no re-encrypt
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(CryptoManagerTest, UpdateSecretMeta_IsMigratedEL5_EarlyReturnNoSave, TestSize.Level0)
+{
+    // Simulate an EL5 store already encrypted (and migrated) under the current CE level.
+    CryptoManager::CryptoParams encryptParams = { .area = CryptoManager::Area::EL5, .userId = TEST_USERID };
+    auto currentKey = CryptoManager::GetInstance().Encrypt(randomKey, encryptParams);
+    ASSERT_FALSE(currentKey.empty());
+    ASSERT_FALSE(encryptParams.nonce.empty());
+
+    SecretKeyMetaData secretKey;
+    secretKey.sKey = currentKey;
+    secretKey.nonce = encryptParams.nonce;
+    secretKey.area = CryptoManager::Area::EL5;
+    secretKey.isMigrated = true;
+
+    StoreMetaData metaData;
+    metaData.bundleName = TEST_BUNDLE_NAME;
+    metaData.user = TEST_USERID;
+    metaData.area = CryptoManager::Area::EL5;
+
+    MetaDataSaver saver(true);
+    CryptoManager::GetInstance().UpdateSecretMeta(randomKey, metaData, "", secretKey, saver);
+    EXPECT_EQ(saver.Size(), 0u);
+    EXPECT_TRUE(secretKey.isMigrated);
+    EXPECT_EQ(secretKey.area, CryptoManager::Area::EL5);
+}
+
+/**
+ * @tc.name: SecretKeyMeta_IsMigrated_UnmarshalTolerant
+ * @tc.desc: isMigrated stays false (and Unmarshal succeeds) when the key is missing or not boolean,
+ *           and a marshalled true value survives the Marshal/Unmarshal round trip
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(CryptoManagerTest, SecretKeyMeta_IsMigrated_UnmarshalTolerant, TestSize.Level0)
+{
+    // missing key: stays default false, Unmarshal succeeds
+    SecretKeyMetaData noFlag;
+    ASSERT_TRUE(noFlag.Unmarshal(Serializable::ToJson(R"({"sKey":[1,2,3],"nonce":[4],"storeType":1,"area":4})")));
+    EXPECT_FALSE(noFlag.isMigrated);
+
+    // non-boolean value: stays false, Unmarshal does not fail
+    SecretKeyMetaData badFlag;
+    ASSERT_TRUE(badFlag.Unmarshal(
+        Serializable::ToJson(R"({"sKey":[1],"nonce":[2],"storeType":1,"area":4,"isMigrated":"yes"})")));
+    EXPECT_FALSE(badFlag.isMigrated);
+
+    // boolean true: parsed
+    SecretKeyMetaData trueFlag;
+    ASSERT_TRUE(trueFlag.Unmarshal(
+        Serializable::ToJson(R"({"sKey":[1],"nonce":[2],"storeType":1,"area":4,"isMigrated":true})")));
+    EXPECT_TRUE(trueFlag.isMigrated);
+
+    // round trip: marshalled flag survives Marshal/Unmarshal
+    SecretKeyMetaData origin;
+    origin.sKey = { 1, 2, 3 };
+    origin.nonce = { 4 };
+    origin.storeType = 1;
+    origin.area = 4;
+    origin.isMigrated = true;
+    Serializable::json node;
+    ASSERT_TRUE(origin.Marshal(node));
+    SecretKeyMetaData decoded;
+    ASSERT_TRUE(decoded.Unmarshal(node));
+    EXPECT_TRUE(decoded.isMigrated);
 }
 
 } // namespace OHOS::Test

@@ -24,6 +24,7 @@ struct API_EXPORT SecretKeyMetaData final : public Serializable {
     std::vector<uint8_t> nonce {};
     int32_t storeType = 0;
     int32_t area = -1;
+    bool isMigrated = false;
 
     API_EXPORT SecretKeyMetaData();
     API_EXPORT ~SecretKeyMetaData();
