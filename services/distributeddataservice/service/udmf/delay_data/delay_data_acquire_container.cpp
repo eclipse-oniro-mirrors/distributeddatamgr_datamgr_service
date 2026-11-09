@@ -29,50 +29,66 @@ DelayDataAcquireContainer &DelayDataAcquireContainer::GetInstance()
     return instance;
 }
 
-void DelayDataAcquireContainer::RegisterDelayDataCallback(const std::string &key, const DelayGetDataInfo &info)
+bool DelayDataAcquireContainer::RegisterDelayDataCallback(
+    const std::string &key, const DelayGetDataInfo &info, Request *registered)
 {
     std::lock_guard<std::mutex> lock(delayDataMutex_);
-    if (key.empty()) {
-        ZLOGE("RegisterDelayDataCallback failed, key is empty");
-        return;
-    }
     auto it = delayDataCallback_.find(key);
-    if (it != delayDataCallback_.end() && it->second.tokenId != info.tokenId) {
-        ZLOGE("RegisterDelayDataCallback failed, tokenId mismatch");
-        return;
+    if (key.empty() || (it != delayDataCallback_.end() && it->second.info.tokenId != info.tokenId)) {
+        return false;
     }
-    delayDataCallback_.insert_or_assign(key, info);
+    Request request{ info, ++nextGeneration_ };
+    delayDataCallback_.insert_or_assign(key, request);
+    if (registered != nullptr) {
+        *registered = request;
+    }
+    return true;
+}
+
+sptr<IRemoteObject> DelayDataAcquireContainer::TakeDelayDataCallback(const std::string &key, const Request &expected)
+{
+    std::lock_guard<std::mutex> lock(delayDataMutex_);
+    auto it = delayDataCallback_.find(key);
+    if (it == delayDataCallback_.end() || expected.generation == 0 || it->second.generation != expected.generation) {
+        return nullptr;
+    }
+    auto callback = it->second.info.dataCallback;
+    delayDataCallback_.erase(it);
+    return callback;
 }
 
 bool DelayDataAcquireContainer::HandleDelayDataCallback(const std::string &key, const UnifiedData &unifiedData)
 {
-    sptr<IDelayDataCallback> callback = nullptr;
-    {
-        std::lock_guard<std::mutex> lock(delayDataMutex_);
-        auto it = delayDataCallback_.find(key);
-        if (it == delayDataCallback_.end()) {
-            ZLOGE("Can not find delay data callback, key:%{public}s", key.c_str());
-            return false;
-        }
-        callback = iface_cast<IDelayDataCallback>(it->second.dataCallback);
-        delayDataCallback_.erase(key);
+    Request request;
+    if (!QueryDelayDataRequest(key, request)) {
+        return false;
     }
+    auto callback = iface_cast<IDelayDataCallback>(TakeDelayDataCallback(key, request));
     if (callback == nullptr) {
-        ZLOGE("Delay data callback is null, key:%{public}s", key.c_str());
         return false;
     }
     callback->DelayDataCallback(key, unifiedData);
     return true;
 }
 
-bool DelayDataAcquireContainer::QueryDelayGetDataInfo(const std::string &key, DelayGetDataInfo &getDataInfo)
+bool DelayDataAcquireContainer::QueryDelayDataRequest(const std::string &key, Request &request)
 {
     std::lock_guard<std::mutex> lock(delayDataMutex_);
     auto it = delayDataCallback_.find(key);
     if (it == delayDataCallback_.end()) {
         return false;
     }
-    getDataInfo = it->second;
+    request = it->second;
+    return true;
+}
+
+bool DelayDataAcquireContainer::QueryDelayGetDataInfo(const std::string &key, DelayGetDataInfo &getDataInfo)
+{
+    Request request;
+    if (!QueryDelayDataRequest(key, request)) {
+        return false;
+    }
+    getDataInfo = request.info;
     return true;
 }
 

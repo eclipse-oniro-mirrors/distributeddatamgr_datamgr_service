@@ -539,6 +539,7 @@ void KvStoreDataService::StartService()
     DeviceMatrix::GetInstance().Initialize(IPCSkeleton::GetCallingTokenID(), Bootstrap::GetInstance().GetMetaDBName());
     KvStoreMetaManager::GetInstance().InitBroadcast();
     LoadFeatures();
+    AddSystemAbilityListener(DATA_COLLECT_MANAGER_SA_ID);
     bool ret = SystemAbility::Publish(this);
     if (!ret) {
         DumpHelper::GetInstance().AddErrorInfo(SERVER_UNAVAILABLE, "StartService: Service publish failed.");

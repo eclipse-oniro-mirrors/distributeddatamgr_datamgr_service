@@ -607,6 +607,17 @@ ohos_unittest("InotifyMatrixFileTest") {
 }
 
 ###############################################################################
+ohos_unittest("SecurityGuardFrameworkDelegateTest") {
+  testonly = true
+  module_out_path = module_output_path
+  sources = [
+    "${data_service_path}/framework/security_guard/security_guard_delegate.cpp",
+    "security_guard_delegate_test.cpp",
+  ]
+  include_dirs = [ "${data_service_path}/framework/include" ]
+  external_deps = [ "udmf:udmf_core" ]
+}
+
 group("unittest") {
   testonly = true
 
@@ -633,6 +644,7 @@ group("unittest") {
     ":MetaDataSaverTest",
     ":PowerManagerTest",
     ":ScreenManagerTest",
+    ":SecurityGuardFrameworkDelegateTest",
     ":SerializableTest",
     ":ServiceMetaDataTest",
     ":ServiceUtilsTest",

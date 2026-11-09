@@ -15,9 +15,14 @@
 
 #define LOG_TAG "UdmfServiceStubTest"
 #include "udmf_service_stub.h"
+
+#include "gtest/gtest.h"
+#include "ipc_object_stub.h"
+#include "ipc_skeleton.h"
+#include "test/mock/udmf_auth_reply_service_mock.h"
 #include "udmf_service_impl.h"
 #include "udmf_types_util.h"
-#include "gtest/gtest.h"
+#include "unified_key.h"
 
 using namespace OHOS::DistributedData;
 namespace OHOS::UDMF {
@@ -374,5 +379,172 @@ HWTEST_F(UdmfServiceStubTest, NormalizeQueryOption008, TestSize.Level1)
     UdmfServiceImpl udmfServiceImpl;
 
     EXPECT_EQ(udmfServiceImpl.NormalizeQueryOption(query), E_INVALID_PARAMETERS);
+}
+/**
+ * @tc.name: OnRemoteRequest_ReadAndDelayDenied_EmptySerializedPayload
+ * @tc.desc: Verify authorization behavior through public interfaces.
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(UdmfServiceStubTest, OnRemoteRequest_ReadAndDelayDenied_EmptySerializedPayload, TestSize.Level1)
+{
+    for (auto expected : { E_NO_PERMISSION, E_INVALID_PARAMETERS }) {
+        for (auto code : { UdmfServiceInterfaceCode::GET_DATA, UdmfServiceInterfaceCode::GET_DELAY_DATA }) {
+            testing::StrictMock<UdmfAuthReplyServiceMock> service;
+            auto fill = [](UnifiedData &output) {
+                output.AddRecord(std::make_shared<UnifiedRecord>(PLAIN_TEXT, std::string("private-content")));
+                output.GetProperties()->tag = "private-tag";
+                Runtime runtime{};
+                runtime.key = UnifiedKey(DRAG_KEY);
+                runtime.createPackage = "private-owner";
+                output.SetRuntime(runtime);
+            };
+            if (code == UdmfServiceInterfaceCode::GET_DATA) {
+                EXPECT_CALL(service, GetData(testing::_, testing::_))
+                    .WillOnce(testing::Invoke([&](const QueryOption &, UnifiedData &output) {
+                        fill(output);
+                        return expected;
+                    }));
+            } else {
+                EXPECT_CALL(service, GetDataIfAvailable(testing::_, testing::_, testing::_, testing::_))
+                    .WillOnce(testing::Invoke([&](const std::string &, const DataLoadInfo &, sptr<IRemoteObject>,
+                                                  std::shared_ptr<UnifiedData> output) {
+                        fill(*output);
+                        return expected;
+                    }));
+            }
+            MessageParcel request;
+            MessageParcel reply;
+            ASSERT_TRUE(request.WriteInterfaceToken(UdmfServiceStub::GetDescriptor()));
+            if (code == UdmfServiceInterfaceCode::GET_DATA) {
+                QueryOption query;
+                query.key = DRAG_KEY;
+                ASSERT_TRUE(ITypesUtil::Marshal(request, query));
+            } else {
+                DataLoadInfo info;
+                sptr<IRemoteObject> notifier = new IPCObjectStub(u"udmf-auth-test");
+                ASSERT_TRUE(ITypesUtil::Marshal(request, std::string(DRAG_KEY), info, notifier));
+            }
+            ASSERT_EQ(service.OnRemoteRequest(static_cast<uint32_t>(code), request, reply), E_OK);
+            int32_t status = E_ERROR;
+            UnifiedData received;
+            ASSERT_TRUE(ITypesUtil::Unmarshal(reply, status, received));
+            EXPECT_EQ(status, expected);
+            EXPECT_TRUE(received.GetRecords().empty());
+            EXPECT_EQ(received.GetRuntime(), nullptr);
+            ASSERT_NE(received.GetProperties(), nullptr);
+            EXPECT_TRUE(received.GetProperties()->tag.empty());
+        }
+    }
+}
+/**
+ * @tc.name: OnRemoteRequest_ReadAndDelayAllowed_PreservesSerializedPayload
+ * @tc.desc: Verify authorization behavior through public interfaces.
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(UdmfServiceStubTest, OnRemoteRequest_ReadAndDelayAllowed_PreservesSerializedPayload, TestSize.Level1)
+{
+    for (auto code : { UdmfServiceInterfaceCode::GET_DATA, UdmfServiceInterfaceCode::GET_DELAY_DATA }) {
+        testing::StrictMock<UdmfAuthReplyServiceMock> service;
+        auto fill = [](UnifiedData &output) {
+            output.AddRecord(std::make_shared<UnifiedRecord>(PLAIN_TEXT, std::string("private-content")));
+            output.GetProperties()->tag = "private-tag";
+            Runtime runtime{};
+            runtime.key = UnifiedKey(DRAG_KEY);
+            runtime.createPackage = "private-owner";
+            output.SetRuntime(runtime);
+        };
+        if (code == UdmfServiceInterfaceCode::GET_DATA) {
+            EXPECT_CALL(service, GetData(testing::_, testing::_))
+                .WillOnce(testing::Invoke([&](const QueryOption &, UnifiedData &output) {
+                    fill(output);
+                    return E_OK;
+                }));
+        } else {
+            EXPECT_CALL(service, GetDataIfAvailable(testing::_, testing::_, testing::_, testing::_))
+                .WillOnce(testing::Invoke([&](const std::string &, const DataLoadInfo &, sptr<IRemoteObject>,
+                                              std::shared_ptr<UnifiedData> output) {
+                    fill(*output);
+                    return E_OK;
+                }));
+        }
+        MessageParcel request;
+        MessageParcel reply;
+        ASSERT_TRUE(request.WriteInterfaceToken(UdmfServiceStub::GetDescriptor()));
+        if (code == UdmfServiceInterfaceCode::GET_DATA) {
+            QueryOption query;
+            query.key = DRAG_KEY;
+            ASSERT_TRUE(ITypesUtil::Marshal(request, query));
+        } else {
+            DataLoadInfo info;
+            sptr<IRemoteObject> notifier = new IPCObjectStub(u"udmf-auth-test");
+            ASSERT_TRUE(ITypesUtil::Marshal(request, std::string(DRAG_KEY), info, notifier));
+        }
+        ASSERT_EQ(service.OnRemoteRequest(static_cast<uint32_t>(code), request, reply), E_OK);
+        int32_t status = E_ERROR;
+        UnifiedData received;
+        ASSERT_TRUE(ITypesUtil::Unmarshal(reply, status, received));
+        EXPECT_EQ(status, E_OK);
+        ASSERT_EQ(received.GetRecords().size(), 1u);
+        auto record = received.GetRecords()[0];
+        ASSERT_NE(record, nullptr);
+        auto value = record->GetOriginValue();
+        ASSERT_TRUE(std::holds_alternative<std::string>(value));
+        EXPECT_EQ(std::get<std::string>(value), "private-content");
+        ASSERT_NE(received.GetRuntime(), nullptr);
+        EXPECT_EQ(received.GetRuntime()->createPackage, "private-owner");
+        ASSERT_NE(received.GetProperties(), nullptr);
+        EXPECT_EQ(received.GetProperties()->tag, "private-tag");
+    }
+}
+
+/**
+ * @tc.name: OnRemoteRequest_GetData_ReplacesForgedTokenBeforeAuthorization
+ * @tc.desc: Verify public behavior, failure propagation and observable state.
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(UdmfServiceStubTest, OnRemoteRequest_GetData_ReplacesForgedTokenBeforeAuthorization, TestSize.Level1)
+{
+    testing::StrictMock<UdmfAuthReplyServiceMock> service;
+    const uint32_t actual = static_cast<uint32_t>(IPCSkeleton::GetCallingTokenID());
+    EXPECT_CALL(service, GetData(testing::_, testing::_)).WillOnce([&](const QueryOption &query, UnifiedData &) {
+        EXPECT_EQ(query.tokenId, actual);
+        EXPECT_EQ(query.key, DRAG_KEY);
+        return E_NO_PERMISSION;
+    });
+    QueryOption query;
+    query.key = DRAG_KEY;
+    query.tokenId = actual ^ 0x7FFFFFFF;
+    MessageParcel request;
+    MessageParcel reply;
+    ASSERT_TRUE(request.WriteInterfaceToken(UdmfServiceStub::GetDescriptor()));
+    ASSERT_TRUE(ITypesUtil::Marshal(request, query));
+    ASSERT_EQ(
+        service.OnRemoteRequest(static_cast<uint32_t>(UdmfServiceInterfaceCode::GET_DATA), request, reply), E_OK);
+    int32_t status = E_OK;
+    UnifiedData output;
+    ASSERT_TRUE(ITypesUtil::Unmarshal(reply, status, output));
+    EXPECT_EQ(status, E_NO_PERMISSION);
+    EXPECT_TRUE(output.IsEmpty());
+}
+/**
+ * @tc.name: OnRemoteRequest_DelayMissingNotifier_RejectsBeforeBusiness
+ * @tc.desc: Verify public behavior, failure propagation and observable state.
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(UdmfServiceStubTest, OnRemoteRequest_DelayMissingNotifier_RejectsBeforeBusiness, TestSize.Level1)
+{
+    testing::StrictMock<UdmfAuthReplyServiceMock> service;
+    MessageParcel request;
+    MessageParcel reply;
+    ASSERT_TRUE(request.WriteInterfaceToken(UdmfServiceStub::GetDescriptor()));
+    DataLoadInfo info;
+    ASSERT_TRUE(ITypesUtil::Marshal(request, std::string(DRAG_KEY), info));
+    EXPECT_EQ(service.OnRemoteRequest(static_cast<uint32_t>(UdmfServiceInterfaceCode::GET_DELAY_DATA), request, reply),
+        E_ERROR);
+    EXPECT_EQ(reply.GetDataSize(), 0u);
 }
 }; // namespace UDMF

@@ -25,8 +25,15 @@ namespace UDMF {
 class DelayDataAcquireContainer {
 public:
     static DelayDataAcquireContainer &GetInstance();
-    // delayDataCallback_ part
-    void RegisterDelayDataCallback(const std::string &key, const DelayGetDataInfo &info);
+    // A retry is distinct even when the native caller reuses its callback object.
+    struct Request {
+        DelayGetDataInfo info;
+        uint64_t generation = 0;
+    };
+    bool RegisterDelayDataCallback(
+        const std::string &key, const DelayGetDataInfo &info, Request *registered = nullptr);
+    bool QueryDelayDataRequest(const std::string &key, Request &request);
+    sptr<IRemoteObject> TakeDelayDataCallback(const std::string &key, const Request &expected);
     bool HandleDelayDataCallback(const std::string &key, const UnifiedData &unifiedData);
     bool QueryDelayGetDataInfo(const std::string &key, DelayGetDataInfo &info);
     bool IsContainDelayData(const std::string &key);
@@ -39,7 +46,8 @@ private:
     DelayDataAcquireContainer &operator=(const DelayDataAcquireContainer &obj) = delete;
 
     std::mutex delayDataMutex_;
-    std::map<std::string, DelayGetDataInfo> delayDataCallback_ {};
+    uint64_t nextGeneration_ = 0;
+    std::map<std::string, Request> delayDataCallback_{};
 };
 } // namespace UDMF
 } // namespace OHOS

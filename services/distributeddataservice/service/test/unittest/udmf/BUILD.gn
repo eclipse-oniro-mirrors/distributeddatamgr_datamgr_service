@@ -161,7 +161,11 @@ ohos_unittest("UdmfServiceImplMockTest") {
     "${data_service_path}/framework/checker/checker_manager.cpp",
     "${data_service_path}/framework/feature/feature_system.cpp",
     "${data_service_path}/service/backup/src/backup_manager.cpp",
+    "${data_service_path}/service/test/mock/access_token_mock.cpp",
+    "${data_service_path}/service/test/mock/device_manager_adapter_mock.cpp",
     "${data_service_path}/service/test/mock/meta_data_manager_mock.cpp",
+    "${data_service_path}/service/test/mock/security_guard_delegate_mock.cpp",
+    "${data_service_path}/service/test/mock/udmf_auth_store_mock.cpp",
     "${data_service_path}/service/test/mock/udmf_fuse_lowlevel_mock.cpp",
     "${data_service_path}/service/test/mock/udmf_fuse_mount_adapter_mock.cpp",
     "${data_service_path}/service/udmf/delay_data/delay_data_acquire_container.cpp",
@@ -179,6 +183,11 @@ ohos_unittest("UdmfServiceImplMockTest") {
     "${data_service_path}/service/udmf/preprocess/data_handler.cpp",
     "${data_service_path}/service/udmf/preprocess/preprocess_utils.cpp",
     "${data_service_path}/service/udmf/preprocess/udmf_notifier_proxy.cpp",
+    "${data_service_path}/service/udmf/security_guard/auth_degradation_policy.cpp",
+    "${data_service_path}/service/udmf/security_guard/auth_event_builder.cpp",
+    "${data_service_path}/service/udmf/security_guard/auth_timeout_policy.cpp",
+    "${data_service_path}/service/udmf/security_guard/drag_auth_coordinator.cpp",
+    "${data_service_path}/service/udmf/security_guard/drag_auth_event_encoder.cpp",
     "${data_service_path}/service/udmf/store/drag_observer.cpp",
     "${data_service_path}/service/udmf/store/observer_factory.cpp",
     "${data_service_path}/service/udmf/store/runtime_store.cpp",
@@ -326,6 +335,7 @@ ohos_unittest("UdmfServiceStubTest") {
   sources = [ "udmf_service_stub_test.cpp" ]
 
   include_dirs = [
+    "${data_service_path}/service",
     "${data_service_path}/service/matrix/include",
     "${data_service_path}/service/udmf/preprocess",
     "${data_service_path}/service/udmf/store",
@@ -355,9 +365,10 @@ ohos_unittest("UdmfServiceStubTest") {
     "bundle_framework:appexecfwk_base",
     "bundle_framework:appexecfwk_core",
     "c_utils:utils",
-    "googletest:gtest_main",
+    "googletest:gmock",
     "hilog:libhilog",
     "image_framework:image",
+    "ipc:ipc_core",
     "kv_store:distributeddata_inner",
     "kv_store:distributeddb",
     "relational_store:native_rdb",
@@ -406,6 +417,11 @@ ohos_unittest("UdmfServiceStubMockTest") {
     "${data_service_path}/service/udmf/preprocess/data_handler.cpp",
     "${data_service_path}/service/udmf/preprocess/preprocess_utils.cpp",
     "${data_service_path}/service/udmf/preprocess/udmf_notifier_proxy.cpp",
+    "${data_service_path}/service/udmf/security_guard/auth_degradation_policy.cpp",
+    "${data_service_path}/service/udmf/security_guard/auth_event_builder.cpp",
+    "${data_service_path}/service/udmf/security_guard/auth_timeout_policy.cpp",
+    "${data_service_path}/service/udmf/security_guard/drag_auth_coordinator.cpp",
+    "${data_service_path}/service/udmf/security_guard/drag_auth_event_encoder.cpp",
     "${data_service_path}/service/udmf/store/drag_observer.cpp",
     "${data_service_path}/service/udmf/store/observer_factory.cpp",
     "${data_service_path}/service/udmf/store/runtime_store.cpp",
@@ -465,6 +481,7 @@ ohos_unittest("UdmfServiceStubMockTest") {
     "image_framework:image",
     "ipc:ipc_core",
     "init:libbegetutil",
+    "json:nlohmann_json_static",
     "kv_store:distributeddata_inner",
     "kv_store:distributeddb",
     "libfuse:libfuse",
@@ -603,6 +620,11 @@ ohos_unittest("UdmfVirtualEntryServiceTest") {
     "${data_service_path}/service/udmf/preprocess/data_handler.cpp",
     "${data_service_path}/service/udmf/preprocess/preprocess_utils.cpp",
     "${data_service_path}/service/udmf/preprocess/udmf_notifier_proxy.cpp",
+    "${data_service_path}/service/udmf/security_guard/auth_degradation_policy.cpp",
+    "${data_service_path}/service/udmf/security_guard/auth_event_builder.cpp",
+    "${data_service_path}/service/udmf/security_guard/auth_timeout_policy.cpp",
+    "${data_service_path}/service/udmf/security_guard/drag_auth_coordinator.cpp",
+    "${data_service_path}/service/udmf/security_guard/drag_auth_event_encoder.cpp",
     "${data_service_path}/service/udmf/store/drag_observer.cpp",
     "${data_service_path}/service/udmf/store/observer_factory.cpp",
     "${data_service_path}/service/udmf/store/runtime_store.cpp",
@@ -663,6 +685,7 @@ ohos_unittest("UdmfVirtualEntryServiceTest") {
     "hisysevent:libhisysevent",
     "hitrace:hitrace_meter",
     "hitrace:libhitracechain",
+    "image_framework:image",
     "ipc:ipc_core",
     "init:libbegetutil",
     "json:nlohmann_json_static",
@@ -763,6 +786,11 @@ ohos_unittest("UdmfServiceImplDbCorruptionMockTest") {
     "${data_service_path}/service/udmf/permission/uri_permission_manager.cpp",
     "${data_service_path}/service/udmf/preprocess/data_handler.cpp",
     "${data_service_path}/service/udmf/preprocess/udmf_notifier_proxy.cpp",
+    "${data_service_path}/service/udmf/security_guard/auth_degradation_policy.cpp",
+    "${data_service_path}/service/udmf/security_guard/auth_event_builder.cpp",
+    "${data_service_path}/service/udmf/security_guard/auth_timeout_policy.cpp",
+    "${data_service_path}/service/udmf/security_guard/drag_auth_coordinator.cpp",
+    "${data_service_path}/service/udmf/security_guard/drag_auth_event_encoder.cpp",
     "${data_service_path}/service/udmf/store/drag_observer.cpp",
     "${data_service_path}/service/udmf/store/observer_factory.cpp",
     "${data_service_path}/service/udmf/store/runtime_store.cpp",
@@ -823,6 +851,7 @@ ohos_unittest("UdmfServiceImplDbCorruptionMockTest") {
     "image_framework:image",
     "ipc:ipc_core",
     "init:libbegetutil",
+    "json:nlohmann_json_static",
     "kv_store:distributeddata_inner",
     "kv_store:distributeddata_mgr",
     "kv_store:distributeddb",
@@ -869,6 +898,11 @@ ohos_unittest("UdmfDelayDataContainerTest") {
     "${data_service_path}/service/udmf/preprocess/data_handler.cpp",
     "${data_service_path}/service/udmf/preprocess/preprocess_utils.cpp",
     "${data_service_path}/service/udmf/preprocess/udmf_notifier_proxy.cpp",
+    "${data_service_path}/service/udmf/security_guard/auth_degradation_policy.cpp",
+    "${data_service_path}/service/udmf/security_guard/auth_event_builder.cpp",
+    "${data_service_path}/service/udmf/security_guard/auth_timeout_policy.cpp",
+    "${data_service_path}/service/udmf/security_guard/drag_auth_coordinator.cpp",
+    "${data_service_path}/service/udmf/security_guard/drag_auth_event_encoder.cpp",
     "${data_service_path}/service/udmf/store/drag_observer.cpp",
     "${data_service_path}/service/udmf/store/observer_factory.cpp",
     "${data_service_path}/service/udmf/store/runtime_store.cpp",
@@ -928,6 +962,7 @@ ohos_unittest("UdmfDelayDataContainerTest") {
     "image_framework:image",
     "ipc:ipc_core",
     "init:libbegetutil",
+    "json:nlohmann_json_static",
     "kv_store:distributeddata_inner",
     "kv_store:distributeddata_mgr",
     "kv_store:distributeddb",
@@ -975,6 +1010,11 @@ ohos_unittest("UdmfObserverTest") {
     "${data_service_path}/service/udmf/preprocess/data_handler.cpp",
     "${data_service_path}/service/udmf/preprocess/preprocess_utils.cpp",
     "${data_service_path}/service/udmf/preprocess/udmf_notifier_proxy.cpp",
+    "${data_service_path}/service/udmf/security_guard/auth_degradation_policy.cpp",
+    "${data_service_path}/service/udmf/security_guard/auth_event_builder.cpp",
+    "${data_service_path}/service/udmf/security_guard/auth_timeout_policy.cpp",
+    "${data_service_path}/service/udmf/security_guard/drag_auth_coordinator.cpp",
+    "${data_service_path}/service/udmf/security_guard/drag_auth_event_encoder.cpp",
     "${data_service_path}/service/udmf/store/drag_observer.cpp",
     "${data_service_path}/service/udmf/store/observer_factory.cpp",
     "${data_service_path}/service/udmf/store/runtime_store.cpp",
@@ -1034,6 +1074,7 @@ ohos_unittest("UdmfObserverTest") {
     "image_framework:image",
     "ipc:ipc_core",
     "init:libbegetutil",
+    "json:nlohmann_json_static",
     "kv_store:distributeddata_inner",
     "kv_store:distributeddata_mgr",
     "kv_store:distributeddb",
@@ -1087,12 +1128,145 @@ ohos_unittest("AuditHelperTest") {
 # UDMF Test Collection Group
 ###############################################################################
 
+ohos_unittest("UdmfAuthEventBuilderTest") {
+  testonly = true
+  module_out_path = module_output_path
+  sources = [
+    "${data_service_path}/service/udmf/security_guard/auth_event_builder.cpp",
+    "udmf_auth_event_builder_test.cpp",
+  ]
+  include_dirs = [
+    "${data_service_path}/service/udmf/security_guard",
+    "${data_service_path}/framework/include",
+  ]
+  external_deps = [
+    "json:nlohmann_json_static",
+    "udmf:udmf_core",
+  ]
+}
+
+ohos_unittest("UdmfAuthTimeoutTest") {
+  testonly = true
+  cflags = [ "-D_LIBCPP_HAS_COND_CLOCKWAIT" ]
+  module_out_path = module_output_path
+  sources = [
+    "${data_service_path}/framework/security_guard/security_guard_delegate.cpp",
+    "${data_service_path}/service/udmf/security_guard/auth_degradation_policy.cpp",
+    "${data_service_path}/service/udmf/security_guard/auth_event_builder.cpp",
+    "${data_service_path}/service/udmf/security_guard/auth_timeout_policy.cpp",
+    "${data_service_path}/service/udmf/security_guard/drag_auth_coordinator.cpp",
+    "udmf_auth_timeout_test.cpp",
+  ]
+  include_dirs = [
+    "${data_service_path}/service/udmf/security_guard",
+    "${data_service_path}/framework/include",
+  ]
+  external_deps = [
+    "hilog:libhilog",
+    "json:nlohmann_json_static",
+    "kv_store:datamgr_common",
+    "udmf:udmf_core",
+  ]
+}
+
+ohos_unittest("UdmfDragAuthEncoderTest") {
+  testonly = true
+  module_out_path = module_output_path
+  sources = [
+    "${data_service_path}/service/udmf/security_guard/auth_event_builder.cpp",
+    "${data_service_path}/service/udmf/security_guard/drag_auth_event_encoder.cpp",
+    "udmf_drag_auth_encoder_test.cpp",
+  ]
+  include_dirs = [
+    "${data_service_path}/service/udmf/security_guard",
+    "${data_service_path}/framework/include",
+  ]
+  external_deps = [
+    "ability_base:want",
+    "image_framework:image",
+    "image_framework:image_native",
+    "image_framework:pixelmap",
+    "json:nlohmann_json_static",
+    "udmf:udmf_core",
+  ]
+}
+
+ohos_unittest("UdmfAuthTimeoutPolicyTest") {
+  testonly = true
+  cflags = [ "-D_LIBCPP_HAS_COND_CLOCKWAIT" ]
+  module_out_path = module_output_path
+  sources = [
+    "${data_service_path}/framework/security_guard/security_guard_delegate.cpp",
+    "${data_service_path}/service/udmf/security_guard/auth_timeout_policy.cpp",
+    "udmf_auth_timeout_policy_test.cpp",
+  ]
+  include_dirs = [
+    "${data_service_path}/service/udmf/security_guard",
+    "${data_service_path}/framework/include",
+  ]
+  external_deps = [
+    "hilog:libhilog",
+    "json:nlohmann_json_static",
+    "kv_store:datamgr_common",
+    "udmf:udmf_core",
+  ]
+}
+
+ohos_unittest("UdmfDragAuthCoordinatorTest") {
+  testonly = true
+  cflags = [ "-D_LIBCPP_HAS_COND_CLOCKWAIT" ]
+  module_out_path = module_output_path
+  sources = [
+    "${data_service_path}/framework/security_guard/security_guard_delegate.cpp",
+    "${data_service_path}/service/udmf/security_guard/auth_degradation_policy.cpp",
+    "${data_service_path}/service/udmf/security_guard/auth_event_builder.cpp",
+    "${data_service_path}/service/udmf/security_guard/auth_timeout_policy.cpp",
+    "${data_service_path}/service/udmf/security_guard/drag_auth_coordinator.cpp",
+    "udmf_drag_auth_coordinator_test.cpp",
+  ]
+  include_dirs = [
+    "${data_service_path}/service/udmf/security_guard",
+    "${data_service_path}/framework/include",
+  ]
+  external_deps = [
+    "hilog:libhilog",
+    "json:nlohmann_json_static",
+    "kv_store:datamgr_common",
+    "udmf:udmf_core",
+  ]
+}
+
+ohos_unittest("UdmfAuthDegradationPolicyTest") {
+  testonly = true
+  module_out_path = module_output_path
+  sources = [
+    "${data_service_path}/service/udmf/security_guard/auth_degradation_policy.cpp",
+    "udmf_auth_degradation_policy_test.cpp",
+  ]
+  include_dirs = [
+    "${data_service_path}/service/udmf/security_guard",
+    "${data_service_path}/framework/include",
+  ]
+  external_deps = [
+    "hilog:libhilog",
+    "json:nlohmann_json_static",
+    "kv_store:datamgr_common",
+    "udmf:udmf_core",
+  ]
+}
+
 group("unittests") {
   testonly = true
   deps = [
     ":AuditHelperTest",
+    ":UdmfAuthDegradationPolicyTest",
+    ":UdmfAuthEventBuilderTest",
+    ":UdmfAuthTimeoutPolicyTest",
+    ":UdmfAuthTimeoutTest",
     ":UdmfCheckerManagerTest",
     ":UdmfDelayDataContainerTest",
+    ":UdmfDragAuthCoordinatorTest",
+    ":UdmfDragAuthEncoderTest",
     ":UdmfDragProxyAuthorizationTest",
     ":UdmfObserverTest",
     ":UdmfPermissionPolicyUtilsTest",
