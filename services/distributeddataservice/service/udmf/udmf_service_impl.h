@@ -167,7 +167,7 @@ private:
     private:
         void ScheduleRegistration();
         std::mutex abilityMutex_;
-        bool securityGuardReady_ = false;
+        [[maybe_unused]] bool securityGuardReady_ = false;
         std::shared_ptr<ExecutorPool> abilityExecutors_;
     };
     class Factory {
