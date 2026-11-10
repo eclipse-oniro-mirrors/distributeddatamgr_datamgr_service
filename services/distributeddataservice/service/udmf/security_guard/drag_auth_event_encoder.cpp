@@ -69,6 +69,13 @@ size_t Utf8PrefixLength(const std::string &value, size_t length)
 
 AuthBuildStatus EncodeTextPreview(const std::string &value, Json &output, ContentBudget &budget)
 {
+    if (budget.Remaining() >= 2 && value.size() <= budget.Remaining() - 2) {
+        Json complete = value;
+        if (budget.ConsumeJson(complete)) {
+            output = std::move(complete);
+            return AuthBuildStatus::SUCCESS;
+        }
+    }
     size_t low = 0;
     size_t high = std::min(value.size(), budget.Remaining());
     while (low < high) {

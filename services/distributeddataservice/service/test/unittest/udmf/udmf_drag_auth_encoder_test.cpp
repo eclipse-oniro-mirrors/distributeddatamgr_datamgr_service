@@ -217,7 +217,11 @@ HWTEST_F(UdmfDragAuthEncoderTest, Build_EscapingExpansion_UsesSerializedByteLimi
     DragAuthEvent event{ 0, "old", "unchanged" };
     EXPECT_EQ(CreateDragAuthEventBuilder()->Build({ true, 17, 19, data }, event), AuthBuildStatus::SUCCESS);
     EXPECT_LE(event.jsonContent.size(), DRAG_AUTH_MAX_CONTENT_BYTES);
-    EXPECT_EQ(DistributedData::Serializable::json::parse(event.jsonContent)["content"]["entries"].size(), 1u);
+    auto json = DistributedData::Serializable::json::parse(event.jsonContent);
+    ASSERT_EQ(json["content"]["entries"].size(), 1u);
+    auto preview = json["content"]["entries"][0]["entries"][data->GetRecords()[0]->GetUtdId()][VALUE_TYPE];
+    ASSERT_TRUE(preview.is_string());
+    EXPECT_LT(preview.get<std::string>().size(), 2000u);
 }
 /**
  * @tc.name: Build_InvalidRecordsAndMetadata_FailsWithoutPartialEvent
