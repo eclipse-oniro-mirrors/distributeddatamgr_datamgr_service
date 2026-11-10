@@ -1656,7 +1656,7 @@ int32_t UdmfServiceImpl::SetDelayInfo(
     auto &container = DelayDataPrepareContainer::GetInstance();
     DelayDataPrepareContainer::LoadToken registered;
     if (!container.RegisterDataLoadCallback(
-            key, iface_cast<IUdmfNotifier>(iUdmfNotifier), callingTokenId, &registered)) {
+        key, iface_cast<IUdmfNotifier>(iUdmfNotifier), callingTokenId, &registered)) {
         return E_ERROR;
     }
     auto status = SaveDelayInfo(delayData, dataLoadInfo, key);

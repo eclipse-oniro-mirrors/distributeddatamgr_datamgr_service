@@ -200,6 +200,7 @@ template("udmf_service_impl_mock_test") {
         "${data_service_path}/service/udmf/security_guard/drag_auth_coordinator.cpp",
         "${data_service_path}/service/udmf/security_guard/drag_auth_event_encoder.cpp",
         "udmf_fuse_tdd_test.cpp",
+        "udmf_service_auth_entry_test.cpp",
         "udmf_service_impl_mock_test.cpp",
       ]
     } else {

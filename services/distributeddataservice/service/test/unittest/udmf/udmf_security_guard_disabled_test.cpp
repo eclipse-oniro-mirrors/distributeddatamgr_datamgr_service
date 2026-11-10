@@ -42,6 +42,10 @@ NiceMock<DisabledAuthPermissionCheckerMock> &GetDisabledAuthPermissionChecker()
 
 class UdmfSecurityGuardDisabledTest : public testing::Test {
 public:
+    static constexpr int32_t TEST_USER_ID = 100;
+    static constexpr uint32_t SOURCE_TOKEN_ID = 17;
+    static constexpr uint32_t RECEIVER_TOKEN_ID = 19;
+
     void SetUp() override
     {
         tokens_ = std::make_shared<NiceMock<AccessTokenKitMock>>();
@@ -50,7 +54,7 @@ public:
         ON_CALL(*tokens_, GetHapTokenInfo(_, _)).WillByDefault([](auto, HapTokenInfo &info) {
             info.bundleName = "com.test.auth";
             info.instIndex = 0;
-            info.userID = 100;
+            info.userID = TEST_USER_ID;
             return 0;
         });
         devices_ = std::make_shared<NiceMock<DeviceManagerAdapterMock>>();
@@ -78,12 +82,12 @@ public:
         record->SetUid("record-sg-disabled");
         data.AddRecord(record);
         Runtime runtime;
-        runtime.tokenId = 17;
+        runtime.tokenId = SOURCE_TOKEN_ID;
         runtime.recordTotalNum = 1;
         runtime.deviceId = "remote-auth-device";
         runtime.sourcePackage = "com.test.auth";
         Privilege privilege;
-        privilege.tokenId = 19;
+        privilege.tokenId = RECEIVER_TOKEN_ID;
         privilege.readPermission = "readAndKeep";
         runtime.privileges = { privilege };
         data.SetRuntime(runtime);
@@ -95,7 +99,7 @@ public:
         QueryOption query;
         query.key = "udmf://drag/com.test.auth/sg-disabled";
         query.intention = UD_INTENTION_DRAG;
-        query.tokenId = 19;
+        query.tokenId = RECEIVER_TOKEN_ID;
         return query;
     }
 
