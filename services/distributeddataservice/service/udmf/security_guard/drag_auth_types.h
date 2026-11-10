@@ -34,8 +34,8 @@ using DragAuthEvent = SecurityGuardDelegate::Event;
 using ClientTimeoutPolicy = SecurityGuardDelegate::ClientPolicy;
 using AdapterStatus = SecurityGuardDelegate::Status;
 using DispatchStatus = SecurityGuardDelegate::DispatchStatus;
-constexpr int64_t MIN_AUTH_CLIENT_TIMEOUT_MS = 100;
-constexpr int64_t MAX_AUTH_CLIENT_TIMEOUT_MS = 10000;
+constexpr int64_t MIN_AUTH_CLIENT_TIMEOUT_MS = 1;
+constexpr int64_t MAX_AUTH_CLIENT_TIMEOUT_MS = 400;
 enum class AuthReason {
     MERGED_RESULT,
     SKIPPED,

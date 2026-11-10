@@ -336,7 +336,7 @@ HWTEST_F(UdmfDragAuthCoordinatorTest, Authorize_TimeoutAllowAndInvalidPolicy_Use
     auto allowed = coordinator.Authorize(MakeCoordinatorContext());
     EXPECT_EQ(allowed.decision, DragAuthDecision::ALLOW);
     EXPECT_EQ(allowed.reason, AuthReason::AUTH_RESULT_TIMEOUT);
-    delegate.snapshot_.policies[EVENT_ID][0].timeoutMs = 99;
+    delegate.snapshot_.policies[EVENT_ID][0].timeoutMs = 401;
     auto denied = coordinator.Authorize(MakeCoordinatorContext());
     EXPECT_EQ(denied.decision, DragAuthDecision::DENY);
     EXPECT_EQ(denied.reason, AuthReason::AUTH_RESULT_TIMEOUT);

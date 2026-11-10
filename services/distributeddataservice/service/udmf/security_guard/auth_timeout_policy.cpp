@@ -20,7 +20,7 @@
 namespace OHOS::UDMF {
 namespace {
 constexpr int64_t WATCHDOG_GRACE_PERIOD_MS = 100;
-constexpr int64_t DEFAULT_WATCHDOG_TIMEOUT_MS = 5000;
+constexpr int64_t DEFAULT_WATCHDOG_TIMEOUT_MS = 500;
 } // namespace
 
 AuthTimeoutPolicy ClientPolicySnapshot::Resolve(int64_t eventId) const

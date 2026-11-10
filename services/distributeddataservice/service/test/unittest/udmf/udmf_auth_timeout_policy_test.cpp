@@ -24,7 +24,7 @@ namespace OHOS::UDMF {
 namespace {
 constexpr int64_t EVENT_ID = INT64_C(0x0F810000);
 constexpr int64_t LARGE_EVENT_ID = INT64_C(5000000001);
-constexpr int64_t DEFAULT_TIMEOUT_MS = 5000;
+constexpr int64_t DEFAULT_TIMEOUT_MS = 500;
 constexpr int64_t PROTECTION_MS = 100;
 } // namespace
 class UdmfAuthTimeoutPolicyTest : public testing::Test {};
@@ -76,7 +76,7 @@ HWTEST_F(UdmfAuthTimeoutPolicyTest, Resolve_LegalBoundaryTimeouts_AddsProtection
 {
     ClientPolicySnapshot snapshot;
     snapshot.initialized = true;
-    for (int64_t timeout : { 100, 400, 10000 }) {
+    for (int64_t timeout : { 1, 100, 400 }) {
         for (auto strategy : { DragAuthDecision::ALLOW, DragAuthDecision::DENY }) {
             snapshot.policies[EVENT_ID] = { { strategy, timeout } };
             auto policy = snapshot.Resolve(EVENT_ID);
@@ -96,7 +96,7 @@ HWTEST_F(UdmfAuthTimeoutPolicyTest, Resolve_IllegalTimeouts_RejectsWholePolicy, 
 {
     ClientPolicySnapshot snapshot;
     snapshot.initialized = true;
-    const std::vector<int64_t> invalid = { std::numeric_limits<int64_t>::min(), -1, 0, 99, 10001,
+    const std::vector<int64_t> invalid = { std::numeric_limits<int64_t>::min(), -1, 0, 401, 10000,
         std::numeric_limits<int64_t>::max() };
     for (auto timeout : invalid) {
         snapshot.policies[EVENT_ID] = { { DragAuthDecision::ALLOW, 400 }, { DragAuthDecision::ALLOW, timeout } };
@@ -135,11 +135,11 @@ HWTEST_F(UdmfAuthTimeoutPolicyTest, Resolve_AnyDenyAndMaximumAcrossClients_AreIn
     ClientPolicySnapshot snapshot;
     snapshot.initialized = true;
     snapshot.version = 31;
-    snapshot.policies[EVENT_ID] = { { DragAuthDecision::ALLOW, 10000 }, { DragAuthDecision::DENY, 100 },
+    snapshot.policies[EVENT_ID] = { { DragAuthDecision::ALLOW, 400 }, { DragAuthDecision::DENY, 100 },
         { DragAuthDecision::ALLOW, 400 } };
     const auto policy = snapshot.Resolve(EVENT_ID);
     EXPECT_EQ(policy.fallback, DragAuthDecision::DENY);
-    EXPECT_EQ(policy.watchdog.count(), 10100);
+    EXPECT_EQ(policy.watchdog.count(), 500);
     EXPECT_EQ(policy.snapshotVersion, 31u);
     EXPECT_FALSE(policy.defaultApplied);
     snapshot.policies[EVENT_ID][1].strategy = DragAuthDecision::ALLOW;
@@ -157,7 +157,7 @@ HWTEST_F(UdmfAuthTimeoutPolicyTest, Resolve_Int64EventSelection_DoesNotUseUnrela
     ClientPolicySnapshot snapshot;
     snapshot.initialized = true;
     snapshot.policies[LARGE_EVENT_ID] = { { DragAuthDecision::ALLOW, 100 } };
-    snapshot.policies[EVENT_ID] = { { DragAuthDecision::DENY, 10000 } };
+    snapshot.policies[EVENT_ID] = { { DragAuthDecision::DENY, 400 } };
     auto selected = snapshot.Resolve(LARGE_EVENT_ID);
     EXPECT_EQ(selected.fallback, DragAuthDecision::ALLOW);
     EXPECT_EQ(selected.watchdog.count(), 200);
@@ -175,11 +175,11 @@ HWTEST_F(UdmfAuthTimeoutPolicyTest, Resolve_IdentifiedSubscribers_RetainsRequire
     ClientPolicySnapshot snapshot;
     snapshot.initialized = true;
     snapshot.version = 7;
-    snapshot.policies[EVENT_ID] = { { DragAuthDecision::ALLOW, 10000, "degradable" },
+    snapshot.policies[EVENT_ID] = { { DragAuthDecision::ALLOW, 400, "degradable" },
         { DragAuthDecision::DENY, 400, "required" } };
     auto policy = snapshot.Resolve(EVENT_ID);
     EXPECT_EQ(policy.fallback, DragAuthDecision::DENY);
-    EXPECT_EQ(policy.watchdog, std::chrono::milliseconds(10100));
+    EXPECT_EQ(policy.watchdog, std::chrono::milliseconds(500));
     EXPECT_EQ(policy.snapshotVersion, 7u);
     EXPECT_FALSE(policy.defaultApplied);
     snapshot.policies[EVENT_ID].pop_back();

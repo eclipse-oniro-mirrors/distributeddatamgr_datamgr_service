@@ -88,17 +88,17 @@ HWTEST_F(UdmfAuthTimeoutTest, Resolve_UnknownAndInvalid_UsesWholeStageDefault, T
 {
     ClientPolicySnapshot snapshot;
     EXPECT_TRUE(snapshot.HasSubscribers(11));
-    EXPECT_EQ(snapshot.Resolve(11).watchdog.count(), 5000);
-    EXPECT_EQ(snapshot.Resolve(12).watchdog.count(), 5000);
+    EXPECT_EQ(snapshot.Resolve(11).watchdog.count(), 500);
+    EXPECT_EQ(snapshot.Resolve(12).watchdog.count(), 500);
     snapshot.initialized = true;
     snapshot.version = 7;
     EXPECT_FALSE(snapshot.HasSubscribers(11));
-    for (auto timeout : { 99, 10001 }) {
+    for (auto timeout : { 0, 401 }) {
         snapshot.policies[11] = { { DragAuthDecision::ALLOW, 400 }, { DragAuthDecision::DENY, timeout } };
         auto policy = snapshot.Resolve(11);
         EXPECT_TRUE(policy.defaultApplied);
         EXPECT_EQ(policy.fallback, DragAuthDecision::DENY);
-        EXPECT_EQ(policy.watchdog.count(), 5000);
+        EXPECT_EQ(policy.watchdog.count(), 500);
         EXPECT_EQ(policy.snapshotVersion, 7u);
     }
     for (auto strategy : { DragAuthDecision::TIMEOUT, DragAuthDecision::ERROR }) {
@@ -116,10 +116,10 @@ HWTEST_F(UdmfAuthTimeoutTest, Resolve_MultipleClients_AnyDenyAndMaximumTimeout, 
 {
     ClientPolicySnapshot snapshot;
     snapshot.initialized = true;
-    snapshot.policies[11] = { { DragAuthDecision::ALLOW, 100 }, { DragAuthDecision::ALLOW, 10000 } };
+    snapshot.policies[11] = { { DragAuthDecision::ALLOW, 1 }, { DragAuthDecision::ALLOW, 400 } };
     auto policy = snapshot.Resolve(11);
     EXPECT_EQ(policy.fallback, DragAuthDecision::ALLOW);
-    EXPECT_EQ(policy.watchdog.count(), 10100);
+    EXPECT_EQ(policy.watchdog.count(), 500);
     EXPECT_FALSE(policy.defaultApplied);
     snapshot.policies[11][0].strategy = DragAuthDecision::DENY;
     EXPECT_EQ(snapshot.Resolve(11).fallback, DragAuthDecision::DENY);
@@ -330,15 +330,15 @@ HWTEST_F(UdmfAuthTimeoutTest, Authorize_InjectedWait_UsesFrozenStageDeadlines, T
     EXPECT_EQ(coordinator.Authorize(Context()).decision, DragAuthDecision::DENY);
     EXPECT_EQ(coordinator.Authorize(Context()).decision, DragAuthDecision::DENY);
     adapter->snapshot_.initialized = true;
-    adapter->snapshot_.policies[11] = { { DragAuthDecision::ALLOW, 10000 } };
+    adapter->snapshot_.policies[11] = { { DragAuthDecision::ALLOW, 100 } };
     EXPECT_EQ(coordinator.Authorize(Context()).decision, DragAuthDecision::ALLOW);
     ASSERT_EQ(deadlines.size(), 3u);
-    EXPECT_GE(deadlines[0], 1950);
-    EXPECT_LE(deadlines[0], 5000);
-    EXPECT_GE(deadlines[1], 4950);
-    EXPECT_LE(deadlines[1], 5000);
-    EXPECT_GE(deadlines[2], 10050);
-    EXPECT_LE(deadlines[2], 10100);
+    EXPECT_GE(deadlines[0], 450);
+    EXPECT_LE(deadlines[0], 500);
+    EXPECT_GE(deadlines[1], 450);
+    EXPECT_LE(deadlines[1], 500);
+    EXPECT_GE(deadlines[2], 150);
+    EXPECT_LE(deadlines[2], 200);
 }
 /**
  * @tc.name: Authorize_EightConcurrentWaiters_NinthDoesNotDispatch
@@ -401,7 +401,7 @@ HWTEST_F(UdmfAuthTimeoutTest, Authorize_RealDefaultAndMaximumDeadlines_ReturnWit
     {
         auto adapter = std::make_shared<FakeSecurityGuardDelegate>();
         adapter->respond_ = false;
-        const int64_t expected = 5000;
+        const int64_t expected = 500;
         const auto begin = std::chrono::steady_clock::now();
         auto result = DragAuthCoordinator(adapter.get(), Builder()).Authorize(Context());
         auto elapsed =
@@ -414,15 +414,15 @@ HWTEST_F(UdmfAuthTimeoutTest, Authorize_RealDefaultAndMaximumDeadlines_ReturnWit
     auto adapter = std::make_shared<FakeSecurityGuardDelegate>();
     adapter->respond_ = false;
     adapter->snapshot_.initialized = true;
-    adapter->snapshot_.policies[11] = { { DragAuthDecision::ALLOW, 10000 } };
+    adapter->snapshot_.policies[11] = { { DragAuthDecision::ALLOW, 400 } };
     const auto begin = std::chrono::steady_clock::now();
     auto result = DragAuthCoordinator(adapter.get(), Builder()).Authorize(Context());
     auto elapsed =
         std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - begin).count();
-    std::cout << "maximum deadline=10100ms elapsed=" << elapsed << "ms" << std::endl;
+    std::cout << "maximum deadline=500ms elapsed=" << elapsed << "ms" << std::endl;
     EXPECT_EQ(result.decision, DragAuthDecision::ALLOW);
-    EXPECT_GE(elapsed, 10100);
-    EXPECT_LE(elapsed, 10150);
+    EXPECT_GE(elapsed, 500);
+    EXPECT_LE(elapsed, 550);
 }
 /**
  * @tc.name: Authorize_InlineDuplicateCallbacks_FirstResultWins

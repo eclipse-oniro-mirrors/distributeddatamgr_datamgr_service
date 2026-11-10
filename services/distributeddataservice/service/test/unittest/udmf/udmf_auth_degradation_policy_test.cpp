@@ -213,7 +213,7 @@ HWTEST_F(UdmfAuthDegradationPolicyTest, Finish_TimeoutsAtWindowBoundary_CountsCu
 HWTEST_F(UdmfAuthDegradationPolicyTest, Prepare_DenyAndInvalidIdentity_NeverAutoDegrades, TestSize.Level1)
 {
     snapshot_.policies[EVENT_ID] = { { Strategy::DENY, 400, "deny" }, { Strategy::ALLOW, 400, "" },
-        { Strategy::ALLOW, 99, "short" }, { Strategy::ALLOW, 10001, "long" }, { Strategy::ERROR, 400, "bad" },
+        { Strategy::ALLOW, 0, "short" }, { Strategy::ALLOW, 401, "long" }, { Strategy::ERROR, 400, "bad" },
         { Strategy::ALLOW, 400, "duplicate" }, { Strategy::DENY, 400, "duplicate" } };
     for (unsigned i = 0; i < 4; ++i) {
         auto request = policy_->Prepare(snapshot_, EVENT_ID);
@@ -233,7 +233,7 @@ HWTEST_F(
     UdmfAuthDegradationPolicyTest, Prepare_ClientAndEventIsolation_DegradesOnlyMatchingSubscriber, TestSize.Level1)
 {
     snapshot_.policies[EVENT_ID].push_back({ Strategy::ALLOW, 100, "client-b" });
-    snapshot_.policies[EVENT_ID + 1] = { { Strategy::ALLOW, 10000, "client-a" } };
+    snapshot_.policies[EVENT_ID + 1] = { { Strategy::ALLOW, 400, "client-a" } };
     Timeouts(3);
     auto request = policy_->Prepare(snapshot_, EVENT_ID);
     EXPECT_EQ(request.degradedClients, std::vector<std::string>({ "client-a" }));
@@ -289,7 +289,7 @@ HWTEST_F(UdmfAuthDegradationPolicyTest, UpdateSnapshot_PolicyChange_ResetsHealth
     auto old = policy_->Prepare(snapshot_, EVENT_ID);
     Timeouts(2);
     ++snapshot_.version;
-    snapshot_.policies[EVENT_ID][0].timeoutMs = 500;
+    snapshot_.policies[EVENT_ID][0].timeoutMs = 399;
     policy_->UpdateSnapshot(snapshot_);
     policy_->Finish(old, Reply(Strategy::TIMEOUT));
     Timeouts(1);
