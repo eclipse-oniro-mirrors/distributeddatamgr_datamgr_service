@@ -402,9 +402,13 @@ HWTEST_F(UdmfServiceAuthEntryTest, GetData_OnlyVerifiedLocalSameApp_SkipsBlockin
         std::string bundle;
         bool skip;
     };
-    const std::vector<Scenario> cases = { { "local-auth-device", receiverTokenId, "com.test.auth", true },
-        { "remote-auth-device", receiverTokenId, "com.test.auth", false }, { "local-auth-device", sourceTokenId, "com.test.auth", false },
-        { "local-auth-device", receiverTokenId, "com.test.replaced", false }, { "", receiverTokenId, "com.test.auth", false } };
+    const std::vector<Scenario> cases = {
+        { "local-auth-device", receiverTokenId, "com.test.auth", true },
+        { "remote-auth-device", receiverTokenId, "com.test.auth", false },
+        { "local-auth-device", sourceTokenId, "com.test.auth", false },
+        { "local-auth-device", receiverTokenId, "com.test.replaced", false },
+        { "", receiverTokenId, "com.test.auth", false },
+    };
     int index = 0;
     guard_.result_ = SecurityGuardDelegate::Strategy::DENY;
     for (const auto &item : cases) {
