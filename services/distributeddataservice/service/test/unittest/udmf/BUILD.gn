@@ -187,7 +187,6 @@ template("udmf_service_impl_mock_test") {
       "${data_service_path}/service/udmf/store/drag_observer.cpp",
       "${data_service_path}/service/udmf/store/observer_factory.cpp",
       "${data_service_path}/service/udmf/store/runtime_store.cpp",
-      "${data_service_path}/service/udmf/store/store_cache.cpp",
       "${data_service_path}/service/udmf/audit/audit_loader.cpp",
       "${data_service_path}/service/udmf/udmf_service_impl.cpp",
       "${data_service_path}/service/udmf/udmf_service_stub.cpp",
