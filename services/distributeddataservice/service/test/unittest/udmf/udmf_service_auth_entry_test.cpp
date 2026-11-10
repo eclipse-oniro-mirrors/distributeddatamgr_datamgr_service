@@ -240,24 +240,29 @@ HWTEST_F(UdmfServiceAuthEntryTest, GetData_CachedReadDeny_PreservesPendingAndEra
     EXPECT_FALSE(DelayDataPrepareContainer::GetInstance().QueryBlockDelayData(key, pending));
 }
 /**
- * @tc.name: GetData_CachedOversize_ReturnsInvalidParametersWithoutDispatchOrConsume
+ * @tc.name: GetData_CachedLargePayload_DeliversFullDataAfterPreviewAllow
  * @tc.desc: Verify public behavior, failure propagation and observable state.
  * @tc.type: FUNC
  * @tc.author: agent
  */
 HWTEST_F(
-    UdmfServiceAuthEntryTest, GetData_CachedOversize_ReturnsInvalidParametersWithoutDispatchOrConsume, TestSize.Level1)
+    UdmfServiceAuthEntryTest, GetData_CachedLargePayload_DeliversFullDataAfterPreviewAllow, TestSize.Level1)
 {
     const std::string key = "udmf://drag/com.test.auth/read-oversize";
     auto pending = Prepare(key);
     ASSERT_NE(pending.blockData, nullptr);
-    pending.blockData->SetValue(DelayDeliveryResult{ Payload(10241), UDMF::E_OK, false });
+    pending.blockData->SetValue(DelayDeliveryResult{ Payload(100 * 1024), UDMF::E_OK, false });
     UdmfServiceImpl service;
     UnifiedData output;
-    EXPECT_EQ(service.GetData(Query(key), output), UDMF::E_INVALID_PARAMETERS);
-    EXPECT_TRUE(output.IsEmpty());
-    EXPECT_EQ(output.GetRuntime(), nullptr);
-    EXPECT_EQ(guard_.requests_, 0);
+    EXPECT_EQ(service.GetData(Query(key), output), UDMF::E_OK);
+    ASSERT_EQ(output.GetRecords().size(), 1u);
+    EXPECT_EQ(std::get<std::string>(output.GetRecords()[0]->GetOriginValue()).size(), 100 * 1024u);
+    EXPECT_EQ(guard_.requests_, 1);
+    EXPECT_LE(guard_.event_.jsonContent.size(), 10 * 1024u);
+    auto preview = Serializable::json::parse(guard_.event_.jsonContent);
+    auto text = preview["content"]["entries"][0]["entries"][output.GetRecords()[0]->GetUtdId()][VALUE_TYPE];
+    ASSERT_TRUE(text.is_string());
+    EXPECT_LT(text.get<std::string>().size(), 100 * 1024u);
     EXPECT_FALSE(DelayDataPrepareContainer::GetInstance().QueryBlockDelayData(key, pending));
 }
 /**
@@ -530,12 +535,12 @@ public:
     UnifiedData delivered;
 };
 /**
- * @tc.name: PushDelayData_AsyncDeniedAndOversize_ReloadsThenDeliversAfterAllow
+ * @tc.name: PushDelayData_AsyncDeniedThenLargeAllowed_DeliversFullData
  * @tc.desc: Public read, source push and completion retain retryable origin until accepted delivery.
  * @tc.type: FUNC
  * @tc.author: agent
  */
-HWTEST_F(UdmfServiceAuthEntryTest, PushDelayData_AsyncDeniedAndOversize_ReloadsThenDeliversAfterAllow, TestSize.Level1)
+HWTEST_F(UdmfServiceAuthEntryTest, PushDelayData_AsyncDeniedThenLargeAllowed_DeliversFullData, TestSize.Level1)
 {
     UseNativeDelayIdentity();
     std::string key;
@@ -555,19 +560,20 @@ HWTEST_F(UdmfServiceAuthEntryTest, PushDelayData_AsyncDeniedAndOversize_ReloadsT
         return UDMF::E_OK;
     });
     int attempts = 0;
-    for (auto expected : { UDMF::E_NO_PERMISSION, UDMF::E_INVALID_PARAMETERS, UDMF::E_OK }) {
+    for (auto expected : { UDMF::E_NO_PERMISSION, UDMF::E_OK }) {
         sptr<RecordingAuthDelivery> receiver = new RecordingAuthDelivery();
         auto output = std::make_shared<UnifiedData>();
         EXPECT_EQ(service.GetDataIfAvailable(key, DataLoadInfo(), receiver->AsObject(), output), UDMF::E_OK);
         EXPECT_EQ(origin->calls, ++attempts);
         guard_.result_ = expected == UDMF::E_NO_PERMISSION ? SecurityGuardDelegate::Strategy::DENY
                                                            : SecurityGuardDelegate::Strategy::ALLOW;
-        EXPECT_EQ(PushAuthPayload(service, key, expected == UDMF::E_INVALID_PARAMETERS ? 10241 : 8), expected);
+        EXPECT_EQ(PushAuthPayload(service, key, expected == UDMF::E_OK ? 100 * 1024 : 8), expected);
         EXPECT_EQ(receiver->calls, 1);
         EXPECT_EQ(receiver->delivered.IsEmpty(), expected != UDMF::E_OK);
         EXPECT_EQ(prepare.QueryDataLoadCallbackSize(), expected == UDMF::E_OK ? 0 : 1);
     }
     EXPECT_EQ(guard_.requests_, 2);
+    EXPECT_LE(guard_.event_.jsonContent.size(), 10 * 1024u);
 }
 
 /**
@@ -1061,10 +1067,10 @@ HWTEST_F(UdmfServiceAuthEntryTest, GetData_StoredRead_OnlyAllowedDataIsReturned,
 {
     EXPECT_CALL(*store_, Delete(_)).Times(0);
     int index = 0;
-    for (auto expected : { UDMF::E_OK, UDMF::E_NO_PERMISSION, UDMF::E_INVALID_PARAMETERS }) {
+    for (auto expected : { UDMF::E_OK, UDMF::E_NO_PERMISSION }) {
         const std::string key = "udmf://drag/com.test.auth/stored" + std::to_string(index++);
         EXPECT_CALL(*store_, Get(key, _)).WillOnce([&](const auto &, UnifiedData &data) {
-            data = Payload(expected == UDMF::E_INVALID_PARAMETERS ? 10241 : 8);
+            data = Payload(expected == UDMF::E_OK ? 100 * 1024 : 8);
             Privilege privilege;
             privilege.tokenId = receiverTokenId;
             privilege.readPermission = "readAndKeep";
@@ -1078,7 +1084,12 @@ HWTEST_F(UdmfServiceAuthEntryTest, GetData_StoredRead_OnlyAllowedDataIsReturned,
         UnifiedData output;
         EXPECT_EQ(service.GetData(Query(key), output), expected);
         EXPECT_EQ(output.IsEmpty(), expected != UDMF::E_OK);
-        EXPECT_EQ(guard_.requests_ - requestsBefore, expected == UDMF::E_INVALID_PARAMETERS ? 0 : 1);
+        EXPECT_EQ(guard_.requests_ - requestsBefore, 1);
+        if (expected == UDMF::E_OK) {
+            ASSERT_EQ(output.GetRecords().size(), 1u);
+            EXPECT_EQ(std::get<std::string>(output.GetRecords()[0]->GetOriginValue()).size(), 100 * 1024u);
+            EXPECT_LE(guard_.event_.jsonContent.size(), 10 * 1024u);
+        }
         if (expected != UDMF::E_OK) {
             EXPECT_EQ(output.GetRuntime(), nullptr);
         }
@@ -1094,10 +1105,10 @@ HWTEST_F(UdmfServiceAuthEntryTest, GetData_VirtualMarker_ChecksSgBeforeVirtualSe
 {
     EXPECT_CALL(*store_, Delete(_)).Times(0);
     int index = 0;
-    for (auto expected : { UDMF::E_NO_PERMISSION, UDMF::E_INVALID_PARAMETERS, UDMF::E_FS_ERROR }) {
+    for (auto expected : { UDMF::E_NO_PERMISSION, UDMF::E_FS_ERROR }) {
         const std::string key = "udmf://drag/com.test.auth/virtualauth" + std::to_string(index++);
         EXPECT_CALL(*store_, Get(key, _)).WillOnce([&](const auto &, UnifiedData &data) {
-            data = Payload(expected == UDMF::E_INVALID_PARAMETERS ? 10241 : 8);
+            data = Payload(8);
             auto details = std::make_shared<Object>();
             details->value_[VIRTUAL_ENTRY_FLAG] = true;
             auto file = std::make_shared<Object>();
@@ -1121,7 +1132,7 @@ HWTEST_F(UdmfServiceAuthEntryTest, GetData_VirtualMarker_ChecksSgBeforeVirtualSe
         UdmfServiceImpl service;
         UnifiedData output;
         EXPECT_EQ(service.GetData(Query(key), output), expected);
-        EXPECT_EQ(guard_.requests_ - requestsBefore, expected == UDMF::E_INVALID_PARAMETERS ? 0 : 1);
+        EXPECT_EQ(guard_.requests_ - requestsBefore, 1);
         if (expected != UDMF::E_FS_ERROR) {
             EXPECT_TRUE(output.IsEmpty());
             EXPECT_EQ(output.GetRuntime(), nullptr);
@@ -1139,13 +1150,13 @@ HWTEST_F(UdmfServiceAuthEntryTest, HandleRemoteDelayData_AsyncRead_PropagatesDec
 {
     EXPECT_CALL(*store_, Delete(_)).Times(0);
     int index = 0;
-    for (auto expected : { UDMF::E_OK, UDMF::E_NO_PERMISSION, UDMF::E_INVALID_PARAMETERS, UDMF::E_ERROR }) {
+    for (auto expected : { UDMF::E_OK, UDMF::E_NO_PERMISSION, UDMF::E_ERROR }) {
         const std::string key = "udmf://drag/com.test.auth/remote" + std::to_string(index++);
         EXPECT_CALL(*store_, Get(key, _)).WillOnce([&](const auto &, UnifiedData &data) {
             if (expected == UDMF::E_ERROR) {
                 return UDMF::E_ERROR;
             }
-            data = Payload(expected == UDMF::E_INVALID_PARAMETERS ? 10241 : 8);
+            data = Payload(expected == UDMF::E_OK ? 100 * 1024 : 8);
             Privilege privilege;
             privilege.tokenId = receiverTokenId;
             privilege.readPermission = "readAndKeep";
@@ -1185,13 +1196,13 @@ HWTEST_F(UdmfServiceAuthEntryTest, HandleRemoteDelayData_BlockedRead_PropagatesD
 {
     EXPECT_CALL(*store_, Delete(_)).Times(0);
     int index = 0;
-    for (auto expected : { UDMF::E_OK, UDMF::E_NO_PERMISSION, UDMF::E_INVALID_PARAMETERS, UDMF::E_ERROR }) {
+    for (auto expected : { UDMF::E_OK, UDMF::E_NO_PERMISSION, UDMF::E_ERROR }) {
         const std::string key = "udmf://drag/com.test.auth/remote" + std::to_string(index++);
         EXPECT_CALL(*store_, Get(key, _)).WillOnce([&](const auto &, UnifiedData &data) {
             if (expected == UDMF::E_ERROR) {
                 return UDMF::E_ERROR;
             }
-            data = Payload(expected == UDMF::E_INVALID_PARAMETERS ? 10241 : 8);
+            data = Payload(expected == UDMF::E_OK ? 100 * 1024 : 8);
             Privilege privilege;
             privilege.tokenId = receiverTokenId;
             privilege.readPermission = "readAndKeep";

@@ -15,6 +15,7 @@
 
 #include "drag_auth_event_encoder.h"
 
+#include <algorithm>
 #include <map>
 #include <string>
 #include <type_traits>
@@ -47,10 +48,64 @@ public:
     {
         return Consume(node.dump(-1, ' ', false, DistributedData::Serializable::error_handler_t::replace).size());
     }
+    size_t Remaining() const
+    {
+        return remaining_;
+    }
 
 private:
     size_t remaining_ = DRAG_AUTH_MAX_CONTENT_BYTES;
 };
+size_t Utf8PrefixLength(const std::string &value, size_t length)
+{
+    if (length >= value.size()) {
+        return value.size();
+    }
+    while (length > 0 && (static_cast<unsigned char>(value[length]) & 0xc0) == 0x80) {
+        --length;
+    }
+    return length;
+}
+
+AuthBuildStatus EncodeTextPreview(const std::string &value, Json &output, ContentBudget &budget)
+{
+    size_t low = 0;
+    size_t high = std::min(value.size(), budget.Remaining());
+    while (low < high) {
+        size_t length = Utf8PrefixLength(value, low + (high - low + 1) / 2);
+        Json candidate = value.substr(0, length);
+        if (candidate.dump(-1, ' ', false, DistributedData::Serializable::error_handler_t::replace).size() <=
+            budget.Remaining()) {
+            low = low + (high - low + 1) / 2;
+        } else {
+            high = low + (high - low + 1) / 2 - 1;
+        }
+    }
+    output = value.substr(0, Utf8PrefixLength(value, low));
+    if (!budget.ConsumeJson(output)) {
+        return AuthBuildStatus::TOO_LARGE;
+    }
+    return low == value.size() ? AuthBuildStatus::SUCCESS : AuthBuildStatus::TOO_LARGE;
+}
+AuthBuildStatus EncodeBinaryPreview(const std::vector<uint8_t> &value, Json &output, ContentBudget &budget)
+{
+    size_t low = 0;
+    size_t high = std::min(value.size(), budget.Remaining());
+    while (low < high) {
+        size_t middle = low + (high - low + 1) / 2;
+        Json candidate = Json::binary(std::vector<uint8_t>(value.begin(), value.begin() + middle));
+        if (candidate.dump().size() <= budget.Remaining()) {
+            low = middle;
+        } else {
+            high = middle - 1;
+        }
+    }
+    output = Json::binary(std::vector<uint8_t>(value.begin(), value.begin() + low));
+    if (!budget.ConsumeJson(output)) {
+        return AuthBuildStatus::TOO_LARGE;
+    }
+    return low == value.size() ? AuthBuildStatus::SUCCESS : AuthBuildStatus::TOO_LARGE;
+}
 AuthBuildStatus EncodeValue(const ValueType &value, Json &output, ContentBudget &budget,
     std::unordered_set<const Object *> &active, size_t depth);
 AuthBuildStatus EncodeEntries(const std::map<std::string, ValueType> &entries, Json &output, ContentBudget &budget,
@@ -66,11 +121,17 @@ AuthBuildStatus EncodeEntries(const std::map<std::string, ValueType> &entries, J
             return AuthBuildStatus::TOO_LARGE;
         }
         Json encoded;
+        auto before = budget.Remaining();
         auto status = EncodeValue(value, encoded, budget, active, depth + 1);
-        if (status != AuthBuildStatus::SUCCESS) {
+        if (status == AuthBuildStatus::INVALID_DATA || status == AuthBuildStatus::INVALID_ENCODING) {
             return status;
         }
-        output[key] = std::move(encoded);
+        if (status == AuthBuildStatus::SUCCESS || budget.Remaining() < before) {
+            output[key] = std::move(encoded);
+        }
+        if (status == AuthBuildStatus::TOO_LARGE) {
+            return status;
+        }
     }
     return AuthBuildStatus::SUCCESS;
 }
@@ -81,9 +142,6 @@ AuthBuildStatus EncodeWant(const std::shared_ptr<AAFwk::Want> &want, Json &outpu
         return AuthBuildStatus::SUCCESS;
     }
     auto text = want->ToString();
-    if (text.size() > DRAG_AUTH_MAX_CONTENT_BYTES) {
-        return AuthBuildStatus::TOO_LARGE;
-    }
     output = { { "kind", "want" }, { "value", std::move(text) } };
     return AuthBuildStatus::SUCCESS;
 }
@@ -95,15 +153,16 @@ AuthBuildStatus EncodePixelMap(const std::shared_ptr<Media::PixelMap> &pixels, J
         return AuthBuildStatus::SUCCESS;
     }
     auto bytes = pixels->GetByteCount();
-    if (bytes < 0 || static_cast<size_t>(bytes) > DRAG_AUTH_MAX_CONTENT_BYTES) {
-        return AuthBuildStatus::TOO_LARGE;
+    if (bytes < 0) {
+        return AuthBuildStatus::INVALID_DATA;
+    }
+    if (static_cast<size_t>(bytes) > DRAG_AUTH_MAX_CONTENT_BYTES) {
+        output = { { "kind", "pixelmap-tlv" }, { "value", Json::binary(std::vector<uint8_t>{}) } };
+        return AuthBuildStatus::SUCCESS;
     }
     std::vector<uint8_t> encoded;
     if (!pixels->EncodeTlv(encoded)) {
         return AuthBuildStatus::INVALID_DATA;
-    }
-    if (encoded.size() > DRAG_AUTH_MAX_CONTENT_BYTES) {
-        return AuthBuildStatus::TOO_LARGE;
     }
     output = { { "kind", "pixelmap-tlv" }, { "value", Json::binary(encoded) } };
     return AuthBuildStatus::SUCCESS;
@@ -111,19 +170,7 @@ AuthBuildStatus EncodePixelMap(const std::shared_ptr<Media::PixelMap> &pixels, J
 
 AuthBuildStatus EncodeLeafValue(const ValueType &value, Json &output)
 {
-    if (std::holds_alternative<std::string>(value)) {
-        const auto &text = std::get<std::string>(value);
-        if (text.size() > DRAG_AUTH_MAX_CONTENT_BYTES) {
-            return AuthBuildStatus::TOO_LARGE;
-        }
-        output = text;
-    } else if (std::holds_alternative<std::vector<uint8_t>>(value)) {
-        const auto &bytes = std::get<std::vector<uint8_t>>(value);
-        if (bytes.size() > DRAG_AUTH_MAX_CONTENT_BYTES) {
-            return AuthBuildStatus::TOO_LARGE;
-        }
-        output = Json::binary(bytes);
-    } else if (std::holds_alternative<std::shared_ptr<AAFwk::Want>>(value)) {
+    if (std::holds_alternative<std::shared_ptr<AAFwk::Want>>(value)) {
         return EncodeWant(std::get<std::shared_ptr<AAFwk::Want>>(value), output);
     } else if (std::holds_alternative<std::shared_ptr<Media::PixelMap>>(value)) {
         return EncodePixelMap(std::get<std::shared_ptr<Media::PixelMap>>(value), output);
@@ -142,27 +189,53 @@ AuthBuildStatus EncodeLeafValue(const ValueType &value, Json &output)
     return AuthBuildStatus::SUCCESS;
 }
 
+AuthBuildStatus EncodeTypedPreview(Json &output, ContentBudget &budget)
+{
+    auto overhead = Json({ { "kind", output["kind"] }, { "value", "" } }).dump().size() - 2;
+    size_t minimum = output["value"].is_string() ? 2 : Json::binary(std::vector<uint8_t>{}).dump().size();
+    if (overhead + minimum > budget.Remaining()) {
+        return AuthBuildStatus::TOO_LARGE;
+    }
+    budget.Consume(overhead);
+    if (output["value"].is_string()) {
+        auto source = std::move(output["value"].get_ref<std::string &>());
+        return EncodeTextPreview(source, output["value"], budget);
+    }
+    if (output["value"].is_binary()) {
+        auto source = std::move(output["value"].get_binary());
+        return EncodeBinaryPreview(source, output["value"], budget);
+    }
+    return AuthBuildStatus::INVALID_DATA;
+}
+
 AuthBuildStatus EncodeValue(const ValueType &value, Json &output, ContentBudget &budget,
     std::unordered_set<const Object *> &active, size_t depth)
 {
     if (depth > MAX_OBJECT_DEPTH) {
-        return AuthBuildStatus::TOO_LARGE;
+        return AuthBuildStatus::INVALID_ENCODING;
     }
     if (std::holds_alternative<std::shared_ptr<Object>>(value)) {
         auto object = std::get<std::shared_ptr<Object>>(value);
         if (object) {
             if (!active.insert(object.get()).second) {
-                return AuthBuildStatus::TOO_LARGE;
+                return AuthBuildStatus::INVALID_ENCODING;
             }
             auto status = EncodeEntries(object->value_, output, budget, active, depth);
             active.erase(object.get());
             return status;
         }
         output = nullptr;
+    } else if (std::holds_alternative<std::string>(value)) {
+        return EncodeTextPreview(std::get<std::string>(value), output, budget);
+    } else if (std::holds_alternative<std::vector<uint8_t>>(value)) {
+        return EncodeBinaryPreview(std::get<std::vector<uint8_t>>(value), output, budget);
     } else {
         auto status = EncodeLeafValue(value, output);
         if (status != AuthBuildStatus::SUCCESS) {
             return status;
+        }
+        if (output.is_object() && output.contains("kind") && output.contains("value")) {
+            return EncodeTypedPreview(output, budget);
         }
     }
     return budget.ConsumeJson(output) ? AuthBuildStatus::SUCCESS : AuthBuildStatus::TOO_LARGE;
@@ -174,10 +247,10 @@ AuthBuildStatus EncodeRecord(const std::shared_ptr<UnifiedRecord> &record, Json 
     if (!record) {
         return AuthBuildStatus::INVALID_DATA;
     }
-    // Bound source values before GetEntries copies their data. No truncation is permitted.
+    // A negative size is malformed; large records are encoded as a bounded preview.
     auto sourceBytes = record->GetSize();
-    if (sourceBytes < 0 || sourceBytes > static_cast<int64_t>(DRAG_AUTH_MAX_CONTENT_BYTES)) {
-        return AuthBuildStatus::TOO_LARGE;
+    if (sourceBytes < 0) {
+        return AuthBuildStatus::INVALID_ENCODING;
     }
     auto type = record->GetUtdId();
     if (type.size() > DRAG_AUTH_MAX_CONTENT_BYTES) {
@@ -190,7 +263,7 @@ AuthBuildStatus EncodeRecord(const std::shared_ptr<UnifiedRecord> &record, Json 
     if (!encodedRecords.empty()) {
         overhead += JSON_MEMBER_SEPARATOR_BYTES;
     }
-    if (!budget.Consume(overhead)) {
+    if (budget.Remaining() < overhead + JSON_OBJECT_BRACES_BYTES || !budget.Consume(overhead)) {
         return AuthBuildStatus::TOO_LARGE;
     }
     auto entries = record->GetEntries();
@@ -198,11 +271,11 @@ AuthBuildStatus EncodeRecord(const std::shared_ptr<UnifiedRecord> &record, Json 
         return AuthBuildStatus::INVALID_DATA;
     }
     auto status = EncodeEntries(*entries, node["entries"], budget, active, 0);
-    if (status != AuthBuildStatus::SUCCESS) {
+    if (status == AuthBuildStatus::INVALID_DATA || status == AuthBuildStatus::INVALID_ENCODING) {
         return status;
     }
     encodedRecords.push_back(std::move(node));
-    return AuthBuildStatus::SUCCESS;
+    return status;
 }
 } // namespace
 AuthBuildStatus EncodeDragAuthContent(const DragAuthContext &context, Json &content)
@@ -218,13 +291,13 @@ AuthBuildStatus EncodeDragAuthContent(const DragAuthContext &context, Json &cont
     }
     std::unordered_set<const Object *> active;
     auto records = context.data->GetRecords();
-    if (records.size() > DRAG_AUTH_MAX_CONTENT_BYTES / JSON_OBJECT_BRACES_BYTES) {
-        return AuthBuildStatus::TOO_LARGE;
-    }
     for (const auto &record : records) {
         auto status = EncodeRecord(record, root["content"]["entries"], budget, active);
-        if (status != AuthBuildStatus::SUCCESS) {
+        if (status == AuthBuildStatus::INVALID_DATA || status == AuthBuildStatus::INVALID_ENCODING) {
             return status;
+        }
+        if (status == AuthBuildStatus::TOO_LARGE) {
+            break;
         }
     }
     content = std::move(root);

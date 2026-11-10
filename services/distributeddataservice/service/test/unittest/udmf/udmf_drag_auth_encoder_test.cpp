@@ -52,12 +52,12 @@ HWTEST_F(UdmfDragAuthEncoderTest, Build_RealUnifiedData_PreservesIdentityAndAllE
     EXPECT_EQ(entries["application.test.extra"]["uri"], "file://test/document");
 }
 /**
- * @tc.name: Build_ExactProductionBudget_OneExtraByteFails
+ * @tc.name: Build_ExactProductionBudget_OneExtraByteIsTruncated
  * @tc.desc: Verify the receiver-side event contract through public interfaces.
  * @tc.type: FUNC
  * @tc.author: agent
  */
-HWTEST_F(UdmfDragAuthEncoderTest, Build_ExactProductionBudget_OneExtraByteFails, TestSize.Level1)
+HWTEST_F(UdmfDragAuthEncoderTest, Build_ExactProductionBudget_OneExtraByteIsTruncated, TestSize.Level1)
 {
     auto makeData = [](size_t length) {
         auto data = std::make_shared<UnifiedData>();
@@ -75,8 +75,9 @@ HWTEST_F(UdmfDragAuthEncoderTest, Build_ExactProductionBudget_OneExtraByteFails,
     EXPECT_EQ(event.jsonContent.size(), DRAG_AUTH_MAX_CONTENT_BYTES);
     auto accepted = event.jsonContent;
     context.data = makeData(DRAG_AUTH_MAX_CONTENT_BYTES - overhead + 1);
-    EXPECT_EQ(builder->Build(context, event), AuthBuildStatus::TOO_LARGE);
+    EXPECT_EQ(builder->Build(context, event), AuthBuildStatus::SUCCESS);
     EXPECT_EQ(event.jsonContent, accepted);
+    EXPECT_EQ(DistributedData::Serializable::json::parse(event.jsonContent)["content"]["entries"].size(), 1u);
 }
 /**
  * @tc.name: Build_BinaryAndNullValues_PreservesContent
@@ -103,12 +104,12 @@ HWTEST_F(UdmfDragAuthEncoderTest, Build_BinaryAndNullValues_PreservesContent, Te
     EXPECT_EQ(value["enabled"], true);
 }
 /**
- * @tc.name: Build_NullOrLargeRecord_LeavesOutputUntouched
+ * @tc.name: Build_NullOrLargeRecord_RejectsNullAndTruncatesLarge
  * @tc.desc: Verify the receiver-side event contract through public interfaces.
  * @tc.type: FUNC
  * @tc.author: agent
  */
-HWTEST_F(UdmfDragAuthEncoderTest, Build_NullOrLargeRecord_LeavesOutputUntouched, TestSize.Level1)
+HWTEST_F(UdmfDragAuthEncoderTest, Build_NullOrLargeRecord_RejectsNullAndTruncatesLarge, TestSize.Level1)
 {
     auto builder = CreateDragAuthEventBuilder();
     DragAuthContext context{ true, 17, 19, nullptr };
@@ -117,8 +118,11 @@ HWTEST_F(UdmfDragAuthEncoderTest, Build_NullOrLargeRecord_LeavesOutputUntouched,
     auto data = std::make_shared<UnifiedData>();
     data->AddRecord(std::make_shared<UnifiedRecord>(UDType::PLAIN_TEXT, std::string(10241, 'x')));
     context.data = data;
-    EXPECT_EQ(builder->Build(context, event), AuthBuildStatus::TOO_LARGE);
-    EXPECT_EQ(event.jsonContent, "old");
+    EXPECT_EQ(builder->Build(context, event), AuthBuildStatus::SUCCESS);
+    EXPECT_LE(event.jsonContent.size(), DRAG_AUTH_MAX_CONTENT_BYTES);
+    auto preview = DistributedData::Serializable::json::parse(event.jsonContent);
+    EXPECT_FALSE(preview["content"]["entries"].empty());
+    EXPECT_EQ(data->GetRecords()[0]->GetSize(), 10241);
 }
 /**
  * @tc.name: Build_WantAndNullHandles_PreservesTypedValues
@@ -181,20 +185,23 @@ HWTEST_F(UdmfDragAuthEncoderTest, Build_PixelMap_PreservesEncodedBytes, TestSize
     EXPECT_EQ(value["value"]["bytes"], expected);
 }
 /**
- * @tc.name: Build_MultipleRecords_AggregateLimitDoesNotDropRecords
+ * @tc.name: Build_MultipleRecords_AggregateLimitKeepsPrefix
  * @tc.desc: Verify the receiver-side event contract through public interfaces.
  * @tc.type: FUNC
  * @tc.author: agent
  */
 
-HWTEST_F(UdmfDragAuthEncoderTest, Build_MultipleRecords_AggregateLimitDoesNotDropRecords, TestSize.Level1)
+HWTEST_F(UdmfDragAuthEncoderTest, Build_MultipleRecords_AggregateLimitKeepsPrefix, TestSize.Level1)
 {
     auto data = std::make_shared<UnifiedData>();
     data->AddRecord(std::make_shared<UnifiedRecord>(UDType::PLAIN_TEXT, std::string(6000, 'a')));
     data->AddRecord(std::make_shared<UnifiedRecord>(UDType::PLAIN_TEXT, std::string(6000, 'b')));
     DragAuthEvent event{ 0, "old", "unchanged" };
-    EXPECT_EQ(CreateDragAuthEventBuilder()->Build({ true, 17, 19, data }, event), AuthBuildStatus::TOO_LARGE);
-    EXPECT_EQ(event.jsonContent, "unchanged");
+    EXPECT_EQ(CreateDragAuthEventBuilder()->Build({ true, 17, 19, data }, event), AuthBuildStatus::SUCCESS);
+    EXPECT_LE(event.jsonContent.size(), DRAG_AUTH_MAX_CONTENT_BYTES);
+    auto preview = DistributedData::Serializable::json::parse(event.jsonContent);
+    EXPECT_EQ(preview["content"]["entries"].size(), 2u);
+    EXPECT_EQ(data->GetRecords().size(), 2u);
 }
 /**
  * @tc.name: Build_EscapingExpansion_UsesSerializedByteLimit
@@ -208,8 +215,9 @@ HWTEST_F(UdmfDragAuthEncoderTest, Build_EscapingExpansion_UsesSerializedByteLimi
     auto data = std::make_shared<UnifiedData>();
     data->AddRecord(std::make_shared<UnifiedRecord>(UDType::PLAIN_TEXT, std::string(2000, '\0')));
     DragAuthEvent event{ 0, "old", "unchanged" };
-    EXPECT_EQ(CreateDragAuthEventBuilder()->Build({ true, 17, 19, data }, event), AuthBuildStatus::TOO_LARGE);
-    EXPECT_EQ(event.jsonContent, "unchanged");
+    EXPECT_EQ(CreateDragAuthEventBuilder()->Build({ true, 17, 19, data }, event), AuthBuildStatus::SUCCESS);
+    EXPECT_LE(event.jsonContent.size(), DRAG_AUTH_MAX_CONTENT_BYTES);
+    EXPECT_EQ(DistributedData::Serializable::json::parse(event.jsonContent)["content"]["entries"].size(), 1u);
 }
 /**
  * @tc.name: Build_InvalidRecordsAndMetadata_FailsWithoutPartialEvent
@@ -228,20 +236,21 @@ HWTEST_F(UdmfDragAuthEncoderTest, Build_InvalidRecordsAndMetadata_FailsWithoutPa
     auto record = std::make_shared<UnifiedRecord>(UDType::PLAIN_TEXT, std::string("content"));
     record->SetUtdId(std::string(DRAG_AUTH_MAX_CONTENT_BYTES + 1, 't'));
     data->SetRecords({ record });
-    EXPECT_EQ(builder->Build({ true, 17, 19, data }, event), AuthBuildStatus::TOO_LARGE);
+    EXPECT_EQ(builder->Build({ true, 17, 19, data }, event), AuthBuildStatus::SUCCESS);
+    EXPECT_LE(event.jsonContent.size(), DRAG_AUTH_MAX_CONTENT_BYTES);
     record = std::make_shared<UnifiedRecord>(UDType::PLAIN_TEXT, std::string("x"));
     data->SetRecords(std::vector<std::shared_ptr<UnifiedRecord>>(DRAG_AUTH_MAX_CONTENT_BYTES / 2 + 1, record));
-    EXPECT_EQ(builder->Build({ true, 17, 19, data }, event), AuthBuildStatus::TOO_LARGE);
-    EXPECT_EQ(event.jsonContent, "unchanged");
+    EXPECT_EQ(builder->Build({ true, 17, 19, data }, event), AuthBuildStatus::SUCCESS);
+    EXPECT_LE(event.jsonContent.size(), DRAG_AUTH_MAX_CONTENT_BYTES);
 }
 /**
- * @tc.name: Build_DeepObjectsAndEscapedKeys_FailsWithoutDroppingFields
+ * @tc.name: Build_DeepObjectsAndEscapedKeys_TruncatesKeyAndRejectsDepth
  * @tc.desc: Verify the receiver-side event contract through public interfaces.
  * @tc.type: FUNC
  * @tc.author: agent
  */
 
-HWTEST_F(UdmfDragAuthEncoderTest, Build_DeepObjectsAndEscapedKeys_FailsWithoutDroppingFields, TestSize.Level1)
+HWTEST_F(UdmfDragAuthEncoderTest, Build_DeepObjectsAndEscapedKeys_TruncatesKeyAndRejectsDepth, TestSize.Level1)
 {
     auto data = std::make_shared<UnifiedData>();
     auto object = std::make_shared<Object>();
@@ -250,7 +259,8 @@ HWTEST_F(UdmfDragAuthEncoderTest, Build_DeepObjectsAndEscapedKeys_FailsWithoutDr
     data->SetRecords({ record });
     DragAuthEvent event{ 0, "old", "unchanged" };
     auto builder = CreateDragAuthEventBuilder();
-    EXPECT_EQ(builder->Build({ true, 17, 19, data }, event), AuthBuildStatus::TOO_LARGE);
+    EXPECT_EQ(builder->Build({ true, 17, 19, data }, event), AuthBuildStatus::SUCCESS);
+    EXPECT_LE(event.jsonContent.size(), DRAG_AUTH_MAX_CONTENT_BYTES);
     object = std::make_shared<Object>();
     auto node = object;
     for (size_t i = 0; i < 66; ++i) {
@@ -260,8 +270,7 @@ HWTEST_F(UdmfDragAuthEncoderTest, Build_DeepObjectsAndEscapedKeys_FailsWithoutDr
     }
     record = std::make_shared<UnifiedRecord>(UDType::PLAIN_TEXT, object);
     data->SetRecords({ record });
-    EXPECT_EQ(builder->Build({ true, 17, 19, data }, event), AuthBuildStatus::TOO_LARGE);
-    EXPECT_EQ(event.jsonContent, "unchanged");
+    EXPECT_EQ(builder->Build({ true, 17, 19, data }, event), AuthBuildStatus::INVALID_ENCODING);
 }
 /**
  * @tc.name: Build_InvalidAndLargePixelMap_NoPartialImageEvent
@@ -285,8 +294,8 @@ HWTEST_F(UdmfDragAuthEncoderTest, Build_InvalidAndLargePixelMap_NoPartialImageEv
     pixels = Media::PixelMap::Create(options);
     ASSERT_NE(pixels, nullptr);
     data->SetRecords({ std::make_shared<UnifiedRecord>(UDType::SYSTEM_DEFINED_PIXEL_MAP, pixels) });
-    EXPECT_EQ(builder->Build({ true, 17, 19, data }, event), AuthBuildStatus::TOO_LARGE);
-    EXPECT_EQ(event.jsonContent, "unchanged");
+    EXPECT_EQ(builder->Build({ true, 17, 19, data }, event), AuthBuildStatus::SUCCESS);
+    EXPECT_LE(event.jsonContent.size(), DRAG_AUTH_MAX_CONTENT_BYTES);
 }
 
 namespace {
@@ -306,20 +315,20 @@ private:
 };
 } // namespace
 /**
- * @tc.name: Build_NegativeAndOversizedReportedSize_RejectsBeforeCopy
+ * @tc.name: Build_NegativeAndOversizedReportedSize_RejectsNegativeOnly
  * @tc.desc: Verify public behavior, failure propagation and observable state.
  * @tc.type: FUNC
  * @tc.author: agent
  */
-HWTEST_F(UdmfDragAuthEncoderTest, Build_NegativeAndOversizedReportedSize_RejectsBeforeCopy, TestSize.Level1)
+HWTEST_F(UdmfDragAuthEncoderTest, Build_NegativeAndOversizedReportedSize_RejectsNegativeOnly, TestSize.Level1)
 {
     for (int64_t size : { -1, 10241 }) {
         auto data = std::make_shared<UnifiedData>();
         data->AddRecord(std::make_shared<SizedAuthRecord>(std::string("small"), size));
         DragAuthEvent event{ 1, "unchanged", "sentinel" };
-        EXPECT_EQ(CreateDragAuthEventBuilder()->Build({ true, 1, 2, data }, event), AuthBuildStatus::TOO_LARGE);
-        EXPECT_EQ(event.jsonContent, "sentinel");
-        EXPECT_EQ(event.eventId, 1);
+        auto status = CreateDragAuthEventBuilder()->Build({ true, 1, 2, data }, event);
+        EXPECT_EQ(status, size < 0 ? AuthBuildStatus::INVALID_ENCODING : AuthBuildStatus::SUCCESS);
+        EXPECT_EQ(event.eventId, size < 0 ? 1 : DRAG_AUTH_EVENT_ID);
     }
 }
 /**
@@ -337,9 +346,55 @@ HWTEST_F(UdmfDragAuthEncoderTest, Build_MisleadingSourceSize_StillChecksStringBi
         auto data = std::make_shared<UnifiedData>();
         data->AddRecord(std::make_shared<SizedAuthRecord>(value));
         DragAuthEvent event{ 1, "unchanged", "sentinel" };
-        EXPECT_EQ(CreateDragAuthEventBuilder()->Build({ true, 1, 2, data }, event), AuthBuildStatus::TOO_LARGE);
-        EXPECT_EQ(event.jsonContent, "sentinel");
+        EXPECT_EQ(CreateDragAuthEventBuilder()->Build({ true, 1, 2, data }, event), AuthBuildStatus::SUCCESS);
+        EXPECT_LE(event.jsonContent.size(), DRAG_AUTH_MAX_CONTENT_BYTES);
     }
+}
+/**
+ * @tc.name: Build_LargeBinary_PreservesPreviewPrefixAndOriginalValue
+ * @tc.desc: Binary expansion is bounded without modifying the dragged record.
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(UdmfDragAuthEncoderTest, Build_LargeBinary_PreservesPreviewPrefixAndOriginalValue, TestSize.Level1)
+{
+    auto bytes = std::vector<uint8_t>(100 * 1024, 0x7f);
+    auto record = std::make_shared<UnifiedRecord>(UDType::PLAIN_TEXT, bytes);
+    auto data = std::make_shared<UnifiedData>();
+    data->AddRecord(record);
+    DragAuthEvent event;
+    ASSERT_EQ(CreateDragAuthEventBuilder()->Build({ true, 1, 2, data }, event), AuthBuildStatus::SUCCESS);
+    ASSERT_LE(event.jsonContent.size(), DRAG_AUTH_MAX_CONTENT_BYTES);
+    auto preview = DistributedData::Serializable::json::parse(event.jsonContent);
+    auto value = preview["content"]["entries"][0]["entries"][record->GetUtdId()][VALUE_TYPE];
+    ASSERT_FALSE(value["bytes"].empty());
+    EXPECT_LT(value["bytes"].size(), bytes.size());
+    EXPECT_EQ(value["bytes"][0], 0x7f);
+    EXPECT_EQ(std::get<std::vector<uint8_t>>(record->GetOriginValue()).size(), bytes.size());
+}
+/**
+ * @tc.name: Build_Utf8Boundary_KeepsValidPreview
+ * @tc.desc: A truncated multibyte string remains valid UTF-8 and valid JSON.
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(UdmfDragAuthEncoderTest, Build_Utf8Boundary_KeepsValidPreview, TestSize.Level1)
+{
+    std::string text;
+    for (size_t i = 0; i < 4000; ++i) {
+        text += "中";
+    }
+    auto record = std::make_shared<UnifiedRecord>(UDType::PLAIN_TEXT, text);
+    auto data = std::make_shared<UnifiedData>();
+    data->AddRecord(record);
+    DragAuthEvent event;
+    ASSERT_EQ(CreateDragAuthEventBuilder()->Build({ true, 1, 2, data }, event), AuthBuildStatus::SUCCESS);
+    auto preview = DistributedData::Serializable::json::parse(event.jsonContent);
+    auto value = preview["content"]["entries"][0]["entries"][record->GetUtdId()][VALUE_TYPE];
+    ASSERT_TRUE(value.is_string());
+    EXPECT_EQ(value.get<std::string>().size() % 3, 0u);
+    EXPECT_LT(value.get<std::string>().size(), text.size());
+    EXPECT_LE(event.jsonContent.size(), DRAG_AUTH_MAX_CONTENT_BYTES);
 }
 /**
  * @tc.name: Build_CyclicObject_RejectsAndReleasesCycle
@@ -356,16 +411,16 @@ HWTEST_F(UdmfDragAuthEncoderTest, Build_CyclicObject_RejectsAndReleasesCycle, Te
     DragAuthEvent event{ 1, "unchanged", "sentinel" };
     auto status = CreateDragAuthEventBuilder()->Build({ true, 1, 2, data }, event);
     object->value_.clear();
-    EXPECT_EQ(status, AuthBuildStatus::TOO_LARGE);
+    EXPECT_EQ(status, AuthBuildStatus::INVALID_ENCODING);
     EXPECT_EQ(event.jsonContent, "sentinel");
 }
 /**
- * @tc.name: Build_OversizedEntryKeyAndRecordOverhead_AreRejected
+ * @tc.name: Build_OversizedEntryKeyAndRecordOverhead_ProducesBoundedPreview
  * @tc.desc: Verify public behavior, failure propagation and observable state.
  * @tc.type: FUNC
  * @tc.author: agent
  */
-HWTEST_F(UdmfDragAuthEncoderTest, Build_OversizedEntryKeyAndRecordOverhead_AreRejected, TestSize.Level1)
+HWTEST_F(UdmfDragAuthEncoderTest, Build_OversizedEntryKeyAndRecordOverhead_ProducesBoundedPreview, TestSize.Level1)
 {
     auto object = std::make_shared<Object>();
     object->value_[std::string(10241, 'k')] = int32_t(1);
@@ -373,11 +428,11 @@ HWTEST_F(UdmfDragAuthEncoderTest, Build_OversizedEntryKeyAndRecordOverhead_AreRe
     auto data = std::make_shared<UnifiedData>();
     data->AddRecord(record);
     DragAuthEvent event{ 1, "unchanged", "sentinel" };
-    EXPECT_EQ(CreateDragAuthEventBuilder()->Build({ true, 1, 2, data }, event), AuthBuildStatus::TOO_LARGE);
+    EXPECT_EQ(CreateDragAuthEventBuilder()->Build({ true, 1, 2, data }, event), AuthBuildStatus::SUCCESS);
     object->value_.clear();
     record->SetUtdId(std::string(10240, '\n'));
-    EXPECT_EQ(CreateDragAuthEventBuilder()->Build({ true, 1, 2, data }, event), AuthBuildStatus::TOO_LARGE);
-    EXPECT_EQ(event.jsonContent, "sentinel");
+    EXPECT_EQ(CreateDragAuthEventBuilder()->Build({ true, 1, 2, data }, event), AuthBuildStatus::SUCCESS);
+    EXPECT_LE(event.jsonContent.size(), DRAG_AUTH_MAX_CONTENT_BYTES);
 }
 /**
  * @tc.name: Build_AliasedAcyclicObjectsAndNumericTypes_EncodeWithoutFalseCycle
