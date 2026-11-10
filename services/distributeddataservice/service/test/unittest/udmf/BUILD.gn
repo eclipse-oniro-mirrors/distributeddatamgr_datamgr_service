@@ -254,6 +254,7 @@ template("udmf_service_impl_mock_test") {
       "googletest:gtest_main",
       "hilog:libhilog",
       "hisysevent:libhisysevent",
+      "hitrace:hitrace_meter",
       "hitrace:libhitracechain",
       "image_framework:image",
       "ipc:ipc_core",
@@ -1219,6 +1220,7 @@ ohos_unittest("UdmfDragAuthEncoderTest") {
   ]
   external_deps = [
     "ability_base:want",
+    "hilog:libhilog",
     "image_framework:image",
     "image_framework:image_native",
     "image_framework:pixelmap",
