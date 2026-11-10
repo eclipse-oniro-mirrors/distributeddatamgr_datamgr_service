@@ -110,7 +110,10 @@ NiceMock<AuthPermissionCheckerMock> &GetAuthPermissionChecker()
 }
 class UdmfServiceAuthEntryTest : public testing::Test {
 public:
-    static constexpr int32_t NATIVE_LOOKUP_SOURCE_SWITCH = 2;
+    static constexpr int32_t nativeLookupSourceSwitch = 2;
+    static constexpr int32_t testUserId = 100;
+    static constexpr uint32_t sourceTokenId = 17;
+    static constexpr uint32_t receiverTokenId = 19;
 
     void SetUp() override
     {
@@ -120,7 +123,7 @@ public:
         ON_CALL(*tokens_, GetHapTokenInfo(_, _)).WillByDefault([](auto, HapTokenInfo &info) {
             info.bundleName = "com.test.auth";
             info.instIndex = 0;
-            info.userID = 100;
+            info.userID = testUserId;
             return 0;
         });
         devices_ = std::make_shared<NiceMock<DeviceManagerAdapterMock>>();
@@ -146,7 +149,7 @@ public:
         BAccessTokenKit::accessTokenkit = nullptr;
         BDeviceManagerAdapter::deviceManagerAdapter = nullptr;
     }
-    BlockDelayData Prepare(const std::string &key, uint32_t token = 19)
+    BlockDelayData Prepare(const std::string &key, uint32_t token = receiverTokenId)
     {
         keys_.push_back({ key, token });
         auto &container = DelayDataPrepareContainer::GetInstance();
@@ -168,7 +171,7 @@ public:
         record->SetUid("record-auth-1");
         payload.AddRecord(record);
         Runtime runtime;
-        runtime.tokenId = 17;
+        runtime.tokenId = sourceTokenId;
         runtime.recordTotalNum = 1;
         runtime.deviceId = "remote-auth-device";
         runtime.sourcePackage = "com.test.auth";
@@ -180,7 +183,7 @@ public:
         QueryOption query;
         query.key = key;
         query.intention = UD_INTENTION_DRAG;
-        query.tokenId = 19;
+        query.tokenId = receiverTokenId;
         return query;
     }
     void UseNativeDelayIdentity()
@@ -191,7 +194,7 @@ public:
         ON_CALL(*tokens_, GetTokenType(token)).WillByDefault(Return(TOKEN_NATIVE));
         ON_CALL(*tokens_, GetNativeTokenInfo(token, _)).WillByDefault([this](auto, NativeTokenInfo &info) {
             // Source identity changes at the saved-identity check so this native-only fixture reaches SG.
-            info.processName = ++nativeLookups_ == NATIVE_LOOKUP_SOURCE_SWITCH ? "replaced" : "msdp";
+            info.processName = ++nativeLookups_ == nativeLookupSourceSwitch ? "replaced" : "msdp";
             return 0;
         });
     }
@@ -231,8 +234,8 @@ HWTEST_F(UdmfServiceAuthEntryTest, GetData_CachedReadDeny_PreservesPendingAndEra
     EXPECT_EQ(guard_.event_.eventId, 0x0F810000);
     EXPECT_EQ(guard_.event_.version, "1.0");
     auto json = Serializable::json::parse(guard_.event_.jsonContent);
-    EXPECT_EQ(json["sourceTokenId"], 17);
-    EXPECT_EQ(json["targetTokenId"], 19);
+    EXPECT_EQ(json["sourceTokenId"], sourceTokenId);
+    EXPECT_EQ(json["targetTokenId"], receiverTokenId);
     EXPECT_FALSE(json["content"]["entries"].empty());
     EXPECT_FALSE(DelayDataPrepareContainer::GetInstance().QueryBlockDelayData(key, pending));
 }
@@ -399,9 +402,9 @@ HWTEST_F(UdmfServiceAuthEntryTest, GetData_OnlyVerifiedLocalSameApp_SkipsBlockin
         std::string bundle;
         bool skip;
     };
-    const std::vector<Scenario> cases = { { "local-auth-device", 19, "com.test.auth", true },
-        { "remote-auth-device", 19, "com.test.auth", false }, { "local-auth-device", 17, "com.test.auth", false },
-        { "local-auth-device", 19, "com.test.replaced", false }, { "", 19, "com.test.auth", false } };
+    const std::vector<Scenario> cases = { { "local-auth-device", receiverTokenId, "com.test.auth", true },
+        { "remote-auth-device", receiverTokenId, "com.test.auth", false }, { "local-auth-device", sourceTokenId, "com.test.auth", false },
+        { "local-auth-device", receiverTokenId, "com.test.replaced", false }, { "", receiverTokenId, "com.test.auth", false } };
     int index = 0;
     guard_.result_ = SecurityGuardDelegate::Strategy::DENY;
     for (const auto &item : cases) {
@@ -487,7 +490,7 @@ HWTEST_F(UdmfServiceAuthEntryTest, GetData_UriPreparationFailsAfterAllow_Returns
     auto pending = Prepare(key);
     ASSERT_NE(pending.blockData, nullptr);
     pending.blockData->SetValue(DelayDeliveryResult{ Payload(), UDMF::E_OK, false });
-    EXPECT_CALL(*tokens_, GetHapTokenInfo(19, _))
+    EXPECT_CALL(*tokens_, GetHapTokenInfo(receiverTokenId, _))
         .WillOnce([](auto, HapTokenInfo &info) {
             info.bundleName = "com.test.auth";
             return 0;
@@ -620,16 +623,16 @@ HWTEST_F(UdmfServiceAuthEntryTest, HandleRemoteDelayData_ReplacedDuringAuth_Drop
     TestSize.Level1)
 {
     const std::string key = "udmf://drag/com.test.auth/remotereplaced";
-    keys_.push_back({ key, 19 });
+    keys_.push_back({ key, receiverTokenId });
     EXPECT_CALL(*store_, Get(key, _)).WillRepeatedly([&](const auto &, UnifiedData &output) {
         output = Payload();
-        output.GetRuntime()->privileges = { { 19, "readAndKeep", "" } };
+        output.GetRuntime()->privileges = { { receiverTokenId, "readAndKeep", "" } };
         return UDMF::E_OK;
     });
     EXPECT_CALL(*store_, Delete(_)).Times(0);
     sptr<RecordingAuthDelivery> first = new RecordingAuthDelivery();
     sptr<RecordingAuthDelivery> next = new RecordingAuthDelivery();
-    DelayGetDataInfo info{ .tokenId = 19, .dataCallback = first->AsObject() };
+    DelayGetDataInfo info{ .tokenId = receiverTokenId, .dataCallback = first->AsObject() };
     auto &acquire = DelayDataAcquireContainer::GetInstance();
     ASSERT_TRUE(acquire.RegisterDelayDataCallback(key, info));
     guard_.result_ = SecurityGuardDelegate::Strategy::ALLOW;
@@ -638,7 +641,7 @@ HWTEST_F(UdmfServiceAuthEntryTest, HandleRemoteDelayData_ReplacedDuringAuth_Drop
         acquire.RegisterDelayDataCallback(key, info);
     };
     UdmfServiceImpl service;
-    EXPECT_CALL(*tokens_, GetHapTokenInfo(19, _)).Times(0);
+    EXPECT_CALL(*tokens_, GetHapTokenInfo(receiverTokenId, _)).Times(0);
     EXPECT_EQ(service.HandleRemoteDelayData(key), UDMF::E_ERROR);
     EXPECT_TRUE(Mock::VerifyAndClearExpectations(tokens_.get()));
     EXPECT_EQ(first->calls, 0);
@@ -661,7 +664,7 @@ HWTEST_F(
     UdmfServiceAuthEntryTest, HandleRemoteDelayData_AsyncConsume_PreservesValidatedKeyForLifecycle, TestSize.Level1)
 {
     const std::string key = "udmf://drag/com.test.auth/remoteconsume";
-    keys_.push_back({ key, 19 });
+    keys_.push_back({ key, receiverTokenId });
     EXPECT_CALL(*store_, Get(key, _)).WillOnce([&](const auto &, UnifiedData &data) {
         data = Payload();
         return UDMF::E_OK;
@@ -673,7 +676,7 @@ HWTEST_F(
         return UDMF::E_OK;
     });
     sptr<RecordingAuthDelivery> receiver = new RecordingAuthDelivery();
-    DelayGetDataInfo info{ .tokenId = 19, .dataCallback = receiver->AsObject() };
+    DelayGetDataInfo info{ .tokenId = receiverTokenId, .dataCallback = receiver->AsObject() };
     ASSERT_TRUE(DelayDataAcquireContainer::GetInstance().RegisterDelayDataCallback(key, info));
     auto pool = std::make_shared<ExecutorPool>(1, 1);
     UdmfServiceImpl service;
@@ -800,7 +803,7 @@ HWTEST_F(UdmfServiceAuthEntryTest, GetDataIfAvailable_AnotherReceiverOwnsRegistr
     DelayDataAcquireContainer::Request expected;
     ASSERT_TRUE(acquire.RegisterDelayDataCallback(key, info, &expected));
     sptr<RecordingDelayOrigin> origin = new RecordingDelayOrigin();
-    ASSERT_TRUE(DelayDataPrepareContainer::GetInstance().RegisterDataLoadCallback(key, origin, 17));
+    ASSERT_TRUE(DelayDataPrepareContainer::GetInstance().RegisterDataLoadCallback(key, origin, sourceTokenId));
     UdmfServiceImpl service;
     sptr<RecordingAuthDelivery> next = new RecordingAuthDelivery();
     auto output = std::make_shared<UnifiedData>();
@@ -893,7 +896,7 @@ HWTEST_F(
     keys_.push_back({ key, 0 });
     sptr<RecordingDelayOrigin> origin = new RecordingDelayOrigin();
     auto &prepare = DelayDataPrepareContainer::GetInstance();
-    ASSERT_TRUE(prepare.RegisterDataLoadCallback(key, origin, 17));
+    ASSERT_TRUE(prepare.RegisterDataLoadCallback(key, origin, sourceTokenId));
     EXPECT_TRUE(prepare.ExecDataLoadCallback(key, DataLoadInfo()));
     EXPECT_EQ(origin->calls, 1);
     AuthStoreRegistry::current.reset();
@@ -967,7 +970,7 @@ HWTEST_F(
     bool registered = false;
     std::string key;
     EXPECT_CALL(*store_, PutDelayData(_, _)).WillOnce([&](const auto &, const auto &) {
-        registered = prepare.RegisterDataLoadCallback(key, next, 17, &replacement);
+        registered = prepare.RegisterDataLoadCallback(key, next, sourceTokenId, &replacement);
         return UDMF::E_DB_ERROR;
     });
     UdmfServiceImpl service;
@@ -975,7 +978,7 @@ HWTEST_F(
     info.sequenceKey = "rollback_replaced";
     info.recordCount = 1;
     EXPECT_EQ(service.SetDelayInfo(info, first->AsObject(), key), UDMF::E_DB_ERROR);
-    keys_.push_back({ key, 17 });
+    keys_.push_back({ key, sourceTokenId });
     EXPECT_TRUE(registered);
     DelayDataPrepareContainer::LoadToken retained;
     ASSERT_TRUE(prepare.QueryDataLoadToken(key, retained));
@@ -1059,7 +1062,7 @@ HWTEST_F(UdmfServiceAuthEntryTest, GetData_StoredRead_OnlyAllowedDataIsReturned,
         EXPECT_CALL(*store_, Get(key, _)).WillOnce([&](const auto &, UnifiedData &data) {
             data = Payload(expected == UDMF::E_INVALID_PARAMETERS ? 10241 : 8);
             Privilege privilege;
-            privilege.tokenId = 19;
+            privilege.tokenId = receiverTokenId;
             privilege.readPermission = "readAndKeep";
             data.GetRuntime()->privileges = { privilege };
             return UDMF::E_OK;
@@ -1103,7 +1106,7 @@ HWTEST_F(UdmfServiceAuthEntryTest, GetData_VirtualMarker_ChecksSgBeforeVirtualSe
             data.AddRecord(record);
             data.GetRuntime()->recordTotalNum = 2;
             Privilege privilege;
-            privilege.tokenId = 19;
+            privilege.tokenId = receiverTokenId;
             privilege.readPermission = "readAndKeep";
             data.GetRuntime()->privileges = { privilege };
             return UDMF::E_OK;
@@ -1123,68 +1126,91 @@ HWTEST_F(UdmfServiceAuthEntryTest, GetData_VirtualMarker_ChecksSgBeforeVirtualSe
 }
 
 /**
- * @tc.name: HandleRemoteDelayData_AsyncAndBlockedReads_PropagateDecisionBeforeDelivery
- * @tc.desc: Verify public behavior, failure propagation and observable state.
+ * @tc.name: HandleRemoteDelayData_AsyncRead_PropagatesDecisionBeforeDelivery
+ * @tc.desc: Async delivery reports authorization and storage outcomes to the receiver.
  * @tc.type: FUNC
  * @tc.author: agent
  */
-HWTEST_F(UdmfServiceAuthEntryTest, HandleRemoteDelayData_AsyncAndBlockedReads_PropagateDecisionBeforeDelivery,
-    TestSize.Level1)
+HWTEST_F(UdmfServiceAuthEntryTest, HandleRemoteDelayData_AsyncRead_PropagatesDecisionBeforeDelivery, TestSize.Level1)
 {
     EXPECT_CALL(*store_, Delete(_)).Times(0);
     int index = 0;
-    for (bool asynchronous : { false, true }) {
-        for (auto expected : { UDMF::E_OK, UDMF::E_NO_PERMISSION, UDMF::E_INVALID_PARAMETERS, UDMF::E_ERROR }) {
-            const std::string key = "udmf://drag/com.test.auth/remote" + std::to_string(index++);
-            EXPECT_CALL(*store_, Get(key, _)).WillOnce([&](const auto &, UnifiedData &data) {
-                if (expected == UDMF::E_ERROR) {
-                    return UDMF::E_ERROR;
-                }
-                data = Payload(expected == UDMF::E_INVALID_PARAMETERS ? 10241 : 8);
-                Privilege privilege;
-                privilege.tokenId = 19;
-                privilege.readPermission = "readAndKeep";
-                data.GetRuntime()->privileges = { privilege };
-                return UDMF::E_OK;
-            });
-            sptr<RecordingAuthDelivery> delivery = new RecordingAuthDelivery();
-            DelayGetDataInfo info;
-            BlockDelayData pending;
-            if (asynchronous) {
-                info.tokenId = 19;
-                info.dataCallback = delivery->AsObject();
-                DelayDataAcquireContainer::GetInstance().RegisterDelayDataCallback(key, info);
-            } else {
-                pending = Prepare(key);
-                ASSERT_NE(pending.blockData, nullptr);
+    for (auto expected : { UDMF::E_OK, UDMF::E_NO_PERMISSION, UDMF::E_INVALID_PARAMETERS, UDMF::E_ERROR }) {
+        const std::string key = "udmf://drag/com.test.auth/remote" + std::to_string(index++);
+        EXPECT_CALL(*store_, Get(key, _)).WillOnce([&](const auto &, UnifiedData &data) {
+            if (expected == UDMF::E_ERROR) {
+                return UDMF::E_ERROR;
             }
-            guard_.result_ = expected == UDMF::E_NO_PERMISSION ? SecurityGuardDelegate::Strategy::DENY
-                                                               : SecurityGuardDelegate::Strategy::ALLOW;
-            UdmfServiceImpl service;
-            auto requestsBefore = guard_.requests_;
-            EXPECT_EQ(service.HandleRemoteDelayData(key), expected);
-            EXPECT_EQ(guard_.requests_ - requestsBefore,
-                expected == UDMF::E_OK || expected == UDMF::E_NO_PERMISSION ? 1 : 0);
-            if (asynchronous) {
-                EXPECT_EQ(delivery->calls, expected == UDMF::E_ERROR ? 0 : 1);
-                if (expected != UDMF::E_ERROR) {
-                    EXPECT_EQ(delivery->delivered.IsEmpty(), expected != UDMF::E_OK);
-                    EXPECT_FALSE(DelayDataAcquireContainer::GetInstance().QueryDelayGetDataInfo(key, info));
-                } else {
-                    EXPECT_TRUE(DelayDataAcquireContainer::GetInstance().QueryDelayGetDataInfo(key, info));
-                    DelayDataAcquireContainer::GetInstance().HandleDelayDataCallback(key, UnifiedData());
-                }
-            } else {
-                auto actual = pending.blockData->GetValue();
-                if (expected == UDMF::E_ERROR) {
-                    EXPECT_FALSE(actual.has_value());
-                } else {
-                    ASSERT_TRUE(actual.has_value());
-                    EXPECT_EQ(actual->status, expected);
-                    EXPECT_EQ(actual->prepared, expected == UDMF::E_OK);
-                    EXPECT_EQ(actual->data.IsEmpty(), expected != UDMF::E_OK);
-                }
+            data = Payload(expected == UDMF::E_INVALID_PARAMETERS ? 10241 : 8);
+            Privilege privilege;
+            privilege.tokenId = receiverTokenId;
+            privilege.readPermission = "readAndKeep";
+            data.GetRuntime()->privileges = { privilege };
+            return UDMF::E_OK;
+        });
+        sptr<RecordingAuthDelivery> delivery = new RecordingAuthDelivery();
+        DelayGetDataInfo info;
+        info.tokenId = receiverTokenId;
+        info.dataCallback = delivery->AsObject();
+        DelayDataAcquireContainer::GetInstance().RegisterDelayDataCallback(key, info);
+        guard_.result_ = expected == UDMF::E_NO_PERMISSION ? SecurityGuardDelegate::Strategy::DENY
+                                                           : SecurityGuardDelegate::Strategy::ALLOW;
+        UdmfServiceImpl service;
+        auto requestsBefore = guard_.requests_;
+        EXPECT_EQ(service.HandleRemoteDelayData(key), expected);
+        EXPECT_EQ(guard_.requests_ - requestsBefore,
+            expected == UDMF::E_OK || expected == UDMF::E_NO_PERMISSION ? 1 : 0);
+        EXPECT_EQ(delivery->calls, expected == UDMF::E_ERROR ? 0 : 1);
+        if (expected != UDMF::E_ERROR) {
+            EXPECT_EQ(delivery->delivered.IsEmpty(), expected != UDMF::E_OK);
+            EXPECT_FALSE(DelayDataAcquireContainer::GetInstance().QueryDelayGetDataInfo(key, info));
+        } else {
+            EXPECT_TRUE(DelayDataAcquireContainer::GetInstance().QueryDelayGetDataInfo(key, info));
+            DelayDataAcquireContainer::GetInstance().HandleDelayDataCallback(key, UnifiedData());
+        }
+    }
+}
+
+/**
+ * @tc.name: HandleRemoteDelayData_BlockedRead_PropagatesDecisionBeforeDelivery
+ * @tc.desc: Blocked delivery reports authorization and storage outcomes to the receiver.
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(UdmfServiceAuthEntryTest, HandleRemoteDelayData_BlockedRead_PropagatesDecisionBeforeDelivery, TestSize.Level1)
+{
+    EXPECT_CALL(*store_, Delete(_)).Times(0);
+    int index = 0;
+    for (auto expected : { UDMF::E_OK, UDMF::E_NO_PERMISSION, UDMF::E_INVALID_PARAMETERS, UDMF::E_ERROR }) {
+        const std::string key = "udmf://drag/com.test.auth/remote" + std::to_string(index++);
+        EXPECT_CALL(*store_, Get(key, _)).WillOnce([&](const auto &, UnifiedData &data) {
+            if (expected == UDMF::E_ERROR) {
+                return UDMF::E_ERROR;
             }
+            data = Payload(expected == UDMF::E_INVALID_PARAMETERS ? 10241 : 8);
+            Privilege privilege;
+            privilege.tokenId = receiverTokenId;
+            privilege.readPermission = "readAndKeep";
+            data.GetRuntime()->privileges = { privilege };
+            return UDMF::E_OK;
+        });
+        auto pending = Prepare(key);
+        ASSERT_NE(pending.blockData, nullptr);
+        guard_.result_ = expected == UDMF::E_NO_PERMISSION ? SecurityGuardDelegate::Strategy::DENY
+                                                           : SecurityGuardDelegate::Strategy::ALLOW;
+        UdmfServiceImpl service;
+        auto requestsBefore = guard_.requests_;
+        EXPECT_EQ(service.HandleRemoteDelayData(key), expected);
+        EXPECT_EQ(guard_.requests_ - requestsBefore,
+            expected == UDMF::E_OK || expected == UDMF::E_NO_PERMISSION ? 1 : 0);
+        auto actual = pending.blockData->GetValue();
+        if (expected == UDMF::E_ERROR) {
+            EXPECT_FALSE(actual.has_value());
+        } else {
+            ASSERT_TRUE(actual.has_value());
+            EXPECT_EQ(actual->status, expected);
+            EXPECT_EQ(actual->prepared, expected == UDMF::E_OK);
+            EXPECT_EQ(actual->data.IsEmpty(), expected != UDMF::E_OK);
         }
     }
 }
@@ -1268,7 +1294,7 @@ HWTEST_F(UdmfServiceAuthEntryTest, GetData_ConsecutiveReads_SharesHealthAcrossTe
 
 /**
  * @tc.name: OnSystemAbilityAdded_OnlyLocalSecurityGuard_StartsThroughExecutor
- * @tc.desc: Use DDMS static acts and its executor instead of starting SG during OnBind.
+ * @tc.desc: Use the service's static acts and executor instead of starting SG during OnBind.
  * @tc.type: FUNC
  * @tc.author: agent
  */
@@ -1337,7 +1363,7 @@ HWTEST_F(UdmfServiceAuthEntryTest, OnSystemAbilityAdded_FailedRegistration_IsRet
 }
 /**
  * @tc.name: OnSystemAbilityAdded_MissingGuard_CompletesQueuedNotificationSafely
- * @tc.desc: No registered backend must not crash the DDMS SA readiness worker.
+ * @tc.desc: No registered backend must not crash the service readiness worker.
  * @tc.type: FUNC
  * @tc.author: agent
  */
@@ -1440,7 +1466,7 @@ HWTEST_F(UdmfServiceAuthEntryTest, DragTimeout_RemovesOriginAndReceiverCacheAfte
         DelayDataPrepareContainer::GetInstance().StoreDelivery(unifiedKey, pending, { Payload(), UDMF::E_OK, false }));
     Runtime runtime;
     runtime.key = key;
-    runtime.tokenId = 17;
+    runtime.tokenId = sourceTokenId;
     runtime.createTime = 0;
     EXPECT_CALL(*store_, GetBatchRuntime(_, _)).WillOnce([&](auto &, auto &runtimes) {
         runtimes.push_back(runtime);

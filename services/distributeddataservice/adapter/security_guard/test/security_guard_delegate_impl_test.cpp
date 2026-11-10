@@ -837,10 +837,10 @@ HWTEST_F(SecurityGuardDelegateTest, Request_RepeatedPendingDispatch_PreservesFir
     int32_t completed = 0;
     SecurityGuardDelegate::Result result;
     EXPECT_EQ(delegate.Request({},
-                  [&](const auto &response) {
-                      ++completed;
-                      result = response;
-                  }),
+        [&](const auto &response) {
+            ++completed;
+            result = response;
+        }),
         DispatchStatus::DISPATCHED);
     EXPECT_EQ(provider->requests_, 2);
     EXPECT_EQ(completed, 0);
