@@ -125,6 +125,7 @@ ohos_source_set("udmf_server") {
       "security_guard/drag_auth_event_encoder.cpp",
     ]
     deps += [ "${data_service_path}/adapter/security_guard:distributeddata_security_guard" ]
+    external_deps += [ "image_framework:image_native" ]
   }
 
   if (udmf_dlp_part_enabled) {

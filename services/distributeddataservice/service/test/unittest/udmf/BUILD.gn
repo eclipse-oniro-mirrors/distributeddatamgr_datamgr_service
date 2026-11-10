@@ -270,6 +270,9 @@ template("udmf_service_impl_mock_test") {
       "udmf:utd_client",
       "udmf:virtual_entry_provider_proxy",
     ]
+    if (invoker.security_guard_enabled) {
+      external_deps += [ "image_framework:image_native" ]
+    }
     sanitize = {
       cfi = true
       cfi_cross_dso = true
@@ -498,6 +501,7 @@ ohos_unittest("UdmfServiceStubMockTest") {
     "hitrace:hitrace_meter",
     "hitrace:libhitracechain",
     "image_framework:image",
+    "image_framework:image_native",
     "ipc:ipc_core",
     "init:libbegetutil",
     "json:nlohmann_json_static",
@@ -707,6 +711,7 @@ ohos_unittest("UdmfVirtualEntryServiceTest") {
     "hitrace:hitrace_meter",
     "hitrace:libhitracechain",
     "image_framework:image",
+    "image_framework:image_native",
     "ipc:ipc_core",
     "init:libbegetutil",
     "json:nlohmann_json_static",
@@ -872,6 +877,7 @@ ohos_unittest("UdmfServiceImplDbCorruptionMockTest") {
     "hitrace:hitrace_meter",
     "hitrace:libhitracechain",
     "image_framework:image",
+    "image_framework:image_native",
     "ipc:ipc_core",
     "init:libbegetutil",
     "json:nlohmann_json_static",
@@ -985,6 +991,7 @@ ohos_unittest("UdmfDelayDataContainerTest") {
     "hitrace:hitrace_meter",
     "hitrace:libhitracechain",
     "image_framework:image",
+    "image_framework:image_native",
     "ipc:ipc_core",
     "init:libbegetutil",
     "json:nlohmann_json_static",
@@ -1099,6 +1106,7 @@ ohos_unittest("UdmfObserverTest") {
     "hitrace:hitrace_meter",
     "hitrace:libhitracechain",
     "image_framework:image",
+    "image_framework:image_native",
     "ipc:ipc_core",
     "init:libbegetutil",
     "json:nlohmann_json_static",
@@ -1145,6 +1153,7 @@ ohos_unittest("AuditHelperTest") {
     "googletest:gtest_main",
     "hilog:libhilog",
     "image_framework:image",
+    "image_framework:image_native",
     "json:nlohmann_json_static",
     "kv_store:datamgr_common",
     "udmf:udmf_client",
