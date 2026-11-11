@@ -14,6 +14,9 @@
 */
 
 #define LOG_TAG "UdmfObserverTest"
+#include <chrono>
+#include <thread>
+
 #include "gtest/gtest.h"
 
 #include "accesstoken_kit.h"
@@ -24,6 +27,7 @@
 #include "delay_data_acquire_container.h"
 #include "device_manager_adapter.h"
 #include "ipc_skeleton.h"
+#include "iremote_stub.h"
 #include "kvstore_meta_manager.h"
 #include "lifecycle_manager.h"
 #include "log_print.h"
@@ -81,12 +85,26 @@ public:
         DistributedKv::KvStoreMetaManager::GetInstance().InitMetaListener();
     }
     static void TearDownTestCase(void) {}
-    void SetUp() {}
+    void SetUp()
+    {
+        savedService_ = UdmfServiceImpl::factory_.product_;
+        LifeCycleManager::GetInstance().ClearUdKeys();
+    }
     void TearDown()
     {
+        auto store = StoreCache::GetInstance().GetStore("drag");
+        for (const auto &key : ownedKeys_) {
+            if (store != nullptr) {
+                store->Delete(UnifiedKey(key).GetKeyCommonPrefix());
+            }
+        }
         LifeCycleManager::GetInstance().ClearUdKeys();
         DelayDataAcquireContainer::GetInstance().delayDataCallback_.clear();
+        UdmfServiceImpl::factory_.product_ = savedService_;
     }
+
+    std::vector<std::string> ownedKeys_;
+    std::shared_ptr<UdmfServiceImpl> savedService_;
 };
 
 class StoreChangedData : public DistributedDB::KvStoreChangedData {
@@ -116,6 +134,52 @@ public:
     std::list<DistributedDB::Entry> deletedEntries_;
 };
 
+class ObserverDelayCallback final : public IRemoteStub<IDelayDataCallback> {
+public:
+    void DelayDataCallback(const std::string &, const UnifiedData &data) override
+    {
+        delivered = data;
+        ++calls;
+    }
+
+    size_t calls = 0;
+    UnifiedData delivered;
+};
+
+UnifiedData MakeObserverPayload(uint32_t tokenId, const std::string &groupId)
+{
+    UnifiedData data;
+    Runtime runtime;
+    runtime.key = UnifiedKey("drag", "com.example.observer", groupId);
+    runtime.tokenId = tokenId;
+    runtime.recordTotalNum = 1;
+    runtime.privileges = { { tokenId, "", "" } };
+    data.SetRuntime(runtime);
+    data.AddRecord(std::make_shared<UnifiedRecord>(PLAIN_TEXT, std::string("observer data")));
+    return data;
+}
+
+StoreChangedData MakeObserverChange(UnifiedData &data)
+{
+    std::vector<DistributedDB::Entry> entries;
+    DataHandler::MarshalToEntries(data, entries);
+    StoreChangedData change;
+    change.updatedEntries_.assign(entries.begin(), entries.end());
+    return change;
+}
+
+bool WaitForLifecycleRemoval()
+{
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    while (LifeCycleManager::GetInstance().udKeys_.Size() != 0) {
+        if (std::chrono::steady_clock::now() >= deadline) {
+            return false;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    return true;
+}
+
 /**
 * @tc.name: ObserverFactoryTest001
 * @tc.desc: Test ObserverFactory with return invalid param
@@ -129,121 +193,90 @@ HWTEST_F(UdmfObserverTest, ObserverFactoryTest001, TestSize.Level1)
 }
 
 /**
-* @tc.name: DragObserverTest001
-* @tc.desc: Test DragObserver with register delay data, and get data
+* @tc.name: OnChange_StoredDelayData_DeliversAndRemovesLifecycleKey
+* @tc.desc: A real receiver allows delayed delivery and asynchronous consume-on-read cleanup.
 * @tc.type: FUNC
-* @tc.require:
+* @tc.author: agent
 */
-HWTEST_F(UdmfObserverTest, DragObserverTest001, TestSize.Level1)
+HWTEST_F(UdmfObserverTest, OnChange_StoredDelayData_DeliversAndRemovesLifecycleKey, TestSize.Level1)
 {
-    ZLOGI("UDMF DragObserverTest001, begin");
     auto observer = ObserverFactory::GetObserver("drag");
-    EXPECT_NE(observer, nullptr);
-
-    UnifiedData delayData;
-    Runtime runtime;
-    runtime.key = UnifiedKey("drag", "com.example.test", "1111");
-    runtime.key.GetUnifiedKey();
-    runtime.dataStatus = DataStatus::WAITING;
-    runtime.tokenId = 456;
-    delayData.SetRuntime(runtime);
-    std::vector<DistributedDB::Entry> entries1;
-    DataHandler::MarshalToEntries(delayData, entries1);
-    std::list<DistributedDB::Entry> entriesList1(entries1.begin(), entries1.end());
-
+    ASSERT_NE(observer, nullptr);
     auto tokenId = IPCSkeleton::GetSelfTokenID();
-    SetSelfTokenID(tokenId);
-    auto record = std::make_shared<UnifiedRecord>();
-    record->AddEntry("type1", "value1");
-    record->AddEntry("type2", "value2");
-    auto properties = std::make_shared<UnifiedDataProperties>();
-    UnifiedData data(properties);
-    Runtime runtime2;
-    runtime2.key = UnifiedKey("drag", "com.example.test", "22222");
-    runtime2.tokenId = tokenId;
-    runtime2.recordTotalNum = 1;
-    Privilege privilege;
-    privilege.tokenId = tokenId;
-    runtime2.privileges = { privilege };
-    data.SetRuntime(runtime2);
-    data.SetRecords({record});
-    std::vector<DistributedDB::Entry> entries2;
-    DataHandler::MarshalToEntries(data, entries2);
-
-    std::list<DistributedDB::Entry> entriesList2(entries2.begin(), entries2.end());
-    StoreChangedData changedData;
-    changedData.insertedEntries_ = entriesList1;
-    changedData.updatedEntries_ = entriesList2;
-
+    auto data = MakeObserverPayload(tokenId, "11111111111111111111111111111111");
+    auto key = data.GetRuntime()->key.GetUnifiedKey();
+    ownedKeys_.push_back(key);
     UdmfServiceImpl::factory_.product_ = std::make_shared<UdmfServiceImpl>();
     auto store = StoreCache::GetInstance().GetStore("drag");
+    ASSERT_NE(store, nullptr);
     Summary summary;
-    store->Put(data, summary);
-
+    ASSERT_EQ(store->Put(data, summary), E_OK);
+    sptr<ObserverDelayCallback> callback = new ObserverDelayCallback();
     DelayGetDataInfo delayGetDataInfo;
     delayGetDataInfo.tokenId = tokenId;
-    DelayDataAcquireContainer::GetInstance().RegisterDelayDataCallback(runtime2.key.GetUnifiedKey(), delayGetDataInfo);
-    EXPECT_EQ(0, LifeCycleManager::GetInstance().udKeys_.Size());
-    EXPECT_TRUE(DelayDataAcquireContainer::GetInstance().IsContainDelayData(runtime2.key.key));
+    delayGetDataInfo.dataCallback = callback->AsObject();
+    ASSERT_TRUE(DelayDataAcquireContainer::GetInstance().RegisterDelayDataCallback(key, delayGetDataInfo));
+    auto changedData = MakeObserverChange(data);
     observer->OnChange(changedData);
-    std::this_thread::sleep_for(std::chrono::milliseconds(500));
-    EXPECT_EQ(0, LifeCycleManager::GetInstance().udKeys_.Size());
-    EXPECT_FALSE(DelayDataAcquireContainer::GetInstance().IsContainDelayData(runtime2.key.key));
+    EXPECT_EQ(callback->calls, 1u);
+    EXPECT_EQ(callback->delivered.GetRecords().size(), 1u);
+    EXPECT_TRUE(WaitForLifecycleRemoval());
+    EXPECT_FALSE(DelayDataAcquireContainer::GetInstance().IsContainDelayData(key));
 }
 
 /**
-* @tc.name: DragObserverTest002
-* @tc.desc: Test DragObserver with register delay data, and get no data
+* @tc.name: OnChange_MissingDelayData_PreservesReceiverAndLifecycleKey
+* @tc.desc: A missing stored payload must retain the receiver until data becomes available.
 * @tc.type: FUNC
-* @tc.require:
+* @tc.author: agent
 */
-HWTEST_F(UdmfObserverTest, DragObserverTest002, TestSize.Level1)
+HWTEST_F(UdmfObserverTest, OnChange_MissingDelayData_PreservesReceiverAndLifecycleKey, TestSize.Level1)
 {
     auto observer = ObserverFactory::GetObserver("drag");
-    EXPECT_NE(observer, nullptr);
-
-    UnifiedData delayData;
-    Runtime runtime;
-    runtime.key = UnifiedKey("drag", "com.example.test", "1111");
-    runtime.key.GetUnifiedKey();
-    runtime.dataStatus = DataStatus::WAITING;
-    runtime.tokenId = 456;
-    delayData.SetRuntime(runtime);
-    std::vector<DistributedDB::Entry> entries1;
-    DataHandler::MarshalToEntries(delayData, entries1);
-    std::list<DistributedDB::Entry> entriesList1(entries1.begin(), entries1.end());
-
-    auto record = std::make_shared<UnifiedRecord>();
-    record->AddEntry("type1", "value1");
-    record->AddEntry("type2", "value2");
-    auto properties = std::make_shared<UnifiedDataProperties>();
-    UnifiedData data(properties);
-    Runtime runtime2;
-    runtime2.key = UnifiedKey("drag", "com.example.test", "22222");
-    runtime2.tokenId = 123;
-    runtime2.recordTotalNum = 1;
-    Privilege privilege;
-    privilege.tokenId = 123;
-    runtime2.privileges = { privilege };
-    data.SetRuntime(runtime2);
-    data.SetRecords({record});
-    std::vector<DistributedDB::Entry> entries2;
-    DataHandler::MarshalToEntries(data, entries2);
-
-    std::list<DistributedDB::Entry> entriesList2(entries2.begin(), entries2.end());
-    StoreChangedData changedData;
-    changedData.insertedEntries_ = entriesList1;
-    changedData.updatedEntries_ = entriesList2;
-
-    DelayDataAcquireContainer::GetInstance().RegisterDelayDataCallback(runtime2.key.GetUnifiedKey(),
-        DelayGetDataInfo());
-    EXPECT_EQ(0, LifeCycleManager::GetInstance().udKeys_.Size());
-    EXPECT_TRUE(DelayDataAcquireContainer::GetInstance().IsContainDelayData(runtime2.key.key));
-    EXPECT_NO_FATAL_FAILURE(observer->OnChange(changedData));
-    std::this_thread::sleep_for(std::chrono::milliseconds(500));
-    EXPECT_EQ(1, LifeCycleManager::GetInstance().udKeys_.Size());
+    ASSERT_NE(observer, nullptr);
+    auto data = MakeObserverPayload(123, "22222222222222222222222222222222");
+    auto key = data.GetRuntime()->key.GetUnifiedKey();
+    ownedKeys_.push_back(key);
+    auto store = StoreCache::GetInstance().GetStore("drag");
+    ASSERT_NE(store, nullptr);
+    ASSERT_EQ(store->Delete(UnifiedKey(key).GetKeyCommonPrefix()), E_OK);
+    UdmfServiceImpl::factory_.product_ = std::make_shared<UdmfServiceImpl>();
+    sptr<ObserverDelayCallback> callback = new ObserverDelayCallback();
+    DelayGetDataInfo delayGetDataInfo;
+    delayGetDataInfo.tokenId = 123;
+    delayGetDataInfo.dataCallback = callback->AsObject();
+    ASSERT_TRUE(DelayDataAcquireContainer::GetInstance().RegisterDelayDataCallback(key, delayGetDataInfo));
+    auto changedData = MakeObserverChange(data);
+    observer->OnChange(changedData);
+    EXPECT_EQ(callback->calls, 0u);
+    EXPECT_EQ(LifeCycleManager::GetInstance().udKeys_.Size(), 1u);
     EXPECT_TRUE(LifeCycleManager::GetInstance().udKeys_.Contains(123));
-    EXPECT_TRUE(DelayDataAcquireContainer::GetInstance().IsContainDelayData(runtime2.key.key));
+    EXPECT_TRUE(DelayDataAcquireContainer::GetInstance().IsContainDelayData(key));
+}
+
+/**
+* @tc.name: OnChange_WaitingRuntime_PreservesReceiverWithoutLifecycleEntry
+* @tc.desc: A waiting runtime does not trigger delivery before the source data becomes complete.
+* @tc.type: FUNC
+* @tc.author: agent
+*/
+HWTEST_F(UdmfObserverTest, OnChange_WaitingRuntime_PreservesReceiverWithoutLifecycleEntry, TestSize.Level1)
+{
+    auto observer = ObserverFactory::GetObserver("drag");
+    ASSERT_NE(observer, nullptr);
+    auto data = MakeObserverPayload(123, "33333333333333333333333333333333");
+    data.GetRuntime()->dataStatus = DataStatus::WAITING;
+    auto key = data.GetRuntime()->key.GetUnifiedKey();
+    sptr<ObserverDelayCallback> callback = new ObserverDelayCallback();
+    DelayGetDataInfo info;
+    info.tokenId = 123;
+    info.dataCallback = callback->AsObject();
+    ASSERT_TRUE(DelayDataAcquireContainer::GetInstance().RegisterDelayDataCallback(key, info));
+    auto changedData = MakeObserverChange(data);
+    observer->OnChange(changedData);
+    EXPECT_EQ(callback->calls, 0u);
+    EXPECT_EQ(LifeCycleManager::GetInstance().udKeys_.Size(), 0u);
+    EXPECT_TRUE(DelayDataAcquireContainer::GetInstance().IsContainDelayData(key));
 }
 
 /**

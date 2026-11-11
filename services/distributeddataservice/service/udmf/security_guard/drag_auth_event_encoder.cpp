@@ -32,6 +32,7 @@ namespace {
 using Json = DistributedData::Serializable::json;
 constexpr size_t MAX_OBJECT_DEPTH = 64;
 constexpr size_t JSON_OBJECT_BRACES_BYTES = 2;
+constexpr size_t JSON_STRING_QUOTES_BYTES = 2;
 constexpr size_t JSON_MEMBER_SEPARATOR_BYTES = 1;
 constexpr size_t JSON_KEY_VALUE_SEPARATOR_BYTES = 1;
 class ContentBudget {
@@ -69,7 +70,8 @@ size_t Utf8PrefixLength(const std::string &value, size_t length)
 
 AuthBuildStatus EncodeTextPreview(const std::string &value, Json &output, ContentBudget &budget)
 {
-    if (budget.Remaining() >= 2 && value.size() <= budget.Remaining() - 2) {
+    if (budget.Remaining() >= JSON_STRING_QUOTES_BYTES &&
+        value.size() <= budget.Remaining() - JSON_STRING_QUOTES_BYTES) {
         Json complete = value;
         if (budget.ConsumeJson(complete)) {
             output = std::move(complete);
@@ -198,8 +200,9 @@ AuthBuildStatus EncodeLeafValue(const ValueType &value, Json &output)
 
 AuthBuildStatus EncodeTypedPreview(Json &output, ContentBudget &budget)
 {
-    auto overhead = Json({ { "kind", output["kind"] }, { "value", "" } }).dump().size() - 2;
-    size_t minimum = output["value"].is_string() ? 2 : Json::binary(std::vector<uint8_t>{}).dump().size();
+    auto overhead = Json({ { "kind", output["kind"] }, { "value", "" } }).dump().size() - JSON_STRING_QUOTES_BYTES;
+    size_t minimum = output["value"].is_string() ? JSON_STRING_QUOTES_BYTES
+                                                 : Json::binary(std::vector<uint8_t>{}).dump().size();
     if (overhead + minimum > budget.Remaining()) {
         return AuthBuildStatus::TOO_LARGE;
     }

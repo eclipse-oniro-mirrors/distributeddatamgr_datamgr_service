@@ -97,7 +97,7 @@ public:
     QueryOption Query()
     {
         QueryOption query;
-        query.key = "udmf://drag/com.test.auth/sg-disabled";
+        query.key = "udmf://drag/com.test.auth/sgdisabled";
         query.intention = UD_INTENTION_DRAG;
         query.tokenId = receiverTokenId;
         return query;
@@ -117,6 +117,8 @@ public:
 HWTEST_F(UdmfSecurityGuardDisabledTest, GetData_SecurityGuardDisabled_ReturnsAuthorizedPayload, TestSize.Level1)
 {
     auto query = Query();
+    UnifiedKey key(query.key);
+    ASSERT_TRUE(key.IsValid());
     EXPECT_CALL(GetDisabledAuthPermissionChecker(), IsValid(_, _)).WillOnce(Return(true));
     EXPECT_CALL(*store_, Get(query.key, _)).WillOnce([&](const auto &, UnifiedData &data) {
         data = Payload();
@@ -139,6 +141,8 @@ HWTEST_F(UdmfSecurityGuardDisabledTest, GetData_SecurityGuardDisabled_ReturnsAut
 HWTEST_F(UdmfSecurityGuardDisabledTest, GetData_SecurityGuardDisabled_PreservesAccessPermissionCheck, TestSize.Level1)
 {
     auto query = Query();
+    UnifiedKey key(query.key);
+    ASSERT_TRUE(key.IsValid());
     EXPECT_CALL(GetDisabledAuthPermissionChecker(), IsValid(_, _)).WillOnce(Return(false));
     EXPECT_CALL(*store_, Get(query.key, _)).WillOnce([&](const auto &, UnifiedData &data) {
         data = Payload();

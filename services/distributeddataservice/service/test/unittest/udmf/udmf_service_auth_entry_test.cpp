@@ -838,6 +838,7 @@ HWTEST_F(UdmfServiceAuthEntryTest, SetDelayInfo_UnknownIdentityOrNullNotifier_Do
     UseNativeDelayIdentity();
     auto token = static_cast<uint32_t>(IPCSkeleton::GetCallingTokenID());
     ON_CALL(*tokens_, GetNativeTokenInfo(token, _)).WillByDefault(Return(-1));
+    EXPECT_CALL(*tokens_, GetHapTokenInfo(token, _)).Times(AnyNumber()).WillRepeatedly(Return(-1));
     EXPECT_CALL(*store_, PutDelayData(_, _)).Times(0);
     UdmfServiceImpl service;
     sptr<RecordingDelayOrigin> origin = new RecordingDelayOrigin();
@@ -845,6 +846,8 @@ HWTEST_F(UdmfServiceAuthEntryTest, SetDelayInfo_UnknownIdentityOrNullNotifier_Do
     info.sequenceKey = "invalidsetup";
     std::string key;
     EXPECT_EQ(service.SetDelayInfo(info, origin->AsObject(), key), UDMF::E_ERROR);
+    keys_.push_back({ key, 0 });
+    ASSERT_TRUE(Mock::VerifyAndClearExpectations(tokens_.get()));
     UseNativeDelayIdentity();
     EXPECT_EQ(service.SetDelayInfo(info, nullptr, key), UDMF::E_ERROR);
     EXPECT_EQ(DelayDataPrepareContainer::GetInstance().QueryDataLoadCallbackSize(), 0);
@@ -865,6 +868,7 @@ HWTEST_F(UdmfServiceAuthEntryTest, PushDelayData_InvalidKeyOrIdentity_RejectsBef
     EXPECT_EQ(PushAuthPayload(service, "invalid"), UDMF::E_INVALID_PARAMETERS);
     auto token = static_cast<uint32_t>(IPCSkeleton::GetCallingTokenID());
     ON_CALL(*tokens_, GetNativeTokenInfo(token, _)).WillByDefault(Return(-1));
+    EXPECT_CALL(*tokens_, GetHapTokenInfo(token, _)).Times(AnyNumber()).WillRepeatedly(Return(-1));
     EXPECT_EQ(PushAuthPayload(service, "udmf://drag/com.test.auth/invalididentity"), UDMF::E_ERROR);
     EXPECT_EQ(guard_.requests_, 0);
 }

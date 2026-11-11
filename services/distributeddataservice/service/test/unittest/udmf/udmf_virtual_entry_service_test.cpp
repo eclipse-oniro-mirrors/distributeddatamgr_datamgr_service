@@ -44,12 +44,18 @@ using namespace OHOS::Security::AccessToken;
 namespace OHOS {
 namespace {
 uint32_t g_virtualEntryCallingToken = 0;
+pid_t g_virtualEntryCallingUid = 0;
 }
 
 // This replacement is linked only into the dedicated virtual-entry unit-test executable.
 uint32_t IPCSkeleton::GetCallingTokenID()
 {
     return g_virtualEntryCallingToken;
+}
+
+pid_t IPCSkeleton::GetCallingUid()
+{
+    return g_virtualEntryCallingUid;
 }
 } // namespace OHOS
 
@@ -59,6 +65,7 @@ constexpr uint32_t SOURCE_TOKEN = 8001;
 constexpr uint32_t TARGET_TOKEN = 9001;
 constexpr uint32_t DESKTOP_TOKEN = 9002;
 constexpr int32_t TEST_USER = 100;
+constexpr pid_t TEST_UID = 20010001;
 constexpr int64_t FILE_BYTES = 7;
 constexpr const char *SOURCE_BUNDLE = "com.example.virtual.source";
 constexpr const char *TARGET_BUNDLE = "com.example.virtual.target";
@@ -173,7 +180,9 @@ public:
     void SetUp() override
     {
         savedCallingToken_ = g_virtualEntryCallingToken;
+        savedCallingUid_ = g_virtualEntryCallingUid;
         g_virtualEntryCallingToken = SOURCE_TOKEN;
+        g_virtualEntryCallingUid = TEST_UID;
         savedAccount_ = DistributedData::AccountDelegate::GetInstance();
         DistributedData::AccountDelegate::instance_ = &account_;
         savedAccessToken_ = BAccessTokenKit::accessTokenkit;
@@ -220,6 +229,7 @@ public:
         BAccessTokenKit::accessTokenkit = savedAccessToken_;
         DistributedData::AccountDelegate::instance_ = savedAccount_;
         g_virtualEntryCallingToken = savedCallingToken_;
+        g_virtualEntryCallingUid = savedCallingUid_;
         UdmfFuseMountAdapterMock::Reset();
     }
 
@@ -317,6 +327,7 @@ protected:
     QueryOption query_;
     std::vector<std::string> ownedKeys_;
     uint32_t savedCallingToken_ = 0;
+    pid_t savedCallingUid_ = 0;
     DistributedData::AccountDelegate *savedAccount_ = nullptr;
     std::shared_ptr<BAccessTokenKit> savedAccessToken_;
     std::map<std::string, CheckerManager::Checker *> savedCheckers_;
@@ -716,6 +727,29 @@ HWTEST_F(UdmfVirtualEntryServiceTest, GetData_MountFailed_RetainPendingSessionAn
     ASSERT_TRUE(manager_.Get(query_.key, info));
     EXPECT_EQ(info.state, UdmfFuseSessionManager::State::ACTIVE);
     EXPECT_EQ(UdmfFuseMountAdapterMock::mounts, 2u);
+}
+
+/**
+ * @tc.name: GetData_InvalidCallingUid_RejectsBeforeMountAndAllowsRetry
+ * @tc.desc: A missing IPC application UID must not activate a session or prevent a valid retry.
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(UdmfVirtualEntryServiceTest, GetData_InvalidCallingUid_RejectsBeforeMountAndAllowsRetry, TestSize.Level0)
+{
+    ASSERT_EQ(RegisterSession(), 0);
+    g_virtualEntryCallingUid = -1;
+    UnifiedData result;
+    EXPECT_EQ(service_.GetData(query_, result), E_FS_ERROR);
+    EXPECT_EQ(UdmfFuseMountAdapterMock::mounts, 0u);
+    UdmfFuseSessionManager::SessionInfo info;
+    ASSERT_TRUE(manager_.Get(query_.key, info));
+    EXPECT_EQ(info.state, UdmfFuseSessionManager::State::PENDING_DROP);
+    g_virtualEntryCallingUid = TEST_UID;
+    EXPECT_EQ(service_.GetData(query_, result), E_OK);
+    EXPECT_EQ(UdmfFuseMountAdapterMock::mounts, 1u);
+    ASSERT_TRUE(manager_.Get(query_.key, info));
+    EXPECT_EQ(info.targetUid, TEST_UID);
 }
 
 /**
