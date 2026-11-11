@@ -79,7 +79,7 @@ HWTEST_F(ServiceUtilsTest, StoreMetaDataConvertToStoreInfo, TestSize.Level2)
     StoreMetaData metaData;
     metaData.bundleName = "ohos.test.demo1";
     metaData.storeId = "test_storeId";
-    metaData.uid = OHOS::IPCSkeleton::GetCallingUid();
+    metaData.uid = OHOS::IPCSkeleton::GetCallingAppUid();
     metaData.tokenId = OHOS::IPCSkeleton::GetCallingTokenID();
     CheckerManager::StoreInfo info = Converter::ConvertToStoreInfo(metaData);
     EXPECT_EQ(info.uid, metaData.uid);

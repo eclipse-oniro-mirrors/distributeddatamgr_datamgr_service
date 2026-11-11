@@ -54,7 +54,7 @@ void FreqLogManager::StartTimer()
 void FreqLogManager::ReportCall(uint32_t code, uint64_t costMs, const std::string &uri)
 {
     uint64_t tokenId = IPCSkeleton::GetCallingTokenID();
-    pid_t uid = IPCSkeleton::GetCallingUid();
+    pid_t uid = IPCSkeleton::GetCallingAppUid();
     pid_t pid = IPCSkeleton::GetCallingPid();
     callers_.Compute(tokenId, [code, uid, pid, costMs, &uri](const uint64_t &key, CallerStats &stats) {
         if (stats.uid == 0) {

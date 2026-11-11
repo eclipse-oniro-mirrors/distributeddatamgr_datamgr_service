@@ -419,7 +419,7 @@ int DataShareServiceStub::OnRemoteRequest(uint32_t code, MessageParcel &data, Me
         res = (this->*HANDLERS[code])(data, reply);
         auto finish = std::chrono::steady_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(finish - start);
-        CallerInfo callerInfo(callingTokenid, IPCSkeleton::GetCallingUid(), callingPid, duration.count(), code);
+        CallerInfo callerInfo(callingTokenid, IPCSkeleton::GetCallingAppUid(), callingPid, duration.count(), code);
         if (duration >= TIME_THRESHOLD) {
             int64_t milliseconds = duration.count();
             ZLOGW("over time, code:%{public}u callingPid:%{public}d, cost:%{public}" PRIi64 "ms",

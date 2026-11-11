@@ -223,7 +223,7 @@ Status KvStoreDataService::RegisterClientDeathObserver(const AppId &appId, sptr<
     }
 
     CheckerManager::StoreInfo info;
-    info.uid = IPCSkeleton::GetCallingUid();
+    info.uid = IPCSkeleton::GetCallingAppUid();
     info.tokenId = IPCSkeleton::GetCallingTokenID();
     info.bundleName = appId.appId;
     info.storeId = "";
@@ -272,7 +272,7 @@ int32_t KvStoreDataService::Exit(const std::string &featureName)
     });
     auto [exist, feature] = features_.Find(featureName);
     if (removed && exist && feature != nullptr) {
-        feature->OnFeatureExit(IPCSkeleton::GetCallingUid(), pid, tokenId, bundleName);
+        feature->OnFeatureExit(IPCSkeleton::GetCallingAppUid(), pid, tokenId, bundleName);
     }
     return Status::SUCCESS;
 }
@@ -317,7 +317,7 @@ void KvStoreDataService::OnDump()
 
 int KvStoreDataService::Dump(int fd, const std::vector<std::u16string> &args)
 {
-    int uid = static_cast<int>(IPCSkeleton::GetCallingUid());
+    int uid = static_cast<int>(IPCSkeleton::GetCallingAppUid());
     const int maxUid = 10000;
     if (uid > maxUid) {
         return 0;
@@ -594,7 +594,7 @@ KvStoreDataService::KvStoreClientDeathObserverImpl::KvStoreClientDeathObserverIm
     : appId_(appId), dataService_(service), deathRecipient_(new KvStoreDeathRecipient(*this))
 {
     ZLOGD("KvStoreClientDeathObserverImpl");
-    uid_ = IPCSkeleton::GetCallingUid();
+    uid_ = IPCSkeleton::GetCallingAppUid();
     pid_ = IPCSkeleton::GetCallingPid();
     token_ = IPCSkeleton::GetCallingTokenID();
     if (observer != nullptr) {

@@ -758,7 +758,7 @@ int32_t DataShareServiceImpl::OnBind(const BindInfo &binderInfo)
     saveMeta.tokenId = binderInfo.selfTokenId;
     saveMeta.securityLevel = DistributedKv::SecurityLevel::S1;
     saveMeta.area = DistributedKv::Area::EL1;
-    saveMeta.uid = IPCSkeleton::GetCallingUid();
+    saveMeta.uid = IPCSkeleton::GetCallingAppUid();
     saveMeta.storeType = DATA_SHARE_SINGLE_VERSION;
     saveMeta.dataDir = DistributedData::DirectoryManager::GetInstance().GetStorePath(saveMeta);
     KvDBDelegate::GetInstance(saveMeta.dataDir, binderInfo.executors);
@@ -1244,7 +1244,7 @@ int32_t DataShareServiceImpl::GetSilentProxyStatus(const std::string &uri, bool 
             return errCode;
         }
     }
-    auto callingUid = IPCSkeleton::GetCallingUid();
+    auto callingUid = IPCSkeleton::GetCallingAppUid();
     int32_t currentUserId = (callingUid == 0)
         ? AccountDelegate::GetInstance()->GetUserByToken(callerTokenId)
         : callingUid / AppExecFwk::Constants::BASE_USER_RANGE;

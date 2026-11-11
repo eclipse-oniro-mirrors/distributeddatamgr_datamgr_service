@@ -1110,7 +1110,7 @@ StoreMetaData KVDBServiceImpl::LoadStoreMetaData(const AppId &appId, const Store
 StoreMetaData KVDBServiceImpl::GetStoreMetaData(const AppId &appId, const StoreId &storeId, int32_t subUser)
 {
     StoreMetaData metaData;
-    metaData.uid = IPCSkeleton::GetCallingUid();
+    metaData.uid = IPCSkeleton::GetCallingAppUid();
     metaData.tokenId = IPCSkeleton::GetCallingTokenID();
     metaData.instanceId = GetInstIndex(metaData.tokenId, appId);
     metaData.bundleName = appId.appId;

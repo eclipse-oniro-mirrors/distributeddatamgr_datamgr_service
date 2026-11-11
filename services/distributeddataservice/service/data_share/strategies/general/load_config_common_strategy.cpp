@@ -35,7 +35,7 @@ bool LoadConfigCommonStrategy::operator()(std::shared_ptr<Context> context)
     if (context->callerTokenId == 0) {
         context->callerTokenId = IPCSkeleton::GetCallingTokenID();
     }
-    auto callingUid = IPCSkeleton::GetCallingUid();
+    auto callingUid = IPCSkeleton::GetCallingAppUid();
     context->currentUserId = (callingUid == 0)
         ? AccountDelegate::GetInstance()->GetUserByToken(context->callerTokenId)
         : callingUid / AppExecFwk::Constants::BASE_USER_RANGE;

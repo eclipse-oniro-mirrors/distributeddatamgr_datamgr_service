@@ -177,7 +177,7 @@ void KvStoreMetaManager::InitMetaData()
 StoreMetaData KvStoreMetaManager::InitStoreMetaData()
 {
     StoreMetaData data;
-    auto uid = getuid();
+    auto uid = getappuid();
     auto tokenId = IPCSkeleton::GetCallingTokenID();
     auto userId = AccountDelegate::GetInstance()->GetUserByToken(tokenId);
     data.appId = label_;

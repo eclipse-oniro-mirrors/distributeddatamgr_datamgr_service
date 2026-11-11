@@ -231,7 +231,7 @@ int32_t RdbServiceImpl::OnFeatureExit(pid_t uid, pid_t pid, uint32_t tokenId, co
 bool RdbServiceImpl::IsValidAccess(const std::string &bundleName, const std::string &storeName)
 {
     CheckerManager::StoreInfo storeInfo;
-    storeInfo.uid = IPCSkeleton::GetCallingUid();
+    storeInfo.uid = IPCSkeleton::GetCallingAppUid();
     storeInfo.tokenId = IPCSkeleton::GetCallingTokenID();
     storeInfo.bundleName = bundleName;
     storeInfo.storeId = RemoveSuffix(storeName);
@@ -249,7 +249,7 @@ std::string RdbServiceImpl::ObtainDistributedTableName(const RdbSyncerParam &par
     auto tokenId = IPCSkeleton::GetCallingTokenID();
     std::string appId = " ";
     if (AccessTokenKit::GetTokenTypeFlag(tokenId) == Security::AccessToken::TOKEN_HAP) {
-        auto uid = IPCSkeleton::GetCallingUid();
+        auto uid = IPCSkeleton::GetCallingAppUid();
         appId = CheckerManager::GetInstance().GetAppId({ uid, tokenId, param.bundleName_ });
     }
     auto uuid = DmAdapter::GetInstance().CalcClientUuid(appId, DmAdapter::GetInstance().ToUUID(device));
@@ -1454,7 +1454,7 @@ void RdbServiceImpl::GetCloudSchema(const StoreMetaData &metaData)
 int32_t RdbServiceImpl::CreateMatrixFile(const StoreMetaData &metaData, DistributedRdb::MatrixFileInfo &fileInfo)
 {
     StoreInfo storeInfo = GetStoreInfoEx(metaData);
-    CallingInfo callingInfo{ IPCSkeleton::GetCallingUid() };
+    CallingInfo callingInfo{ IPCSkeleton::GetCallingAppUid() };
     auto event = std::make_unique<CloudEvent>(CloudEvent::CREATE_MATRIX_FILE, std::move(storeInfo), callingInfo);
     EventCenter::GetInstance().PostEvent(move(event));
 
@@ -1476,7 +1476,7 @@ int32_t RdbServiceImpl::CreateMatrixFile(const StoreMetaData &metaData, Distribu
 StoreMetaData RdbServiceImpl::GetStoreMetaData(const RdbSyncerParam &param)
 {
     StoreMetaData metaData;
-    metaData.uid = IPCSkeleton::GetCallingUid();
+    metaData.uid = IPCSkeleton::GetCallingAppUid();
     metaData.tokenId = IPCSkeleton::GetCallingTokenID();
     auto [instanceId, user] = GetInstIndexAndUser(metaData.tokenId, param.bundleName_);
     metaData.instanceId = instanceId;

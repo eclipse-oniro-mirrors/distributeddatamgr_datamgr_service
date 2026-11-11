@@ -361,7 +361,7 @@ int32_t UdmfServiceImpl::GetData(const QueryOption &query, UnifiedData &unifiedD
     if (res != E_OK) {
         ZLOGE("GetData failed, res:%{public}d, key:%{public}s", res, query.key.c_str());
     } else if (IsEnterpriseDevice()) {
-        int32_t userId = IPCSkeleton::GetCallingUid() / UID_TRANSFORM_DIVISOR;
+        int32_t userId = IPCSkeleton::GetCallingAppUid() / UID_TRANSFORM_DIVISOR;
         AuditLoader::GetInstance().ReportDragAuditEvent(unifiedData, userId, query.tokenId, executors_);
     }
     return res;
@@ -478,7 +478,7 @@ int32_t UdmfServiceImpl::ActivateVirtualData(
         ZLOGE("Virtual entry does not support cross-user access");
         return E_NO_PERMISSION;
     }
-    int32_t targetUid = IPCSkeleton::GetCallingUid();
+    int32_t targetUid = IPCSkeleton::GetCallingAppUid();
     int32_t fuseRet =
         UdmfFuseSessionManager::GetInstance().Activate(query.key, query.tokenId, targetUid, targetUid, uri);
     if (fuseRet != 0) {
@@ -771,7 +771,7 @@ int32_t UdmfServiceImpl::CheckAppId(std::shared_ptr<Runtime> runtime, const std:
         return E_INVALID_PARAMETERS;
     }
     std::string appId = DistributedData::CheckerManager::GetInstance().GetAppId(
-        { IPCSkeleton::GetCallingUid(), runtime->tokenId, bundleName });
+        { IPCSkeleton::GetCallingAppUid(), runtime->tokenId, bundleName });
     if (appId.empty() || appId != runtime->appId) {
         ZLOGE("Update failed: runtime->appId %{public}s and bundleName appId %{public}s mismatch",
             runtime->appId.c_str(), appId.c_str());
@@ -1398,7 +1398,7 @@ int32_t UdmfServiceImpl::CheckAddPrivilegePermission(
 
 bool UdmfServiceImpl::IsFileMangerSa()
 {
-    if (IPCSkeleton::GetCallingUid() == FOUNDATION_UID) {
+    if (IPCSkeleton::GetCallingAppUid() == FOUNDATION_UID) {
         return true;
     }
     ZLOGE("Caller no permission");
