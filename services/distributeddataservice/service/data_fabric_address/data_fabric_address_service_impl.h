@@ -21,6 +21,7 @@
 #include <map>
 
 #include "data_fabric_address_callback.h"
+#include "data_fabric_address_errors.h"
 #include "data_fabric_address_service_stub.h"
 #include "feature/feature_system.h"
 
@@ -52,6 +53,14 @@ private:
         sptr<IDataFabricAddressCallback> callback { nullptr };
         uint64_t callerFullTokenId { 0 };
     };
+    struct PreparedSubscription {
+        int32_t status { NativePreferences::RUN_OK };
+        int32_t errorCode { NativePreferences::INTERNAL_EXCEPTION };
+        bool hasCachedParams { false };
+        NativePreferences::LocationPoint homePoint;
+        NativePreferences::LocationPoint companyPoint;
+        sptr<IDataFabricAddressCallback> callback { nullptr };
+    };
     class DataFabricAddressStatic : public DistributedData::StaticActs {
     public:
         ~DataFabricAddressStatic() override {};
@@ -73,8 +82,14 @@ private:
     int32_t ValidateParams(const DataFabricAddressParams &inputParams, NativePreferences::LocationPoint& homePoint,
         NativePreferences::LocationPoint& companyPoint);
     bool AddCallback(const DataFabricAddressParams& inputParams, sptr<IDataFabricAddressCallback> callback);
+    // Called with subscribersMutex_ held, it only prepares the subscription cache and never calls the
+    // navigation manager.
+    PreparedSubscription PrepareSubscription(const DataFabricAddressParams& inputParams,
+        const sptr<IDataFabricAddressCallback>& callback);
+    bool IsSubscriptionOccupied(const DataFabricAddressParams& inputParams) const;
+    void RollbackCachedSubscription(const DataFabricAddressParams& inputParams);
     int32_t RemoveCallback(const DataFabricAddressParams& inputParams, sptr<IRemoteObject>& callbackObject,
-        sptr<IRemoteObject::DeathRecipient>& deathRecipient);
+        sptr<IRemoteObject::DeathRecipient>& deathRecipient, bool& removed);
     int32_t ObtainWgs84ReferencePoints(const ReferenceLocationInfo &referenceInfo,
         NativePreferences::LocationPoint& homePoint, NativePreferences::LocationPoint& companyPoint);
     int32_t IsSupportedCommuteDistance(const NativePreferences::LocationPoint& homePoint,
@@ -82,6 +97,10 @@ private:
 
     std::mutex subscribersMutex_;
     std::map<DataFabricAddressParams, SubscribeCacheData> subscribeCacheMap_;
+    // The caller token of the last cached subscription. An unsubscription which misses the cache may only
+    // tear the navigation manager down when it comes from this caller, otherwise any caller could stop the
+    // collection of the current subscriber with arbitrary params.
+    uint64_t lastSubscribedToken_ { 0 };
 };
 } // End of namespace DataFabricAddress
 } // End of namespace OHOS

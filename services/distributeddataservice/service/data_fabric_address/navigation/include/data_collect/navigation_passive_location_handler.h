@@ -32,11 +32,11 @@ public:
 
     int32_t OnRemoteRequest(
         uint32_t code, MessageParcel &data, MessageParcel &reply, MessageOption &option) override;
-    void OnLocatingStatusChanged(const int status) override;
+    void OnLocatingStatusChange(const int status) override;
     void OnLocationReport(const std::unique_ptr<Location::Location> &location) override;
     void OnErrorReport(const int errorCode) override;
 private:
-    void HandlePassiveLocation(double latitude, double longitude);
+    void HandlePassiveLocation(const NativePreferences::LocationPoint &point);
 };
 
 class NavigationPassiveLocationHandler {
@@ -50,6 +50,11 @@ public:
 private:
     NavigationPassiveLocationHandler() = default;
     ~NavigationPassiveLocationHandler() = default;
+
+    // Called without mutex_ held: StartLocatingV9/StopLocatingV9 call the locator service synchronously, the
+    // lock only protects the state and is re-acquired after them. The navigation manager serializes the calls.
+    int32_t DoSubscribePassiveLocation();
+    int32_t DoUnsubscribePassiveLocation(sptr<Location::ILocatorCallback> &callback);
 
     std::mutex mutex_;
     std::mutex waypointsMutex_;

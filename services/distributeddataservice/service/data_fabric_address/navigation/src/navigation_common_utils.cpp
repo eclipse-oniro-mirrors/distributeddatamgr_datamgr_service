@@ -97,6 +97,16 @@ bool NavigationCommonUtil::GetDistance(const NativePreferences::LocationPoint& s
     return true;
 }
 
+bool NavigationCommonUtil::IsDistanceLessThan(const NativePreferences::LocationPoint& startPoint,
+    const NativePreferences::LocationPoint& endPoint, double threshold)
+{
+    double distance = 0.0;
+    if (!GetDistance(startPoint, endPoint, distance)) {
+        return false;
+    }
+    return distance < threshold;
+}
+
 bool NavigationCommonUtil::Gcj02ToWgs84(const NativePreferences::LocationPoint& gcj02Point,
     NativePreferences::LocationPoint& wgs84Point)
 {

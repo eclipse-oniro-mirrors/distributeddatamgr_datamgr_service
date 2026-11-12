@@ -15,6 +15,8 @@
 
 #include "navigation_mock.h"
 
+#include <functional>
+#include <utility>
 #include <vector>
 
 #include "navigation_manager.h"
@@ -22,7 +24,9 @@
 namespace {
 int32_t g_subscribeResult = 0;
 int32_t g_unsubscribeResult = 0;
+int32_t g_unsubscribeManagerCount = 0;
 std::vector<int32_t> g_subscribeActions;
+std::function<void()> g_subscribeActionHook;
 } // namespace
 
 namespace OHOS {
@@ -39,12 +43,16 @@ int32_t NavigationManager::SubscribeNavigationManager(const ActionType& actionTy
     const LocationPoint &homePoint, const LocationPoint &companyPoint,
     const sptr<IDataFabricAddressCallback> &callback)
 {
+    if (g_subscribeActionHook != nullptr) {
+        g_subscribeActionHook();
+    }
     g_subscribeActions.push_back(static_cast<int32_t>(actionType));
     return g_subscribeResult;
 }
 
 int32_t NavigationManager::UnsubscribeNavigationManager()
 {
+    g_unsubscribeManagerCount++;
     return g_unsubscribeResult;
 }
 } // End of namespace DataFabricAddress
@@ -55,12 +63,19 @@ void ResetNavigationManagerMock()
 {
     g_subscribeResult = 0;
     g_unsubscribeResult = 0;
+    g_unsubscribeManagerCount = 0;
     g_subscribeActions.clear();
+    g_subscribeActionHook = nullptr;
 }
 
 void SetSubscribeNavigationManagerResult(int32_t result)
 {
     g_subscribeResult = result;
+}
+
+void SetSubscribeNavigationManagerHook(std::function<void()> hook)
+{
+    g_subscribeActionHook = std::move(hook);
 }
 
 void SetUnsubscribeNavigationManagerResult(int32_t result)
@@ -79,6 +94,11 @@ int32_t GetLastSubscribeAction()
         return -1;
     }
     return g_subscribeActions.back();
+}
+
+int32_t GetUnsubscribeManagerCallCount()
+{
+    return g_unsubscribeManagerCount;
 }
 } // End of namespace DataFabricAddressTest
 } // End of namespace OHOS

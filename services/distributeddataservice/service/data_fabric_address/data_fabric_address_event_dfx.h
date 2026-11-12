@@ -16,7 +16,8 @@
 #ifndef DATA_FABRIC_ADDRESS_EVENT_DFX_H
 #define DATA_FABRIC_ADDRESS_EVENT_DFX_H
 
-#include <stdint.h>
+#include <cstdint>
+
 #include "hisysevent.h"
 
 namespace OHOS {
@@ -35,8 +36,8 @@ enum DataFabricAddressBizStage : int32_t {
     NAVIGATION_UNSUBSCRIBE,
     LIVE_VIEW_SUBSCRIBE,
     LIVE_VIEW_UNSUBSCRIBE,
-    PSAAIVE_LOCATION_SUBSCRIBE,
-    PSAAIVE_LOCATION_UNSUBSCRIBE,
+    PASSIVE_LOCATION_SUBSCRIBE,
+    PASSIVE_LOCATION_UNSUBSCRIBE,
     NAVIGATION_DATA_REPORT,
     NAVIGATION_DISTANCE_CALCULATE,
 };
@@ -49,7 +50,7 @@ enum StageRes : int32_t {
     RES_TIMEOUT,
 };
 
-enum DataFabricAddressErrorCode : int32_t {
+enum DataFabricAddressErrorCode : uint16_t {
     COMMUTE_DISTANCE_TOO_SHORT = 1,
     INVALID_SCENARIO_TYPE,
     INVALID_REFERENCE_POINTS_COUNT,
@@ -67,7 +68,7 @@ enum DataFabricAddressErrorCode : int32_t {
     REPORT_NAVIGATION_DATA_FAILED,
 };
 
-static constexpr char DOMAIN_NAME[] = "DISTDATAMGR";
+inline constexpr char DOMAIN_NAME[] = "DISTDATAMGR";
 constexpr char const *EVENT_NAME { "DATA_FABRIC_ADDRESS_BEHAVIOR" };
 constexpr char const *ORGPKGNAME { "distributeddata" };
 

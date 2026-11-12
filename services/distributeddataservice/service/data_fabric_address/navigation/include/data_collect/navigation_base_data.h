@@ -22,6 +22,8 @@
 #include <vector>
 #include <sstream>
 
+#include "data_fabric_address_types.h"
+
 namespace OHOS {
 namespace DataFabricAddress {
 
@@ -29,6 +31,16 @@ struct Waypoint {
     int64_t timestamp = 0;
     double latitude = 0.0;
     double longitude = 0.0;
+
+    NativePreferences::LocationPoint ToLocationPoint() const
+    {
+        return { latitude, longitude };
+    }
+
+    static Waypoint FromLocationPoint(const NativePreferences::LocationPoint &point, int64_t timestamp = 0)
+    {
+        return { timestamp, point.latitude, point.longitude };
+    }
 
     std::string ToString() const
     {

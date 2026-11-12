@@ -38,7 +38,9 @@ void DataFabricAddressCallbackProxy::OnDataFabricAddressChanged(
 
     MessageParcel data;
     MessageParcel reply;
-    MessageOption option;
+    // The callback only carries a notification, send it asynchronously so that a slow or suspended
+    // client does not block the caller of the data change notification.
+    MessageOption option(MessageOption::TF_ASYNC);
     if (!data.WriteInterfaceToken(DataFabricAddressCallbackProxy::GetDescriptor())) {
         ZLOGE("Write descriptor failed.");
         return;

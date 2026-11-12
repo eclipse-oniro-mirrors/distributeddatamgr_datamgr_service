@@ -89,30 +89,25 @@ int32_t DataFabricAddressServiceImpl::Subscribe(const DataFabricAddressParams& i
     sptr<IDataFabricAddressCallback> callback)
 {
     ZLOGI("Service Subscribe enter.");
-    std::lock_guard<std::mutex> lock(subscribersMutex_);
-    if (!factory_.IsInited()) {
-        ZLOGE("System ability not initialized.");
+    PreparedSubscription prepared;
+    {
+        // The lock protects the subscription cache only. The navigation manager is called after it is
+        // released because it subscribes the geofence and locator services synchronously, and the
+        // event reporting is also done outside so that a slow event write never blocks the cache.
+        std::lock_guard<std::mutex> lock(subscribersMutex_);
+        prepared = PrepareSubscription(inputParams, callback);
+    }
+    if (prepared.status != RUN_OK) {
         RADAR_REPORT(CLIENT_REQUEST, DATA_FABRIC_ADDRESS_SUBSCRIBE, RES_FAILED, "ERROR_CODE",
-            SYSTEM_ABILITY_NOT_INITED);
-        return INTERNAL_EXCEPTION;
+            prepared.errorCode);
+        return prepared.status;
     }
-    NativePreferences::LocationPoint homePoint;
-    NativePreferences::LocationPoint companyPoint;
-    int32_t ret = ValidateParams(inputParams, homePoint, companyPoint);
-    if (ret != RUN_OK) {
-        RADAR_REPORT(CLIENT_REQUEST, DATA_FABRIC_ADDRESS_SUBSCRIBE, RES_FAILED, "ERROR_CODE", ret);
-        return ret;
-    }
-    if (!AddCallback(inputParams, callback)) {
-        RADAR_REPORT(CLIENT_REQUEST, DATA_FABRIC_ADDRESS_SUBSCRIBE, RES_FAILED, "ERROR_CODE",
-            ADD_CALLBACK_FAILED);
-        return INTERNAL_EXCEPTION;
-    }
+
     ActionType actionType = inputParams.locationInfo.actionType;
     if (actionType == ActionType::UPDATE) {
         // The SA may have restarted and lost the subscription state, re-establish it before the update.
         int32_t subRet = NavigationManager::GetInstance().SubscribeNavigationManager(ActionType::SUBSCRIPTION,
-            homePoint, companyPoint, callback);
+            prepared.homePoint, prepared.companyPoint, prepared.callback);
         if (subRet != RUN_OK) {
             ZLOGE("Failed to re-establish the subscription state.");
             RADAR_REPORT(CLIENT_REQUEST, DATA_FABRIC_ADDRESS_SUBSCRIBE, RES_FAILED, "ERROR_CODE",
@@ -121,10 +116,77 @@ int32_t DataFabricAddressServiceImpl::Subscribe(const DataFabricAddressParams& i
         }
     }
     int32_t status = NavigationManager::GetInstance().SubscribeNavigationManager(
-        actionType, homePoint, companyPoint, callback);
+        actionType, prepared.homePoint, prepared.companyPoint, prepared.callback);
+    if (status != RUN_OK && actionType == ActionType::SUBSCRIPTION && !prepared.hasCachedParams) {
+        // A newly cached subscription which failed to start must not keep the single subscriber slot
+        // occupied, otherwise no other caller can subscribe until this caller unsubscribes.
+        std::lock_guard<std::mutex> lock(subscribersMutex_);
+        RollbackCachedSubscription(inputParams);
+    }
     RADAR_REPORT(CLIENT_REQUEST, DATA_FABRIC_ADDRESS_SUBSCRIBE,
         status == RUN_OK ? RES_SUCCESS : RES_FAILED, "ERROR_CODE", status);
     return status;
+}
+
+DataFabricAddressServiceImpl::PreparedSubscription DataFabricAddressServiceImpl::PrepareSubscription(
+    const DataFabricAddressParams& inputParams, const sptr<IDataFabricAddressCallback>& callback)
+{
+    PreparedSubscription prepared;
+    if (!factory_.IsInited()) {
+        ZLOGE("System ability not initialized.");
+        prepared.status = INTERNAL_EXCEPTION;
+        prepared.errorCode = SYSTEM_ABILITY_NOT_INITED;
+        return prepared;
+    }
+    // The navigation collectors are singletons with a single callback slot, so only one subscription
+    // exists at a time. Rejecting a conflicting one avoids returning a fake success and keeps the
+    // cached callback and the reference points of the existing subscriber intact.
+    if (IsSubscriptionOccupied(inputParams)) {
+        ZLOGE("The subscription is occupied, only one subscriber is supported.");
+        prepared.status = SUBSCRIBE_EXCEPTION;
+        prepared.errorCode = ADD_CALLBACK_FAILED;
+        return prepared;
+    }
+    int32_t ret = ValidateParams(inputParams, prepared.homePoint, prepared.companyPoint);
+    if (ret != RUN_OK) {
+        prepared.status = ret;
+        prepared.errorCode = ret;
+        return prepared;
+    }
+    // The pre-existing entry must be read before AddCallback inserts the new one, otherwise every
+    // subscription looks already cached and a failed one is never rolled back, which keeps the single
+    // subscriber slot occupied. The cached callback is the owner of the subscription, use it so that a
+    // repeated subscription cannot replace the callback used for reporting.
+    const auto cachedIter = subscribeCacheMap_.find(inputParams);
+    prepared.hasCachedParams = cachedIter != subscribeCacheMap_.end();
+    if (!AddCallback(inputParams, callback)) {
+        prepared.status = INTERNAL_EXCEPTION;
+        prepared.errorCode = ADD_CALLBACK_FAILED;
+        return prepared;
+    }
+    prepared.callback = callback;
+    if (prepared.hasCachedParams && cachedIter->second.callback != nullptr) {
+        prepared.callback = cachedIter->second.callback;
+    }
+    return prepared;
+}
+
+void DataFabricAddressServiceImpl::RollbackCachedSubscription(const DataFabricAddressParams& inputParams)
+{
+    const auto iter = subscribeCacheMap_.find(inputParams);
+    if (iter == subscribeCacheMap_.end()) {
+        return;
+    }
+    sptr<IRemoteObject> object { nullptr };
+    if (iter->second.callback != nullptr) {
+        object = iter->second.callback->AsObject();
+    }
+    sptr<IRemoteObject::DeathRecipient> deathRecipient = iter->second.cbDeathRecipient;
+    subscribeCacheMap_.erase(iter);
+    if (object != nullptr && deathRecipient != nullptr) {
+        object->RemoveDeathRecipient(deathRecipient);
+    }
+    ZLOGW("Roll back the cached subscription of the failed subscribe.");
 }
 
 bool DataFabricAddressServiceImpl::AddCallback(const DataFabricAddressParams& inputParams,
@@ -135,16 +197,63 @@ bool DataFabricAddressServiceImpl::AddCallback(const DataFabricAddressParams& in
         ZLOGI("The update action do not need to add callback.");
         return true;
     }
+    // A repeated subscription of the same params keeps the cached callback. Registering another
+    // death recipient for it would leak the recipient because the map insertion is skipped.
+    if (subscribeCacheMap_.find(inputParams) != subscribeCacheMap_.end()) {
+        ZLOGI("The subscription has been cached, keep the cached callback.");
+        return true;
+    }
     auto object = callback->AsObject();
+    if (object == nullptr) {
+        ZLOGE("The callback remote is null.");
+        return false;
+    }
     sptr<DeathRecipientListener> cbDeathRecipient = new (std::nothrow) DeathRecipientListener(weak_from_this());
     if (cbDeathRecipient == nullptr) {
         ZLOGE("Failed to create cbDeathRecipient.");
         return false;
     }
     object->AddDeathRecipient(cbDeathRecipient);
-    subscribeCacheMap_.emplace(inputParams, SubscribeCacheData{cbDeathRecipient, callback,
-        IPCSkeleton::GetCallingFullTokenID()});
+    const uint64_t callerToken = IPCSkeleton::GetCallingFullTokenID();
+    auto result = subscribeCacheMap_.emplace(inputParams, SubscribeCacheData{cbDeathRecipient, callback,
+        callerToken});
+    if (!result.second) {
+        object->RemoveDeathRecipient(cbDeathRecipient);
+        ZLOGE("Failed to cache the subscription.");
+        return false;
+    }
+    // Only the owner of the cached subscription may retry the navigation manager tear down after its
+    // cache entry has been removed by the first unsubscription.
+    lastSubscribedToken_ = callerToken;
     ZLOGI("Service AddCallback exit.");
+    return true;
+}
+
+bool DataFabricAddressServiceImpl::IsSubscriptionOccupied(const DataFabricAddressParams& inputParams) const
+{
+    if (subscribeCacheMap_.empty()) {
+        // Nothing is cached, the subscription or the update can rebuild the state freely.
+        return false;
+    }
+    const uint64_t callerToken = IPCSkeleton::GetCallingFullTokenID();
+    if (inputParams.locationInfo.actionType == ActionType::UPDATE) {
+        // The update reuses the subscription of the same caller. The reference points are a part of the
+        // cache key, so an update with new points is matched by the caller instead of by the key.
+        for (const auto &entry : subscribeCacheMap_) {
+            if (entry.second.callerFullTokenId != callerToken) {
+                ZLOGW("The subscription is owned by another caller.");
+                return true;
+            }
+        }
+        return false;
+    }
+    // Only one subscription exists, a new one is accepted only when it repeats the cached params of the
+    // same caller. Changing the reference points of an existing subscription requires an update action.
+    const auto iter = subscribeCacheMap_.find(inputParams);
+    if (iter != subscribeCacheMap_.end() && iter->second.callerFullTokenId == callerToken) {
+        return false;
+    }
+    ZLOGW("The subscription is occupied, the params or the caller does not match the cached subscription.");
     return true;
 }
 
@@ -153,20 +262,32 @@ int32_t DataFabricAddressServiceImpl::Unsubscribe(const DataFabricAddressParams&
     ZLOGI("Service Unsubscribe enter.");
     sptr<IRemoteObject> callbackObject { nullptr };
     sptr<IRemoteObject::DeathRecipient> deathRecipient { nullptr };
+    int32_t result = RUN_OK;
+    int32_t errorCode = INTERNAL_EXCEPTION;
+    bool removed = false;
     {
         std::lock_guard<std::mutex> lock(subscribersMutex_);
         if (!factory_.IsInited()) {
             ZLOGE("System ability not initialized.");
-            RADAR_REPORT(CLIENT_REQUEST, DATA_FABRIC_ADDRESS_UNSUBSCRIBE, RES_FAILED, "ERROR_CODE",
-                SYSTEM_ABILITY_NOT_INITED);
-            return INTERNAL_EXCEPTION;
+            result = INTERNAL_EXCEPTION;
+            errorCode = SYSTEM_ABILITY_NOT_INITED;
+        } else {
+            result = RemoveCallback(inputParams, callbackObject, deathRecipient, removed);
+            if (result != RUN_OK) {
+                errorCode = REMOVE_CALLBACK_FAILED;
+            }
         }
-        int32_t result = RemoveCallback(inputParams, callbackObject, deathRecipient);
-        if (result != RUN_OK) {
-            RADAR_REPORT(CLIENT_REQUEST, DATA_FABRIC_ADDRESS_UNSUBSCRIBE, RES_FAILED, "ERROR_CODE",
-                REMOVE_CALLBACK_FAILED);
-            return result;
-        }
+    }
+    if (result != RUN_OK) {
+        // The event is reported outside the cache lock, the write may block.
+        RADAR_REPORT(CLIENT_REQUEST, DATA_FABRIC_ADDRESS_UNSUBSCRIBE, RES_FAILED, "ERROR_CODE", errorCode);
+        return result;
+    }
+    if (!removed) {
+        // The caller does not own the subscription, it must not stop the collection of another caller.
+        ZLOGI("Service Unsubscribe exit, the caller does not own the subscription.");
+        RADAR_REPORT(CLIENT_REQUEST, DATA_FABRIC_ADDRESS_UNSUBSCRIBE, RES_SUCCESS);
+        return RUN_OK;
     }
 
     if (callbackObject != nullptr && deathRecipient != nullptr) {
@@ -179,12 +300,21 @@ int32_t DataFabricAddressServiceImpl::Unsubscribe(const DataFabricAddressParams&
 }
 
 int32_t DataFabricAddressServiceImpl::RemoveCallback(const DataFabricAddressParams& inputParams,
-    sptr<IRemoteObject>& callbackObject, sptr<IRemoteObject::DeathRecipient>& deathRecipient)
+    sptr<IRemoteObject>& callbackObject, sptr<IRemoteObject::DeathRecipient>& deathRecipient, bool& removed)
 {
     ZLOGI("Service RemoveCallback enter.");
+    removed = false;
     const auto iter = subscribeCacheMap_.find(inputParams);
     if (iter == subscribeCacheMap_.end()) {
-        ZLOGW("The inputParams not exist in the subscribeCacheMap_, treat as already unsubscribed.");
+        // The cache entry is removed before the navigation manager is torn down, so the owner retries the
+        // tear down with an entry which no longer exists. Any other caller is treated as already
+        // unsubscribed and is not allowed to stop the collection with arbitrary params.
+        removed = IPCSkeleton::GetCallingFullTokenID() == lastSubscribedToken_;
+        if (removed) {
+            ZLOGW("The params are not cached, only the owner retries the tear down.");
+        } else {
+            ZLOGW("The inputParams not exist in the subscribeCacheMap_, treat as already unsubscribed.");
+        }
         return RUN_OK;
     }
     auto &cacheData = iter->second;
@@ -197,6 +327,7 @@ int32_t DataFabricAddressServiceImpl::RemoveCallback(const DataFabricAddressPara
         deathRecipient = cacheData.cbDeathRecipient;
     }
     subscribeCacheMap_.erase(iter);
+    removed = true;
     ZLOGI("Service RemoveCallback exit.");
     return RUN_OK;
 }
@@ -305,8 +436,10 @@ void DataFabricAddressServiceImpl::DeathRecipientListener::OnRemoteDied(const wp
         return;
     }
     std::vector<sptr<IRemoteObject::DeathRecipient>> toRemove;
+    bool needTeardown = false;
     {
         std::lock_guard<std::mutex> lock(service->subscribersMutex_);
+        bool ownerRemoved = false;
         auto iter = service->subscribeCacheMap_.begin();
         while (iter != service->subscribeCacheMap_.end()) {
             auto &cacheData = iter->second;
@@ -317,15 +450,28 @@ void DataFabricAddressServiceImpl::DeathRecipientListener::OnRemoteDied(const wp
             }
             if (cacheData.callback->AsObject() == client) {
                 ZLOGI("The callback will be remove.");
+                ownerRemoved = true;
                 toRemove.push_back(cacheData.cbDeathRecipient);
                 iter = service->subscribeCacheMap_.erase(iter);
                 continue;
             }
             ++iter;
         }
+        // The collection must not outlive its only subscriber, otherwise the passive location and the
+        // live view callbacks keep running while the reports can never be delivered.
+        needTeardown = ownerRemoved && service->subscribeCacheMap_.empty();
     }
     for (auto &deathRecipient : toRemove) {
         client->RemoveDeathRecipient(deathRecipient);
+    }
+    if (!needTeardown) {
+        return;
+    }
+    // Called outside the cache lock because the navigation manager tears the geofence and locator
+    // subscriptions down synchronously.
+    int32_t ret = NavigationManager::GetInstance().UnsubscribeNavigationManager();
+    if (ret != RUN_OK) {
+        ZLOGW("Unsubscribe the navigation manager of the dead subscriber failed, ret:%{public}d", ret);
     }
 }
 } // End of namespace DataFabricAddress

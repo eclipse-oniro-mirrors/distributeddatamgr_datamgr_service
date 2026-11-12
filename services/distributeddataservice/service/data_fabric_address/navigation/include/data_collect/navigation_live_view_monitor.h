@@ -28,6 +28,7 @@
 #include "iremote_stub.h"
 #include "message_option.h"
 #include "message_parcel.h"
+#include "navigation_base_data.h"
 
 namespace OHOS {
 namespace DataFabricAddress {
@@ -61,13 +62,16 @@ public:
 
     int OnRemoteRequest(uint32_t code, MessageParcel &data, MessageParcel &reply, MessageOption &option) override;
     void OnLiveViewChanged(const LiveViewEvent &event) override;
+    bool HasActiveNavigation();
 
 private:
-    bool IsTargetNavigationEvent(const LiveViewEvent &event);
     void HandleLiveViewStart(const LiveViewEvent &event);
     void HandleLiveViewEnd(const LiveViewEvent &event);
     std::string BuildRecordKey(const std::string &bundleName, int32_t notificationId) const;
     bool ConstructReportResult(int64_t startTimestamp, const std::string &bundleName, std::string &result);
+    bool IsReportableTrip(const std::vector<Waypoint> &allWaypoints);
+    bool BuildNavigationResult(int64_t startTimestamp, int64_t endTimestamp, const std::string &bundleName,
+        const std::vector<Waypoint> &allWaypoints, std::string &result);
 
     std::mutex mutex_;
     std::map<std::string, int64_t> activeRecords_;
@@ -82,6 +86,7 @@ public:
     void UpdateReferenceLocation(const NativePreferences::LocationPoint &homePoint,
         const NativePreferences::LocationPoint &companyPoint);
     int32_t UnsubscribeNavigationLiveView();
+    bool HasActiveNavigation();
     void ReportNavigationData(NativePreferences::StatusCode code, const std::string &result);
     NativePreferences::LocationPoint GetHomePoint();
     NativePreferences::LocationPoint GetCompanyPoint();
@@ -89,8 +94,17 @@ private:
     NavigationLiveViewMonitor() = default;
     ~NavigationLiveViewMonitor() = default;
 
+    // Called without mutex_ held: the geofence api load and calls may block, the lock only protects the state
+    // and is re-acquired after them. The navigation manager serializes the calls, which never report events.
+    int32_t DoSubscribeNavigationLiveView(const NativePreferences::LocationPoint &homePoint,
+        const NativePreferences::LocationPoint &companyPoint,
+        const sptr<NativePreferences::IDataFabricAddressCallback>& callback, int32_t &errorCode);
+    int32_t DoUnsubscribeNavigationLiveView();
+
     std::mutex mutex_;
     std::atomic<bool> isSubscribed_ { false };
+    // Set while the geofence unsubscription is in flight, the reports arriving meanwhile are dropped.
+    std::atomic<bool> isUnsubscribing_ { false };
     NativePreferences::LocationPoint homePoint_;
     NativePreferences::LocationPoint companyPoint_;
     sptr<LiveViewObserverImpl> observer_ { nullptr };

@@ -16,7 +16,6 @@
 #ifndef NAVIGATION_COMMON_UTILS_H
 #define NAVIGATION_COMMON_UTILS_H
 
-#include <map>
 #include <string>
 
 #include "data_fabric_address_types.h"
@@ -27,24 +26,15 @@ namespace DataFabricAddress {
 constexpr double DEFAULT_MIN_SUPPORTED_COMMUTE_DISTANCE = 500.0;
 constexpr double DEFAULT_MAX_NAVIGATION_END_DISTANCE = 2000.0;
 constexpr double DEFAULT_MAX_WAYPOINT_COLLECT_DISTANCE = 2000.0;
-
-// Default navigation app bundle name map.
-inline const std::map<std::string, std::string> &GetDefaultNavigationBundleNameMap()
-{
-    static const std::map<std::string, std::string> defaultNavigationBundleNameMap = {
-        { "com.amap.hmapp", "高德地图" },
-        { "com.baidu.hmmap", "百度地图" },
-        { "com.tencent.mapohos", "腾讯地图" },
-        { "com.huawei.hmos.maps.app", "花瓣地图" }
-    };
-    return defaultNavigationBundleNameMap;
-}
+constexpr double DEFAULT_MIN_NAVIGATION_TRIP_DISTANCE = 500.0;
 
 class NavigationCommonUtil {
 public:
     static int64_t GetNowSecondTimestamp();
     static bool GetDistance(const NativePreferences::LocationPoint& startPoint,
         const NativePreferences::LocationPoint& endPoint, double& distance);
+    static bool IsDistanceLessThan(const NativePreferences::LocationPoint& startPoint,
+        const NativePreferences::LocationPoint& endPoint, double threshold);
     // Convert the GCJ02 coordinate system to the WGS84 coordinate system
     static bool Gcj02ToWgs84(const NativePreferences::LocationPoint& gcj02Point,
         NativePreferences::LocationPoint& wgs84Point);

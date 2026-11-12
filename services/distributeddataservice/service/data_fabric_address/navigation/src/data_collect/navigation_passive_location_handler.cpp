@@ -32,6 +32,9 @@ using namespace DistributedData;
 const int32_t ON_REMOTE_OBJECT_FAILED_CODE = -1;
 const int32_t LOCATION_NO_POWER_TIME_INTERVAL = 1;
 const int32_t LOCATION_NO_POWER_DISTANCE_INTERVAL = 10;
+// The report keeps the first and the last waypoint plus at most 64 middle waypoints, so collecting
+// twice that number is enough and bounds the buffer of a navigation which never receives an end event.
+constexpr size_t MAX_COLLECTED_WAYPOINT_COUNT = 128;
 
 NavigationPassiveLocationHandler &NavigationPassiveLocationHandler::GetInstance()
 {
@@ -42,17 +45,30 @@ NavigationPassiveLocationHandler &NavigationPassiveLocationHandler::GetInstance(
 int32_t NavigationPassiveLocationHandler::SubscribePassiveLocation()
 {
     ZLOGI("SubscribePassiveLocation enter.");
-    std::lock_guard<std::mutex> lock(mutex_);
-    if (isSubscribed_.load()) {
-        ZLOGI("Passive location has been subscribed.");
-        return NativePreferences::RUN_OK;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (isSubscribed_.load()) {
+            ZLOGI("Passive location has been subscribed.");
+            return NativePreferences::RUN_OK;
+        }
     }
+    // StartLocatingV9 calls the locator service synchronously, start it without the handler lock.
+    int32_t ret = DoSubscribePassiveLocation();
+    // The event is reported outside the handler lock, the write may block.
+    if (ret != NativePreferences::RUN_OK) {
+        RADAR_REPORT(CLIENT_REQUEST, PASSIVE_LOCATION_SUBSCRIBE, RES_FAILED, "ERROR_CODE",
+            PASSIVE_LOCATION_SUBSCRIBE_FAILED);
+        return ret;
+    }
+    ZLOGI("SubscribePassiveLocation exit.");
+    return NativePreferences::RUN_OK;
+}
 
+int32_t NavigationPassiveLocationHandler::DoSubscribePassiveLocation()
+{
     auto locator = Location::LocatorImpl::GetInstance();
     if (locator == nullptr) {
         ZLOGE("Failed to get location instance.");
-        RADAR_REPORT(CLIENT_REQUEST, PSAAIVE_LOCATION_SUBSCRIBE, RES_FAILED, "ERRIR_CODE",
-            PASSIVE_LOCATION_SUBSCRIBE_FAILED);
         return NativePreferences::INTERNAL_EXCEPTION;
     }
 
@@ -60,8 +76,6 @@ int32_t NavigationPassiveLocationHandler::SubscribePassiveLocation()
         sptr<PassiveLocatingCallback>(new (std::nothrow) PassiveLocatingCallback());
     if (callback == nullptr) {
         ZLOGE("Failed to create location callback.");
-        RADAR_REPORT(CLIENT_REQUEST, PSAAIVE_LOCATION_SUBSCRIBE, RES_FAILED, "ERRIR_CODE",
-            PASSIVE_LOCATION_SUBSCRIBE_FAILED);
         return NativePreferences::INTERNAL_EXCEPTION;
     }
 
@@ -72,53 +86,65 @@ int32_t NavigationPassiveLocationHandler::SubscribePassiveLocation()
     int32_t ret = locator->StartLocatingV9(requestConfig, callback);
     if (ret != Location::LocationErrCode::ERRCODE_SUCCESS) {
         ZLOGE("Failed to start passive locating, ret:%{public}d", ret);
-        RADAR_REPORT(CLIENT_REQUEST, PSAAIVE_LOCATION_SUBSCRIBE, RES_FAILED, "ERRIR_CODE",
-            PASSIVE_LOCATION_SUBSCRIBE_FAILED);
         return NativePreferences::INTERNAL_EXCEPTION;
     }
 
+    // The state is installed only after the locator has been started.
+    std::lock_guard<std::mutex> lock(mutex_);
     passiveCallback_ = callback;
     isSubscribed_.store(true);
-    RADAR_REPORT(CLIENT_REQUEST, PSAAIVE_LOCATION_SUBSCRIBE, RES_SUCCESS);
-    ZLOGI("SubscribePassiveLocation exit.");
     return NativePreferences::RUN_OK;
 }
 
 int32_t NavigationPassiveLocationHandler::UnsubscribePassiveLocation()
 {
     ZLOGI("UnsubscribePassiveLocation enter.");
-    std::lock_guard<std::mutex> lock(mutex_);
-    if (!isSubscribed_.load()) {
-        ZLOGI("Passive location has not been subscribed.");
-        return NativePreferences::RUN_OK;
+    sptr<Location::ILocatorCallback> callback { nullptr };
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (!isSubscribed_.load()) {
+            ZLOGI("Passive location has not been subscribed.");
+            return NativePreferences::RUN_OK;
+        }
+        callback = passiveCallback_;
+        if (callback == nullptr) {
+            isSubscribed_.store(false);
+            ZLOGI("The callback is null, does't need to unsubscribed.");
+            return NativePreferences::RUN_OK;
+        }
     }
-
-    if (passiveCallback_ == nullptr) {
+    // StopLocatingV9 calls the locator service synchronously, stop it without the handler lock. The state
+    // is kept until it returns so that a failure keeps the passive location subscribed.
+    int32_t ret = DoUnsubscribePassiveLocation(callback);
+    // The event is reported outside the handler lock, the write may block.
+    if (ret != NativePreferences::RUN_OK) {
+        RADAR_REPORT(CLIENT_REQUEST, PASSIVE_LOCATION_UNSUBSCRIBE, RES_FAILED, "ERROR_CODE",
+            PASSIVE_LOCATION_UNSUBSCRIBE_FAILED);
+        return ret;
+    }
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        passiveCallback_ = nullptr;
         isSubscribed_.store(false);
-        ZLOGI("The callback is null, does't need to unsubscribed.");
-        return NativePreferences::RUN_OK;
     }
+    ZLOGI("UnsubscribePassiveLocation exit.");
+    return NativePreferences::RUN_OK;
+}
 
+int32_t NavigationPassiveLocationHandler::DoUnsubscribePassiveLocation(
+    sptr<Location::ILocatorCallback> &callback)
+{
     auto locator = Location::LocatorImpl::GetInstance();
     if (locator == nullptr) {
         ZLOGE("Failed to get location instance.");
-        RADAR_REPORT(CLIENT_REQUEST, LIVE_VIEW_SUBSCRIBE, RES_FAILED, "ERRIR_CODE",
-            PASSIVE_LOCATION_UNSUBSCRIBE_FAILED);
         return NativePreferences::INTERNAL_EXCEPTION;
     }
 
-    int32_t ret = locator->StopLocatingV9(passiveCallback_);
+    int32_t ret = locator->StopLocatingV9(callback);
     if (ret != Location::LocationErrCode::ERRCODE_SUCCESS) {
         ZLOGE("Failed to stop passive locating, ret:%{public}d", ret);
-        RADAR_REPORT(CLIENT_REQUEST, LIVE_VIEW_SUBSCRIBE, RES_FAILED, "ERRIR_CODE",
-            PASSIVE_LOCATION_UNSUBSCRIBE_FAILED);
         return NativePreferences::INTERNAL_EXCEPTION;
     }
-
-    passiveCallback_ = nullptr;
-    isSubscribed_.store(false);
-    RADAR_REPORT(CLIENT_REQUEST, LIVE_VIEW_UNSUBSCRIBE, RES_SUCCESS);
-    ZLOGI("UnsubscribePassiveLocation exit.");
     return NativePreferences::RUN_OK;
 }
 
@@ -126,6 +152,13 @@ void NavigationPassiveLocationHandler::AddWaypoints(const Waypoint &waypoint)
 {
     std::lock_guard<std::mutex> lock(waypointsMutex_);
     waypoints_.push_back(waypoint);
+    if (waypoints_.size() > MAX_COLLECTED_WAYPOINT_COUNT) {
+        // The first waypoint is the trip start and the last one is the trip end, so only the oldest
+        // middle waypoint is dropped.
+        waypoints_.erase(waypoints_.begin() + 1);
+        ZLOGW("The collected waypoints exceed %{public}zu, drop the oldest middle waypoint.",
+            MAX_COLLECTED_WAYPOINT_COUNT);
+    }
     ZLOGI("AddWaypoints current size:%{public}zu", waypoints_.size());
 }
 
@@ -152,23 +185,27 @@ int32_t PassiveLocatingCallback::OnRemoteRequest(
     }
 
     switch (code) {
-        case Location::ILocatorCallback::RECEIVE_LOCATION_INFO_EVENT:
+        case Location::ILocatorCallback::RECEIVE_LOCATION_INFO_EVENT: {
             std::unique_ptr<Location::Location> location =
                 Location::Location::UnmarshallingMakeUnique(data);
             OnLocationReport(location);
             break;
-        case Location::ILocatorCallback::RECEIVE_ERROR_INFO_EVENT:
+        }
+        case Location::ILocatorCallback::RECEIVE_ERROR_INFO_EVENT: {
             int32_t errorCode = data.ReadInt32();
             OnErrorReport(errorCode);
             break;
-        case Location::ILocatorCallback::RECEIVE_LOCATION_STATUS_EVENT:
+        }
+        case Location::ILocatorCallback::RECEIVE_LOCATION_STATUS_EVENT: {
             int32_t status = data.ReadInt32();
             OnLocatingStatusChange(status);
             break;
-        default:
+        }
+        default: {
             break;
+        }
     }
-    return 0;
+    return NativePreferences::RUN_OK;
 }
 
 void PassiveLocatingCallback::OnLocatingStatusChange(const int status)
@@ -184,9 +221,8 @@ void PassiveLocatingCallback::OnLocationReport(const std::unique_ptr<Location::L
         return;
     }
 
-    double latitude = location->GetLatitude();
-    double longitude = location->GetLongitude();
-    HandlePassiveLocation(latitude, longitude);
+    NativePreferences::LocationPoint reportedPoint = { location->GetLatitude(), location->GetLongitude() };
+    HandlePassiveLocation(reportedPoint);
 }
 
 void PassiveLocatingCallback::OnErrorReport(const int errorCode)
@@ -194,27 +230,29 @@ void PassiveLocatingCallback::OnErrorReport(const int errorCode)
     ZLOGW("PassiveLocatingCallback report error, errorCode: %{public}d", errorCode);
 }
 
-void PassiveLocatingCallback::HandlePassiveLocation(double latitude, double longitude)
+void PassiveLocatingCallback::HandlePassiveLocation(const NativePreferences::LocationPoint &point)
 {
     ZLOGI("HandlePassiveLocation enter.");
-    NativePreferences::LocationPoint currentPoint = { latitude, longitude };
+    if (!NavigationLiveViewMonitor::GetInstance().HasActiveNavigation()) {
+        ZLOGD("There is no navigation in progress, ignore the passive location.");
+        return;
+    }
     double distanceFromHome = 0.0;
     double distanceFromCompany = 0.0;
-    if (!NavigationCommonUtil::GetDistance(currentPoint, NavigationLiveViewMonitor::GetInstance().GetHomePoint(),
-        distanceFromHome) || !NavigationCommonUtil::GetDistance(currentPoint,
+    if (!NavigationCommonUtil::GetDistance(point, NavigationLiveViewMonitor::GetInstance().GetHomePoint(),
+        distanceFromHome) || !NavigationCommonUtil::GetDistance(point,
         NavigationLiveViewMonitor::GetInstance().GetCompanyPoint(), distanceFromCompany)) {
         ZLOGE("Failed to get the distance from current location to home or company.");
         return;
     }
     if (distanceFromHome >= DEFAULT_MAX_WAYPOINT_COLLECT_DISTANCE &&
         distanceFromCompany >= DEFAULT_MAX_WAYPOINT_COLLECT_DISTANCE) {
-        ZLOGE("The distance from current location to home and company all are greater than %{public}zu, "
+        ZLOGE("The distance from current location to home and company all are greater than %{public}f, "
             "the location data is invalid.", DEFAULT_MAX_WAYPOINT_COLLECT_DISTANCE);
         return;
     }
     int64_t timestamp = NavigationCommonUtil::GetNowSecondTimestamp();
-    Waypoint waypoint = { timestamp, latitude, longitude };
-    NavigationPassiveLocationHandler::GetInstance().AddWaypoints(waypoint);
+    NavigationPassiveLocationHandler::GetInstance().AddWaypoints(Waypoint::FromLocationPoint(point, timestamp));
 }
 } // End of namespace DataFabricAddress
 } // End of namespace OHOS
