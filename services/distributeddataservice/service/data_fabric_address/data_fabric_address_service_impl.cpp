@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "data_fabric_address_errors.h"
+#include "data_fabric_address_event_dfx.h"
 #include "data_fabric_address_types.h"
 #include "ipc_skeleton.h"
 #include "log_print.h"
@@ -31,9 +32,8 @@
 namespace OHOS {
 namespace DataFabricAddress {
 using namespace DistributedData;
-// Minimum supported commuting distance
-constexpr double MIN_SUPPORTED_COMMUTE_DISTANCE = 1000.0;
-constexpr size_t NAVIGATION_REFERENCE_POINTS_MAX_COUNT {2};
+// Maximum count of reference points supported by the commuting scenario
+constexpr size_t NAVIGATION_REFERENCE_POINTS_MAX_COUNT { 2 };
 
 __attribute__((used)) DataFabricAddressServiceImpl::Factory DataFabricAddressServiceImpl::factory_;
 
@@ -92,15 +92,20 @@ int32_t DataFabricAddressServiceImpl::Subscribe(const DataFabricAddressParams& i
     std::lock_guard<std::mutex> lock(subscribersMutex_);
     if (!factory_.IsInited()) {
         ZLOGE("System ability not initialized.");
+        RADAR_REPORT(CLIENT_REQUEST, DATA_FABRIC_ADDRESS_SUBSCRIBE, RES_FAILED, "ERROR_CODE",
+            SYSTEM_ABILITY_NOT_INITED);
         return INTERNAL_EXCEPTION;
     }
     NativePreferences::LocationPoint homePoint;
     NativePreferences::LocationPoint companyPoint;
     int32_t ret = ValidateParams(inputParams, homePoint, companyPoint);
     if (ret != RUN_OK) {
+        RADAR_REPORT(CLIENT_REQUEST, DATA_FABRIC_ADDRESS_SUBSCRIBE, RES_FAILED, "ERROR_CODE", ret);
         return ret;
     }
     if (!AddCallback(inputParams, callback)) {
+        RADAR_REPORT(CLIENT_REQUEST, DATA_FABRIC_ADDRESS_SUBSCRIBE, RES_FAILED, "ERROR_CODE",
+            ADD_CALLBACK_FAILED);
         return INTERNAL_EXCEPTION;
     }
     ActionType actionType = inputParams.locationInfo.actionType;
@@ -110,10 +115,16 @@ int32_t DataFabricAddressServiceImpl::Subscribe(const DataFabricAddressParams& i
             homePoint, companyPoint, callback);
         if (subRet != RUN_OK) {
             ZLOGE("Failed to re-establish the subscription state.");
+            RADAR_REPORT(CLIENT_REQUEST, DATA_FABRIC_ADDRESS_SUBSCRIBE, RES_FAILED, "ERROR_CODE",
+                NAVIGATION_SUBSCRIBE_FAILED);
             return subRet;
         }
     }
-    return NavigationManager::GetInstance().SubscribeNavigationManager(actionType, homePoint, companyPoint, callback);
+    int32_t status = NavigationManager::GetInstance().SubscribeNavigationManager(
+        actionType, homePoint, companyPoint, callback);
+    RADAR_REPORT(CLIENT_REQUEST, DATA_FABRIC_ADDRESS_SUBSCRIBE,
+        status == RUN_OK ? RES_SUCCESS : RES_FAILED, "ERROR_CODE", status);
+    return status;
 }
 
 bool DataFabricAddressServiceImpl::AddCallback(const DataFabricAddressParams& inputParams,
@@ -146,10 +157,14 @@ int32_t DataFabricAddressServiceImpl::Unsubscribe(const DataFabricAddressParams&
         std::lock_guard<std::mutex> lock(subscribersMutex_);
         if (!factory_.IsInited()) {
             ZLOGE("System ability not initialized.");
+            RADAR_REPORT(CLIENT_REQUEST, DATA_FABRIC_ADDRESS_UNSUBSCRIBE, RES_FAILED, "ERROR_CODE",
+                SYSTEM_ABILITY_NOT_INITED);
             return INTERNAL_EXCEPTION;
         }
         int32_t result = RemoveCallback(inputParams, callbackObject, deathRecipient);
         if (result != RUN_OK) {
+            RADAR_REPORT(CLIENT_REQUEST, DATA_FABRIC_ADDRESS_UNSUBSCRIBE, RES_FAILED, "ERROR_CODE",
+                REMOVE_CALLBACK_FAILED);
             return result;
         }
     }
@@ -157,7 +172,10 @@ int32_t DataFabricAddressServiceImpl::Unsubscribe(const DataFabricAddressParams&
     if (callbackObject != nullptr && deathRecipient != nullptr) {
         callbackObject->RemoveDeathRecipient(deathRecipient);
     }
-    return NavigationManager::GetInstance().UnsubscribeNavigationManager();
+    int32_t status = NavigationManager::GetInstance().UnsubscribeNavigationManager();
+    RADAR_REPORT(CLIENT_REQUEST, DATA_FABRIC_ADDRESS_UNSUBSCRIBE,
+        status == RUN_OK ? RES_SUCCESS : RES_FAILED, "ERROR_CODE", status);
+    return status;
 }
 
 int32_t DataFabricAddressServiceImpl::RemoveCallback(const DataFabricAddressParams& inputParams,
@@ -258,14 +276,15 @@ int32_t DataFabricAddressServiceImpl::IsSupportedCommuteDistance(const NativePre
     const NativePreferences::LocationPoint& companyPoint)
 {
     ZLOGI("IsSupportedCommuteDistance enter.");
-    // Calculate whether the distance is less than 1000 m
+    // Calculate whether the distance reaches the minimum supported distance
     double distance = 0.0;
     if (!NavigationCommonUtil::GetDistance(homePoint, companyPoint, distance)) {
         ZLOGE("Failed to get distance.");
         return NativePreferences::INTERNAL_EXCEPTION;
     }
 
-    if (distance < MIN_SUPPORTED_COMMUTE_DISTANCE) {
+    double minSupportedDistance = DEFAULT_MIN_SUPPORTED_COMMUTE_DISTANCE;
+    if (distance < minSupportedDistance) {
         ZLOGE("The distance between home and the company is too short, This operation is not supported.");
         return NativePreferences::ABNORMAL_OPERATION_EXCEPTION;
     }

@@ -16,13 +16,33 @@
 #ifndef NAVIGATION_COMMON_UTILS_H
 #define NAVIGATION_COMMON_UTILS_H
 
+#include <map>
+#include <string>
+
 #include "data_fabric_address_types.h"
 
 namespace OHOS {
 namespace DataFabricAddress {
+// Default distance thresholds of the navigation commute scenario (unit: meter).
+constexpr double DEFAULT_MIN_SUPPORTED_COMMUTE_DISTANCE = 500.0;
+constexpr double DEFAULT_MAX_NAVIGATION_END_DISTANCE = 2000.0;
+constexpr double DEFAULT_MAX_WAYPOINT_COLLECT_DISTANCE = 2000.0;
+
+// Default navigation app bundle name map.
+inline const std::map<std::string, std::string> &GetDefaultNavigationBundleNameMap()
+{
+    static const std::map<std::string, std::string> defaultNavigationBundleNameMap = {
+        { "com.amap.hmapp", "高德地图" },
+        { "com.baidu.hmmap", "百度地图" },
+        { "com.tencent.mapohos", "腾讯地图" },
+        { "com.huawei.hmos.maps.app", "花瓣地图" }
+    };
+    return defaultNavigationBundleNameMap;
+}
 
 class NavigationCommonUtil {
 public:
+    static int64_t GetNowSecondTimestamp();
     static bool GetDistance(const NativePreferences::LocationPoint& startPoint,
         const NativePreferences::LocationPoint& endPoint, double& distance);
     // Convert the GCJ02 coordinate system to the WGS84 coordinate system

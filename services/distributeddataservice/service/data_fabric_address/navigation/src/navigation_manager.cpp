@@ -16,7 +16,10 @@
 #include "navigation_manager.h"
 
 #include "data_fabric_address_errors.h"
+#include "data_fabric_address_event_dfx.h"
 #include "log_print.h"
+#include "navigation_live_view_monitor.h"
+#include "navigation_passive_location_handler.h"
 
 #undef LOG_TAG
 #define LOG_TAG "NavigationManager"
@@ -35,19 +38,18 @@ int32_t NavigationManager::SubscribeNavigationManager(const NativePreferences::A
     const NativePreferences::LocationPoint &homePoint, const NativePreferences::LocationPoint &companyPoint,
     const sptr<NativePreferences::IDataFabricAddressCallback> &callback)
 {
-    // The home/company coordinates are reserved interface parameters: this module currently does not store, persist,
-    // or collect them.
-    (void)homePoint;
-    (void)companyPoint;
     ZLOGI("SubscribeNavigationManager enter, the input action is %{public}d", static_cast<int32_t>(actionType));
+    int32_t ret = NativePreferences::PARAMETER_EXCEPTION;
     if (actionType == NativePreferences::ActionType::SUBSCRIPTION) {
-        return DoSubscribeAction(callback);
+        ret = DoSubscribeAction(homePoint, companyPoint, callback);
     } else if (actionType == NativePreferences::ActionType::UPDATE) {
-        return DoUpdateAction();
+        ret = DoUpdateAction(homePoint, companyPoint);
     } else {
         ZLOGE("The input action is error.");
-        return NativePreferences::PARAMETER_EXCEPTION;
     }
+    RADAR_REPORT(CLIENT_REQUEST, NAVIGATION_SUBSCRIBE, ret == NativePreferences::RUN_OK ? RES_SUCCESS : RES_FAILED,
+        "ERROR_CODE", ret);
+    return ret;
 }
 
 int32_t NavigationManager::UnsubscribeNavigationManager()
@@ -58,12 +60,28 @@ int32_t NavigationManager::UnsubscribeNavigationManager()
         ZLOGI("Navigation manager has not been subscribed.");
         return NativePreferences::RUN_OK;
     }
+
+    int32_t ret = NavigationPassiveLocationHandler::GetInstance().UnsubscribePassiveLocation();
+    if (ret != NativePreferences::RUN_OK) {
+        ZLOGE("Unsubscribe passive location failed.");
+        RADAR_REPORT(CLIENT_REQUEST, NAVIGATION_UNSUBSCRIBE, RES_FAILED, "ERROR_CODE", ret);
+        return NativePreferences::INTERNAL_EXCEPTION;
+    }
+
+    ret = NavigationLiveViewMonitor::GetInstance().UnsubscribeNavigationLiveView();
+    if (ret != NativePreferences::RUN_OK) {
+        ZLOGE("Unsubscribe navigation live view failed.");
+        RADAR_REPORT(CLIENT_REQUEST, NAVIGATION_UNSUBSCRIBE, RES_FAILED, "ERROR_CODE", ret);
+        return NativePreferences::INTERNAL_EXCEPTION;
+    }
     isSubscribed_ = false;
+    RADAR_REPORT(CLIENT_REQUEST, NAVIGATION_UNSUBSCRIBE, RES_SUCCESS);
     ZLOGI("UnsubscribeNavigationManager exit.");
     return NativePreferences::RUN_OK;
 }
 
-int32_t NavigationManager::DoSubscribeAction(
+int32_t NavigationManager::DoSubscribeAction(const NativePreferences::LocationPoint &homePoint,
+    const NativePreferences::LocationPoint &companyPoint,
     const sptr<NativePreferences::IDataFabricAddressCallback> &callback)
 {
     ZLOGI("DoSubscribeAction enter.");
@@ -77,20 +95,34 @@ int32_t NavigationManager::DoSubscribeAction(
         ZLOGE("The input callback is null.");
         return NativePreferences::INTERNAL_EXCEPTION;
     }
+
+    int32_t ret = NavigationLiveViewMonitor::GetInstance().SubscribeNavigationLiveView(
+        homePoint, companyPoint, callback);
+    if (ret != NativePreferences::RUN_OK) {
+        ZLOGE("Subscribe navigation live view failed.");
+        return NativePreferences::INTERNAL_EXCEPTION;
+    }
+
+    ret = NavigationPassiveLocationHandler::GetInstance().SubscribePassiveLocation();
+    if (ret != NativePreferences::RUN_OK) {
+        ZLOGE("Subscribe passive location failed.");
+        return NativePreferences::INTERNAL_EXCEPTION;
+    }
     isSubscribed_ = true;
     ZLOGI("DoSubscribeAction exit.");
     return NativePreferences::RUN_OK;
 }
 
-int32_t NavigationManager::DoUpdateAction()
+int32_t NavigationManager::DoUpdateAction(const NativePreferences::LocationPoint &homePoint,
+    const NativePreferences::LocationPoint &companyPoint)
 {
     ZLOGI("DoUpdateAction enter.");
-    // UPDATE only retains the subscription state check, keeping the original error code semantics (ABNORMAL/RUN_OK)
     std::lock_guard<std::mutex> lock(mutex_);
     if (!isSubscribed_) {
         ZLOGE("Navigation manager has not subscribed, can't update.");
         return NativePreferences::ABNORMAL_OPERATION_EXCEPTION;
     }
+    NavigationLiveViewMonitor::GetInstance().UpdateReferenceLocation(homePoint, companyPoint);
     ZLOGI("DoUpdateAction exit.");
     return NativePreferences::RUN_OK;
 }

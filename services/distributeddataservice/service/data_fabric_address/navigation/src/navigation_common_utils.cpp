@@ -18,6 +18,7 @@
 #include <cmath>
 
 #include "data_fabric_address_api_helper.h"
+#include "data_fabric_address_event_dfx.h"
 #include "location.h"
 #include "locator_impl.h"
 #include "log_print.h"
@@ -65,6 +66,12 @@ constexpr double COORD_TRANSFORM_SINE_LNG_SLOW2_AMPLITUDE = 300.0;
 constexpr double PI_NUM = 3.14159265358979323846;
 constexpr double POLE_COS_EPSILON = 1e-10; // Threshold of the cos value near the poles
 
+int64_t NavigationCommonUtil::GetNowSecondTimestamp()
+{
+    return std::chrono::duration_cast<std::chrono::seconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+}
+
 bool NavigationCommonUtil::GetDistance(const NativePreferences::LocationPoint& startPoint,
     const NativePreferences::LocationPoint& endPoint, double& distance)
 {
@@ -83,6 +90,8 @@ bool NavigationCommonUtil::GetDistance(const NativePreferences::LocationPoint& s
     auto locRet = Location::LocatorImpl::GetInstance()->GetDistanceBetweenLocations(locSrc, locTar, distance);
     if (locRet != Location::LocationErrCode::ERRCODE_SUCCESS) {
         ZLOGE("Get the distance between locations failed, errCode:%{public}d", locRet);
+        RADAR_REPORT(CLIENT_REQUEST, NAVIGATION_DISTANCE_CALCULATE, RES_FAILED, "ERROR_CODE",
+            GET_DISTANCE_FAILED, "DISTANCE_CALCULATE_ERRCODE", static_cast<int32_t>(locRet));
         return false;
     }
     return true;

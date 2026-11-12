@@ -38,8 +38,11 @@ public:
 private:
     NavigationManager() = default;
     ~NavigationManager() = default;
-    int32_t DoSubscribeAction(const sptr<NativePreferences::IDataFabricAddressCallback> &callback);
-    int32_t DoUpdateAction();
+    int32_t DoSubscribeAction(const NativePreferences::LocationPoint &homePoint,
+        const NativePreferences::LocationPoint &companyPoint,
+        const sptr<NativePreferences::IDataFabricAddressCallback> &callback);
+    int32_t DoUpdateAction(const NativePreferences::LocationPoint &homePoint,
+        const NativePreferences::LocationPoint &companyPoint);
 
     std::mutex mutex_;          // Protects the state field (isSubscribed_)
     bool isSubscribed_ = false;
