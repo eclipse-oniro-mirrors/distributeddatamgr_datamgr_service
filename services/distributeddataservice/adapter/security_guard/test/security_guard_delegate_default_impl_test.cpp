@@ -130,5 +130,22 @@ HWTEST_F(SecurityGuardDelegateDefaultTest, LifecycleHooks_BindAndServiceReady_Ke
     EXPECT_FALSE(completed);
 }
 
+/**
+ * @tc.name: IsExportAllowed_DisabledBackend_DoesNotRestrictCrossDeviceDrag
+ * @tc.desc: Products without the SG authorization backend preserve the original export path.
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(
+    SecurityGuardDelegateDefaultTest, IsExportAllowed_DisabledBackend_DoesNotRestrictCrossDeviceDrag, TestSize.Level1)
+{
+    SecurityGuardDelegateDefaultImpl delegate;
+    EXPECT_TRUE(delegate.IsExportAllowed(SecurityGuardDelegate::DRAG_AUTH_EVENT_ID));
+    delegate.OnServiceUnavailable();
+    EXPECT_TRUE(delegate.IsExportAllowed(SecurityGuardDelegate::DRAG_AUTH_EVENT_ID));
+    delegate.Stop();
+    EXPECT_TRUE(delegate.IsExportAllowed(SecurityGuardDelegate::DRAG_AUTH_EVENT_ID));
+}
+
 } // namespace DistributedData
 } // namespace OHOS

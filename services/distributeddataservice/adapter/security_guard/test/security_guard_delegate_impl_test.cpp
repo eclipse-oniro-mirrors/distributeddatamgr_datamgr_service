@@ -881,4 +881,70 @@ HWTEST_F(SecurityGuardDelegateTest, Request_OwnerDestroyedBeforeDispatch_DropsQu
     EXPECT_EQ(provider->stops_, 1);
 }
 
+/**
+ * @tc.name: IsExportAllowed_SubscriptionChanges_OnlyUnsubscribedEventCanSend
+ * @tc.desc: Export follows the current event subscriptions, independently of timeout strategies.
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(SecurityGuardDelegateTest, IsExportAllowed_SubscriptionChanges_OnlyUnsubscribedEventCanSend, TestSize.Level1)
+{
+    ClientStatusCallback publish;
+    auto provider = std::make_shared<FakeAuthProvider>();
+    InlineGuardDelegate delegate([&](auto callback, const auto &, auto &output) {
+        publish = callback;
+        output = provider;
+        return 0;
+    });
+    const auto eventId = SecurityGuardDelegate::DRAG_AUTH_EVENT_ID;
+    EXPECT_FALSE(delegate.IsExportAllowed(eventId));
+    ASSERT_EQ(delegate.Start(), Status::READY);
+    ASSERT_TRUE(publish);
+    EXPECT_FALSE(delegate.IsExportAllowed(eventId));
+    publish({});
+    EXPECT_TRUE(delegate.IsExportAllowed(eventId));
+    publish({ { { eventId + 1 }, Strategy::DENY, 400, "other-event" } });
+    EXPECT_TRUE(delegate.IsExportAllowed(eventId));
+    for (auto strategy : { Strategy::ALLOW, Strategy::DENY, Strategy::TIMEOUT }) {
+        publish({ { { eventId }, strategy, 400, "managed" } });
+        EXPECT_FALSE(delegate.IsExportAllowed(eventId));
+    }
+    publish({});
+    EXPECT_TRUE(delegate.IsExportAllowed(eventId));
+    EXPECT_EQ(provider->requests_, 0);
+}
+
+/**
+ * @tc.name: IsExportAllowed_ServiceRestart_UnknownStateCannotBypassRestriction
+ * @tc.desc: Stale empty notifications cannot permit export after the SG session is invalidated.
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(SecurityGuardDelegateTest, IsExportAllowed_ServiceRestart_UnknownStateCannotBypassRestriction, TestSize.Level1)
+{
+    std::vector<ClientStatusCallback> notifications;
+    auto provider = std::make_shared<FakeAuthProvider>();
+    InlineGuardDelegate delegate([&](auto callback, const auto &, auto &output) {
+        notifications.push_back(callback);
+        output = provider;
+        return 0;
+    });
+    const auto eventId = SecurityGuardDelegate::DRAG_AUTH_EVENT_ID;
+    ASSERT_EQ(delegate.Start(), Status::READY);
+    notifications[0]({ { { eventId }, Strategy::ALLOW, 400, "managed" } });
+    EXPECT_FALSE(delegate.IsExportAllowed(eventId));
+    delegate.OnServiceUnavailable();
+    notifications[0]({});
+    EXPECT_FALSE(delegate.IsExportAllowed(eventId));
+    delegate.OnServiceAvailable();
+    ASSERT_EQ(delegate.Start(), Status::READY);
+    EXPECT_FALSE(delegate.IsExportAllowed(eventId));
+    notifications[0]({});
+    EXPECT_FALSE(delegate.IsExportAllowed(eventId));
+    notifications[1]({});
+    EXPECT_TRUE(delegate.IsExportAllowed(eventId));
+    delegate.Stop();
+    EXPECT_FALSE(delegate.IsExportAllowed(eventId));
+}
+
 } // namespace OHOS::DistributedData

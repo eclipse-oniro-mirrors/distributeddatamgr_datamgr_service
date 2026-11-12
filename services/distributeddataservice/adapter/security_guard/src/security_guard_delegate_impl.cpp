@@ -306,6 +306,16 @@ SecurityGuardDelegate::ClientSnapshot SecurityGuardDelegateImpl::GetClientSnapsh
     return store->snapshot;
 }
 
+bool SecurityGuardDelegateImpl::IsExportAllowed(int64_t eventId) const
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (state_ != State::READY) {
+        return false;
+    }
+    std::lock_guard<std::mutex> statusLock(policyStore_->mutex);
+    return !policyStore_->snapshot.HasSubscribers(eventId);
+}
+
 void SecurityGuardDelegateImpl::Stop()
 {
     std::shared_ptr<Provider> provider;

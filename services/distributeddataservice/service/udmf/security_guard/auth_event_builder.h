@@ -21,7 +21,7 @@
 #include "serializable/serializable.h"
 namespace OHOS::UDMF {
 class UnifiedData;
-inline constexpr int64_t DRAG_AUTH_EVENT_ID = 0x0F810000;
+inline constexpr int64_t DRAG_AUTH_EVENT_ID = SecurityGuardDelegate::DRAG_AUTH_EVENT_ID;
 inline constexpr size_t DRAG_AUTH_MAX_CONTENT_BYTES = 10 * 1024;
 enum class AuthBuildStatus { SUCCESS, INVALID_DATA, TOO_LARGE, INVALID_ENCODING };
 struct DragAuthContext {

@@ -15,8 +15,10 @@
 
 #define LOG_TAG "PermitDelegate"
 #include "permit_delegate.h"
+
 #include "accesstoken_kit.h"
 #include "account/account_delegate.h"
+#include "bootstrap.h"
 #include "device_manager_adapter.h"
 #include "log_print.h"
 #include "metadata/appid_meta_data.h"
@@ -24,6 +26,7 @@
 #include "metadata/strategy_meta_data.h"
 #include "permission_validator.h"
 #include "runtime_config.h"
+#include "security_guard/security_guard_delegate.h"
 #include "store_types.h"
 #include "sync_mgr/sync_mgr.h"
 #include "user_delegate.h"
@@ -37,6 +40,7 @@ using DBFlag = DistributedDB::PermissionCheckFlag;
 using PermissionValidator = OHOS::DistributedKv::PermissionValidator;
 static constexpr int32_t AUTH_FORM_SHARE = 3;
 static const std::string META_STORE_ID = "service_meta";
+static constexpr const char *DRAG_STORE_ID = "drag";
 
 PermitDelegate::PermitDelegate()
 {}
@@ -181,8 +185,21 @@ bool PermitDelegate::VerifyPermission(const std::string &permission,
     return true;
 }
 
+bool PermitDelegate::IsDragExportRestricted(const CheckParam &param) const
+{
+    if (param.storeId != DRAG_STORE_ID || param.appId != Bootstrap::GetInstance().GetProcessLabel()) {
+        return false;
+    }
+    auto *guard = SecurityGuardDelegate::GetInstance();
+    return guard != nullptr && !guard->IsExportAllowed(SecurityGuardDelegate::DRAG_AUTH_EVENT_ID);
+}
+
 DataFlowCheckRet PermitDelegate::IsTransferAllowed(const CheckParam &param, const DBProperty &property)
 {
+    if (IsDragExportRestricted(param)) {
+        ZLOGI("drag export denied by security subscription policy");
+        return DataFlowCheckRet::DENIED_SEND;
+    }
     auto accountDelegate = AccountDelegate::GetInstance();
     if (accountDelegate == nullptr) {
         ZLOGE("accountDelegate is null.");
