@@ -78,6 +78,9 @@ config("module_private_config") {
   ]
 
   defines = [ "CLONE_SO_PATH=\"${clone_so_path}\"" ]
+  if (udmf_security_guard_enabled) {
+    defines += [ "UDMF_SECURITY_GUARD_ENABLED" ]
+  }
 
   cflags_cc = [
     "-fvisibility=hidden",

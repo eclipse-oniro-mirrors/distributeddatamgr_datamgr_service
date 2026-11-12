@@ -84,6 +84,7 @@ ohos_source_set("udmf_server") {
   ]
 
   external_deps = [
+    "ability_base:want",
     "ability_base:zuri",
     "ability_runtime:uri_permission_mgr",
     "access_token:libaccesstoken_sdk",
@@ -99,9 +100,10 @@ ohos_source_set("udmf_server") {
     "hisysevent:libhisysevent",
     "hitrace:hitrace_meter",
     "hitrace:libhitracechain",
-    "ipc:ipc_core",
     "image_framework:image",
     "init:libbegetutil",
+    "ipc:ipc_core",
+    "json:nlohmann_json_static",
     "kv_store:datamgr_common",
     "kv_store:distributeddb",
     "libfuse:libfuse",
@@ -112,9 +114,23 @@ ohos_source_set("udmf_server") {
     "udmf:virtual_entry_provider_proxy",
   ]
 
+  defines = []
+  if (udmf_security_guard_enabled) {
+    defines += [ "UDMF_SECURITY_GUARD_ENABLED" ]
+    sources += [
+      "security_guard/auth_degradation_policy.cpp",
+      "security_guard/auth_event_builder.cpp",
+      "security_guard/auth_timeout_policy.cpp",
+      "security_guard/drag_auth_coordinator.cpp",
+      "security_guard/drag_auth_event_encoder.cpp",
+    ]
+    deps += [ "${data_service_path}/adapter/security_guard:distributeddata_security_guard" ]
+    external_deps += [ "image_framework:image_native" ]
+  }
+
   if (udmf_dlp_part_enabled) {
     external_deps += [ "dlp_permission_service:libdlp_permission_sdk" ]
-    defines = [ "WITH_DLP" ]
+    defines += [ "WITH_DLP" ]
   }
 
   cflags_cc = [

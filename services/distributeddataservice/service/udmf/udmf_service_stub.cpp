@@ -146,6 +146,9 @@ int32_t UdmfServiceStub::OnGetData(MessageParcel &data, MessageParcel &reply)
     query.tokenId = token;
     UnifiedData unifiedData;
     int32_t status = GetData(query, unifiedData);
+    if (status == E_NO_PERMISSION || status == E_INVALID_PARAMETERS) {
+        unifiedData = UnifiedData();
+    }
     if (!ITypesUtil::Marshal(reply, status, unifiedData)) {
         ZLOGE("Marshal failed:%{public}d", status);
         return E_WRITE_PARCEL_ERROR;
@@ -432,6 +435,9 @@ int32_t UdmfServiceStub::OnGetDataIfAvailable(MessageParcel &data, MessageParcel
     if (unifiedData == nullptr) {
         ZLOGE("Data is null, key:%{public}s", key.c_str());
         return E_ERROR;
+    }
+    if (status == E_NO_PERMISSION || status == E_INVALID_PARAMETERS) {
+        *unifiedData = UnifiedData();
     }
     if (!ITypesUtil::Marshal(reply, status, *unifiedData)) {
         ZLOGE("Marshal failed:%{public}d", status);

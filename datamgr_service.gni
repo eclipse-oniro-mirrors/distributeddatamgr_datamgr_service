@@ -1,4 +1,4 @@
-# Copyright (c) 2022 Huawei Device Co., Ltd.
+# Copyright (c) 2022-2026 Huawei Device Co., Ltd.
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -108,6 +108,22 @@ declare_args() {
   datamgr_service_distributed = true
 
   datamgr_service_data_fabric_address = true
+}
+
+# A selected SG component may still have AuthEvent disabled. SG exports no
+# public capability flag; missing product arguments follow its false default.
+udmf_security_guard_enabled = false
+if (datamgr_service_udmf && defined(global_parts_info) &&
+    defined(global_parts_info.security_security_guard)) {
+  if (defined(security_guard_auth_event_enable)) {
+    udmf_security_guard_enabled = security_guard_auth_event_enable
+  } else if (path_exists("$root_build_dir/args.gn")) {
+    _udmf_security_guard_args = read_file("$root_build_dir/args.gn", "scope")
+    if (defined(_udmf_security_guard_args.security_guard_auth_event_enable)) {
+      udmf_security_guard_enabled =
+          _udmf_security_guard_args.security_guard_auth_event_enable
+    }
+  }
 }
 
 if (current_cpu == "arm64" || current_cpu == "x64") {

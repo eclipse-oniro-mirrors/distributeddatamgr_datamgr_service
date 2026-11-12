@@ -17,12 +17,17 @@
 #include <algorithm>
 #include <atomic>
 #include <condition_variable>
+#include <future>
 #include <limits>
 #include <mutex>
 #include <thread>
 
 #include "accesstoken_kit.h"
 #include "bootstrap.h"
+#include "delay_data_acquire_container.h"
+#include "delay_data_prepare_container.h"
+#include "device_manager_adapter_mock.h"
+#include "drag_lifecycle_policy.h"
 #include "error_code.h"
 #include "executor_pool.h"
 #include "gtest/gtest.h"
@@ -32,8 +37,12 @@
 #include "mock/access_token_mock.h"
 #include "mock/meta_data_manager_mock.h"
 #include "nativetoken_kit.h"
+#include "preprocess_utils.h"
+#include "security_guard_delegate_mock.h"
+#include "system_ability_definition.h"
 #include "text.h"
 #include "token_setproc.h"
+#include "udmf_auth_store_mock.h"
 #include "udmf_fuse_controller.h"
 #include "udmf_fuse_session_manager.h"
 #include "udmf_service_impl.h"
@@ -1221,4 +1230,5 @@ HWTEST_F(UdmfServiceImplMockTest, ProviderGate_ConsecutiveTimeouts_OpenCircuit, 
     EXPECT_EQ(provider->asyncRequestCount_, 3);
 }
 } // namespace DistributedDataTest
+
 } // namespace OHOS::Test

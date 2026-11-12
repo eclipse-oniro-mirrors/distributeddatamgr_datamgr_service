@@ -1465,4 +1465,46 @@ HWTEST_F(KvStoreDataServiceTest, GetSecretKeyBackup_NotEncrypted, TestSize.Level
     // Should return serialized empty backup since store is not encrypted
     EXPECT_FALSE(result.empty());
 }
+/**
+ * @tc.name: SecurityGuardAbilityEvents_ForwardToFeatureStaticActs
+ * @tc.desc: The existing DDMS SA dispatcher forwards SG add and remove events with original arguments.
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(KvStoreDataServiceTest, SecurityGuardAbilityEvents_ForwardToFeatureStaticActs, TestSize.Level1)
+{
+    auto acts = std::make_shared<SystemAbilityStaticActs>();
+    ASSERT_EQ(FeatureSystem::GetInstance().RegisterStaticActs("SecurityGuardAbilityEventsTest", acts), E_OK);
+    KvStoreDataService service;
+    const std::string remote = "remote-sg-test";
+    service.OnAddSystemAbility(DATA_COLLECT_MANAGER_SA_ID, remote);
+    EXPECT_EQ(acts->addedCount_, 1);
+    EXPECT_EQ(acts->addedSystemAbilityId_, DATA_COLLECT_MANAGER_SA_ID);
+    EXPECT_EQ(acts->addedDeviceId_, remote);
+    service.OnRemoveSystemAbility(DATA_COLLECT_MANAGER_SA_ID, remote);
+    EXPECT_EQ(acts->removedCount_, 1);
+    EXPECT_EQ(acts->removedSystemAbilityId_, DATA_COLLECT_MANAGER_SA_ID);
+    EXPECT_EQ(acts->removedDeviceId_, remote);
+}
+
+/**
+ * @tc.name: SecurityGuardAbilityEvents_LocalRestart_ForwardsEveryLifetime
+ * @tc.desc: UDMF must receive local removal and subsequent readiness to retire and rebuild its SG provider.
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(KvStoreDataServiceTest, SecurityGuardAbilityEvents_LocalRestart_ForwardsEveryLifetime, TestSize.Level1)
+{
+    auto acts = std::make_shared<SystemAbilityStaticActs>();
+    ASSERT_EQ(FeatureSystem::GetInstance().RegisterStaticActs("SecurityGuardRestartTest", acts), E_OK);
+    KvStoreDataService service;
+    service.OnAddSystemAbility(DATA_COLLECT_MANAGER_SA_ID, "");
+    service.OnRemoveSystemAbility(DATA_COLLECT_MANAGER_SA_ID, "");
+    service.OnAddSystemAbility(DATA_COLLECT_MANAGER_SA_ID, "");
+    EXPECT_EQ(acts->addedCount_, 2);
+    EXPECT_EQ(acts->removedCount_, 1);
+    EXPECT_TRUE(acts->addedDeviceId_.empty());
+    EXPECT_TRUE(acts->removedDeviceId_.empty());
+}
+
 } // namespace OHOS::Test

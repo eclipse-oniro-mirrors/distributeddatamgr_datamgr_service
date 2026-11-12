@@ -17,6 +17,8 @@
 #define UDMF_SERVICE_IMPL_H
 
 #include "block_data.h"
+#include "delay_data/delay_data_acquire_container.h"
+#include "delay_data/delay_data_prepare_container.h"
 #include "kv_store_delegate_manager.h"
 #include "metadata/meta_data_manager.h"
 #include "metadata/store_meta_data.h"
@@ -27,13 +29,15 @@
 #include "uri.h"
 namespace OHOS {
 namespace UDMF {
+class AuthEventBuilder;
+class AuthDegradationPolicy;
 /*
  * UDMF server implementation
  */
 class UdmfServiceImpl final : public UdmfServiceStub {
 public:
     UdmfServiceImpl();
-    ~UdmfServiceImpl() = default;
+    ~UdmfServiceImpl() override;
     using DBLaunchParam = DistributedDB::AutoLaunchParam;
     int32_t SetData(CustomOption &option, UnifiedData &unifiedData, Summary &summary, std::string &key) override;
     int32_t GetData(const QueryOption &query, UnifiedData &unifiedData) override;
@@ -65,6 +69,12 @@ public:
 
 private:
     using StaticActs = DistributedData::StaticActs;
+    struct DelayReadContext {
+        DelayDataAcquireContainer::Request receiver;
+        DelayDataPrepareContainer::LoadToken source;
+        BlockDelayData block;
+        bool asynchronous = false;
+    };
     struct VirtualDataResult {
         bool exists = false;
         uint32_t recordIndex = 0;
@@ -81,6 +91,7 @@ private:
     ProcessCallback CreateSyncCallback(const QueryOption &query);
     int32_t StoreSync(const UnifiedKey &key, const QueryOption &query, const std::vector<std::string> &devices);
     int32_t SaveData(CustomOption &option, UnifiedData &unifiedData, Summary &summary, std::string &key);
+    int32_t LoadData(const QueryOption &query, UnifiedData &unifiedData);
     int32_t RetrieveData(const QueryOption &query, UnifiedData &unifiedData);
     int32_t LoadDragData(
         const QueryOption &query, UnifiedKey &key, UnifiedData &unifiedData, std::shared_ptr<Runtime> &runtime);
@@ -132,24 +143,47 @@ private:
     static DeviceMetaSyncOption GetMetaSyncOption(
         const DistributedData::StoreMetaData &metaData, const std::vector<std::string> &devices);
     static bool IsDraggable(uint32_t tokenId);
+    int32_t AuthorizeDrag(const UnifiedData &data, uint32_t targetTokenId);
+    int32_t CompleteDelayData(const QueryOption &query, UnifiedData &data);
+    int32_t AuthorizeDelayData(const QueryOption &query, UnifiedData &data);
+    int32_t PrepareDelayData(const QueryOption &query, UnifiedData &data);
+    int32_t FinishDragRead(const QueryOption &query, UnifiedKey &key, UnifiedData &data);
+    int32_t SaveDelayInfo(const UnifiedData &data, const DataLoadInfo &info, const std::string &key);
+    static DelayReadContext GetDelayReadContext(const std::string &key);
+    int32_t DeliverAsyncDelayData(
+        const QueryOption &query, UnifiedData &data, const DelayReadContext &context, UnifiedKey *storedKey = nullptr);
+    static int32_t NotifyDelayData(const std::string &key, const DelayReadContext &context,
+        const sptr<IDelayDataCallback> &callback, const UnifiedData &data, int32_t status);
 
     class UdmfStatic : public StaticActs {
     public:
-        ~UdmfStatic() override{};
-        int32_t OnAppUninstall(const std::string &bundleName, int32_t user, int32_t index, int32_t tokenId,
-            const std::string &appIdentifier = "") override;
+        ~UdmfStatic() override = default;
+        void BindExecutor(const std::shared_ptr<ExecutorPool> &executors);
+        int32_t OnSystemAbilityRemoved(int32_t systemAbilityId, const std::string &deviceId) override;
+        int32_t OnSystemAbilityAdded(int32_t systemAbilityId, const std::string &deviceId) override;
+        int32_t OnAppUninstall(const std::string &bundleName, int32_t user, int32_t index,
+            int32_t tokenId, const std::string &appIdentifier = "") override;
+
+    private:
+        void ScheduleRegistration();
+        std::mutex abilityMutex_;
+        [[maybe_unused]] bool securityGuardReady_ = false;
+        std::shared_ptr<ExecutorPool> abilityExecutors_;
     };
     class Factory {
     public:
         Factory();
         ~Factory();
         std::shared_ptr<UdmfServiceImpl> GetProduct();
+        void BindExecutor(const std::shared_ptr<ExecutorPool> &executors);
 
     private:
         std::shared_ptr<UdmfServiceImpl> product_;
         std::shared_ptr<UdmfStatic> staticActs_;
     };
     static Factory factory_;
+    std::shared_ptr<const AuthEventBuilder> authEventBuilder_;
+    std::shared_ptr<AuthDegradationPolicy> authDegradationPolicy_;
     mutable std::recursive_mutex cacheMutex_;
     std::map<std::string, std::vector<Privilege>> privilegeCache_{};
     std::shared_ptr<ExecutorPool> executors_;

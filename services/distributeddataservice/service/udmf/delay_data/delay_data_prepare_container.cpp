@@ -20,6 +20,24 @@
 namespace OHOS {
 namespace UDMF {
 constexpr uint32_t WAIT_TIME = 800;
+namespace {
+DelayLoadStatus ReadDelayDelivery(const std::optional<DelayDeliveryResult> &dataOpt, UnifiedData &unifiedData)
+{
+    if (dataOpt.has_value()) {
+        if (dataOpt->status != E_OK) {
+            if (dataOpt->status == E_NO_PERMISSION) {
+                return DelayLoadStatus::NO_PERMISSION;
+            }
+            return dataOpt->status == E_INVALID_PARAMETERS ? DelayLoadStatus::INVALID_PARAMETERS
+                                                           : DelayLoadStatus::LOAD_ERROR;
+        }
+        unifiedData = dataOpt->data;
+        // The receiver consumes the cache only after access checks and authorization succeed.
+        return dataOpt->prepared ? DelayLoadStatus::DATA_READY_PREPARED : DelayLoadStatus::DATA_READY;
+    }
+    return DelayLoadStatus::WAITING;
+}
+} // namespace
 
 DelayDataPrepareContainer &DelayDataPrepareContainer::GetInstance()
 {
@@ -27,106 +45,178 @@ DelayDataPrepareContainer &DelayDataPrepareContainer::GetInstance()
     return instance;
 }
 
-DelayLoadStatus DelayDataPrepareContainer::HandleDelayLoad(const QueryOption &query, UnifiedData &unifiedData)
+DelayLoadStatus DelayDataPrepareContainer::GetOrCreateDelivery(
+    const QueryOption &query, BlockDelayData &delivery, sptr<IUdmfNotifier> &callback)
 {
-    if (query.key.empty()) {
-        ZLOGE("HandleDelayLoad failed, key is empty");
+    std::lock_guard<std::mutex> lock(dataLoadMutex_);
+    if (dataLoadCallback_.find(query.key) == dataLoadCallback_.end()) {
         return DelayLoadStatus::NOT_DELAY_DATA;
     }
-    sptr<IUdmfNotifier> callback = nullptr;
-    std::shared_ptr<BlockData<std::optional<UnifiedData>, std::chrono::milliseconds>> blockData;
-    {
-        std::lock_guard<std::mutex> lock(dataLoadMutex_);
-        auto dataLoadIter = dataLoadCallback_.find(query.key);
-        if (dataLoadIter == dataLoadCallback_.end()) {
-            return DelayLoadStatus::NOT_DELAY_DATA;
+    auto it = blockDelayDataCache_.find(query.key);
+    if (it != blockDelayDataCache_.end() && it->second.tokenId != query.tokenId) {
+        return DelayLoadStatus::NO_PERMISSION;
+    }
+    if (it == blockDelayDataCache_.end()) {
+        auto block =
+            std::make_shared<BlockData<std::optional<DelayDeliveryResult>, std::chrono::milliseconds>>(WAIT_TIME);
+        if (!BeginDataLoadLocked(query.key, 0, callback, true)) {
+            return DelayLoadStatus::LOAD_ERROR;
         }
-        auto blockDataIter = blockDelayDataCache_.find(query.key);
-        if (blockDataIter != blockDelayDataCache_.end()) {
-            if (blockDataIter->second.tokenId != query.tokenId) {
-                ZLOGE("HandleDelayLoad failed, tokenId mismatch");
-                return DelayLoadStatus::NO_PERMISSION;
-            }
-            blockData = blockDataIter->second.blockData;
-        } else {
-            blockData = std::make_shared<BlockData<std::optional<UnifiedData>, std::chrono::milliseconds>>(WAIT_TIME);
-            blockDelayDataCache_.insert_or_assign(query.key, BlockDelayData{query.tokenId, blockData});
-            callback = dataLoadIter->second;
-        }
+        BlockDelayData pending{ query.tokenId, block, 0, origins_.at(query.key).load };
+        it = blockDelayDataCache_.emplace(query.key, std::move(pending)).first;
+    }
+    delivery = it->second;
+    return DelayLoadStatus::WAITING;
+}
+
+DelayLoadStatus DelayDataPrepareContainer::HandleDelayLoad(
+    const QueryOption &query, UnifiedData &unifiedData, BlockDelayData *delivery)
+{
+    PurgeExpired();
+    if (query.key.empty()) {
+        return DelayLoadStatus::NOT_DELAY_DATA;
+    }
+    sptr<IUdmfNotifier> callback;
+    BlockDelayData current;
+    auto status = GetOrCreateDelivery(query, current, callback);
+    if (status != DelayLoadStatus::WAITING) {
+        return status;
+    }
+    if (delivery != nullptr) {
+        *delivery = current;
     }
     if (callback != nullptr) {
         callback->HandleDelayObserver(query.key, DataLoadInfo());
     }
-    ZLOGI("Start waiting for data, key:%{public}s", query.key.c_str());
-    if (blockData == nullptr) {
-        ZLOGE("Block data is null");
-        return DelayLoadStatus::LOAD_ERROR;
-    }
-    auto dataOpt = blockData->GetValue();
-    if (dataOpt.has_value()) {
-        unifiedData = *dataOpt;
-        std::lock_guard<std::mutex> lock(dataLoadMutex_);
-        blockDelayDataCache_.erase(query.key);
-        dataLoadCallback_.erase(query.key);
-        return DelayLoadStatus::DATA_READY;
-    }
-    return DelayLoadStatus::WAITING;
+    return current.blockData ? ReadDelayDelivery(current.blockData->GetValue(), unifiedData)
+                             : DelayLoadStatus::LOAD_ERROR;
 }
 
-void DelayDataPrepareContainer::RegisterDataLoadCallback(const std::string &key, sptr<IUdmfNotifier> callback)
+bool DelayDataPrepareContainer::RegisterDataLoadCallback(
+    const std::string &key, sptr<IUdmfNotifier> callback, uint32_t sourceTokenId, LoadToken *registered)
+{
+    PurgeExpired();
+    std::lock_guard<std::mutex> lock(dataLoadMutex_);
+    if (key.empty() || callback == nullptr || (origins_.count(key) == 0 && origins_.size() >= MAX_DELAY_ENTRIES)) {
+        return false;
+    }
+    EraseBlockLocked(key);
+    dataLoadCallback_.insert_or_assign(key, callback);
+    LoadToken token{ ++nextGeneration_, 0 };
+    origins_.insert_or_assign(key, OriginInfo{ Clock::now() + DELIVERY_LIFETIME, sourceTokenId, token });
+    if (registered != nullptr) {
+        *registered = token;
+    }
+    return true;
+}
+
+bool DelayDataPrepareContainer::MatchesOriginLocked(const std::string &key, const LoadToken &expected) const
+{
+    auto it = origins_.find(key);
+    return it != origins_.end() && expected.generation != 0 && it->second.load.generation == expected.generation &&
+           it->second.load.loadId == expected.loadId;
+}
+
+bool DelayDataPrepareContainer::QueryDataLoadToken(const std::string &key, LoadToken &token)
+{
+    PurgeExpired();
+    std::lock_guard<std::mutex> lock(dataLoadMutex_);
+    auto it = origins_.find(key);
+    if (it == origins_.end()) {
+        return false;
+    }
+    token = it->second.load;
+    return true;
+}
+
+bool DelayDataPrepareContainer::CompleteDataLoad(const std::string &key, const LoadToken &expected)
 {
     std::lock_guard<std::mutex> lock(dataLoadMutex_);
-    if (key.empty() || callback == nullptr) {
-        ZLOGE("RegisterDataLoadCallback failed, key is empty or callback is null");
-        return;
+    if (!MatchesOriginLocked(key, expected)) {
+        return false;
     }
-    dataLoadCallback_.insert_or_assign(key, callback);
+    EraseBlockLocked(key);
+    dataLoadCallback_.erase(key);
+    origins_.erase(key);
+    return true;
+}
+
+bool DelayDataPrepareContainer::ReleaseDataLoad(const std::string &key, const LoadToken &expected)
+{
+    std::lock_guard<std::mutex> lock(dataLoadMutex_);
+    if (!MatchesOriginLocked(key, expected)) {
+        return false;
+    }
+    origins_.at(key).loading = false;
+    return true;
 }
 
 int DelayDataPrepareContainer::QueryDataLoadCallbackSize()
 {
+    PurgeExpired();
     std::lock_guard<std::mutex> lock(dataLoadMutex_);
     return static_cast<int>(dataLoadCallback_.size());
 }
 
-bool DelayDataPrepareContainer::ExecDataLoadCallback(const std::string &key, const DataLoadInfo &info)
+bool DelayDataPrepareContainer::BeginDataLoadLocked(
+    const std::string &key, uint64_t requestId, sptr<IUdmfNotifier> &callback, bool force)
 {
-    sptr<IUdmfNotifier> callback = nullptr;
-    {
-        std::lock_guard<std::mutex> lock(dataLoadMutex_);
-        auto it = dataLoadCallback_.find(key);
-        if (it == dataLoadCallback_.end()) {
-            return false;
-        }
-        callback = it->second;
-        dataLoadCallback_.erase(key);
-    }
-    if (callback == nullptr) {
-        ZLOGE("Data load callback is null, key:%{public}s", key.c_str());
+    auto it = dataLoadCallback_.find(key);
+    auto origin = origins_.find(key);
+    if (it == dataLoadCallback_.end() || it->second == nullptr || origin == origins_.end()) {
         return false;
     }
-    callback->HandleDelayObserver(key, info);
+    auto &state = origin->second;
+    if (!force && state.loading && state.requestId == requestId) {
+        return true;
+    }
+    state.loading = true;
+    state.requestId = requestId;
+    state.load.loadId = ++nextLoadId_;
+    callback = it->second;
+    return true;
+}
+
+bool DelayDataPrepareContainer::ExecDataLoadCallback(
+    const std::string &key, const DataLoadInfo &info, uint64_t requestId)
+{
+    PurgeExpired();
+    sptr<IUdmfNotifier> callback;
+    {
+        std::lock_guard<std::mutex> lock(dataLoadMutex_);
+        if (!BeginDataLoadLocked(key, requestId, callback)) {
+            return false;
+        }
+    }
+    if (callback != nullptr) {
+        callback->HandleDelayObserver(key, info);
+    }
     return true;
 }
 
 void DelayDataPrepareContainer::ExecAllDataLoadCallback()
 {
-    std::map<std::string, sptr<IUdmfNotifier>> callbacks;
+    PurgeExpired();
+    std::vector<std::string> keys;
     {
         std::lock_guard<std::mutex> lock(dataLoadMutex_);
-        callbacks = dataLoadCallback_;
-        dataLoadCallback_.clear();
-    }
-    for (const auto &[key, callback] : callbacks) {
-        DataLoadInfo info;
-        if (callback != nullptr) {
-            callback->HandleDelayObserver(key, info);
+        for (auto it = dataLoadCallback_.begin(); it != dataLoadCallback_.end();) {
+            if (it->second == nullptr) {
+                it = dataLoadCallback_.erase(it);
+                continue;
+            }
+            keys.push_back(it->first);
+            ++it;
         }
+    }
+    for (const auto &key : keys) {
+        ExecDataLoadCallback(key, DataLoadInfo());
     }
 }
 
 bool DelayDataPrepareContainer::QueryBlockDelayData(const std::string &key, BlockDelayData &blockData)
 {
+    PurgeExpired();
     std::lock_guard<std::mutex> lock(dataLoadMutex_);
     auto it = blockDelayDataCache_.find(key);
     if (it == blockDelayDataCache_.end()) {
@@ -134,6 +224,126 @@ bool DelayDataPrepareContainer::QueryBlockDelayData(const std::string &key, Bloc
     }
     blockData = it->second;
     return true;
+}
+
+void DelayDataPrepareContainer::EraseBlockLocked(const std::string &key)
+{
+    auto it = blockDelayDataCache_.find(key);
+    if (it != blockDelayDataCache_.end()) {
+        cachedBytes_ -= it->second.cachedBytes;
+        blockDelayDataCache_.erase(it);
+    }
+}
+
+bool DelayDataPrepareContainer::CompleteDelayLoad(
+    const std::string &key, uint32_t tokenId, const BlockDelayData *expected)
+{
+    std::lock_guard<std::mutex> lock(dataLoadMutex_);
+    auto it = blockDelayDataCache_.find(key);
+    if (it == blockDelayDataCache_.end() || it->second.tokenId != tokenId ||
+        (expected != nullptr && expected->blockData != it->second.blockData)) {
+        return false;
+    }
+    const auto origin = it->second.origin;
+    EraseBlockLocked(key);
+    if (MatchesOriginLocked(key, origin)) {
+        dataLoadCallback_.erase(key);
+        origins_.erase(key);
+    }
+    return true;
+}
+
+bool DelayDataPrepareContainer::ReleaseDelivery(const std::string &key, const BlockDelayData &expected)
+{
+    std::lock_guard<std::mutex> lock(dataLoadMutex_);
+    auto it = blockDelayDataCache_.find(key);
+    if (it == blockDelayDataCache_.end() || it->second.tokenId != expected.tokenId ||
+        it->second.blockData != expected.blockData) {
+        return false;
+    }
+    EraseBlockLocked(key);
+    if (MatchesOriginLocked(key, expected.origin)) {
+        origins_.at(key).loading = false;
+    }
+    return true;
+}
+
+bool DelayDataPrepareContainer::StoreDelivery(
+    const std::string &key, const BlockDelayData &expected, DelayDeliveryResult result)
+{
+    const auto bytes = result.data.GetSize();
+    std::lock_guard<std::mutex> lock(dataLoadMutex_);
+    auto it = blockDelayDataCache_.find(key);
+    if (it == blockDelayDataCache_.end() || it->second.blockData != expected.blockData ||
+        it->second.tokenId != expected.tokenId || !expected.blockData) {
+        return false;
+    }
+    const auto available = UnifiedData::MAX_DATA_SIZE - (cachedBytes_ - it->second.cachedBytes);
+    const bool fits = bytes >= 0 && bytes <= available;
+    cachedBytes_ -= it->second.cachedBytes;
+    it->second.cachedBytes = fits ? bytes : 0;
+    cachedBytes_ += it->second.cachedBytes;
+    expected.blockData->SetValue(fits ? std::move(result) : DelayDeliveryResult{ UnifiedData(), E_ERROR, false });
+    return fits;
+}
+
+void DelayDataPrepareContainer::Remove(const std::string &key)
+{
+    std::lock_guard<std::mutex> lock(dataLoadMutex_);
+    EraseBlockLocked(key);
+    dataLoadCallback_.erase(key);
+    origins_.erase(key);
+}
+
+void DelayDataPrepareContainer::RemoveByToken(uint32_t tokenId)
+{
+    std::lock_guard<std::mutex> lock(dataLoadMutex_);
+    for (auto it = origins_.begin(); it != origins_.end();) {
+        auto block = blockDelayDataCache_.find(it->first);
+        if (it->second.tokenId == tokenId ||
+            (block != blockDelayDataCache_.end() && block->second.tokenId == tokenId)) {
+            EraseBlockLocked(it->first);
+            dataLoadCallback_.erase(it->first);
+            it = origins_.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
+void DelayDataPrepareContainer::PurgeExpired(Clock::time_point now)
+{
+    std::lock_guard<std::mutex> lock(dataLoadMutex_);
+    for (auto it = origins_.begin(); it != origins_.end();) {
+        if (it->second.expires <= now) {
+            EraseBlockLocked(it->first);
+            dataLoadCallback_.erase(it->first);
+            it = origins_.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
+void DelayDataPrepareContainer::BindExecutor(const std::shared_ptr<ExecutorPool> &executors)
+{
+    std::shared_ptr<ExecutorPool> previous;
+    ExecutorPool::TaskId previousTask;
+    {
+        std::lock_guard<std::mutex> lock(dataLoadMutex_);
+        previous = executors_.lock();
+        if (previous == executors) {
+            return;
+        }
+        previousTask = purgeTask_;
+        executors_ = executors;
+        purgeTask_ =
+            executors ? executors->Schedule([] { GetInstance().PurgeExpired(); }, DELIVERY_LIFETIME, DELIVERY_LIFETIME)
+                      : ExecutorPool::INVALID_TASK_ID;
+    }
+    if (previous) {
+        previous->Remove(previousTask);
+    }
 }
 
 } // namespace UDMF

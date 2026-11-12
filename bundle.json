@@ -97,6 +97,7 @@
                 "thermal_manager",
                 "time_service",
                 "udmf",
+                "security_guard",
                 "app_file_service",
                 "file_api",
                 "openssl",
