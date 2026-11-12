@@ -47,7 +47,7 @@ HWTEST_F(ScreenManagerTest, IsLocked, TestSize.Level1)
     EXPECT_NO_FATAL_FAILURE(ScreenManager::GetInstance()->Unsubscribe(nullptr));
     EXPECT_NO_FATAL_FAILURE(ScreenManager::GetInstance()->SubscribeEvent());
     EXPECT_NO_FATAL_FAILURE(ScreenManager::GetInstance()->UnsubscribeEvent());
-    ASSERT_FALSE(ScreenManager::GetInstance()->IsLocked());
+    ASSERT_FALSE(ScreenManager::GetInstance()->IsLocked(0));
     ASSERT_FALSE(ScreenManager::GetInstance()->IsScreenOff());
 }
 } // namespace OHOS::Test

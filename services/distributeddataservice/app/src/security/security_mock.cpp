@@ -57,6 +57,11 @@ bool Security::IsAccessControlled() const
     return true;
 }
 
+bool Security::IsAccessControlled(const DistributedDB::Property &property) const
+{
+    return IsAccessControlled();
+}
+
 DBStatus Security::SetSecurityOption(const std::string &filePath, const SecurityOption &option)
 {
     return OK;

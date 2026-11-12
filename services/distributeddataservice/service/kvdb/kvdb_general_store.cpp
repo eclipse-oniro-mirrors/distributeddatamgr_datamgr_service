@@ -203,7 +203,9 @@ KVDBGeneralStore::KVDBGeneralStore(const StoreMetaData &meta)
         manager_.CloseKvStore(delegate_);
         return;
     }
-    auto res = delegate_->SetProperty({ { DistributedData::Constant::TOKEN_ID, meta.tokenId } });
+    auto res = delegate_->SetProperty({ { DistributedData::Constant::TOKEN_ID, meta.tokenId },
+        { DistributedData::Constant::USER_ID, static_cast<uint32_t>(atoi(meta.user.c_str())) },
+        { DistributedData::Constant::AREA, static_cast<uint32_t>(meta.area) } });
     if (res != DBStatus::OK) {
         ZLOGE("Set failed! res:%{public}d dir:%{public}s", res, Anonymous::Change(meta.dataDir).c_str());
         return;

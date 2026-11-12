@@ -21,6 +21,8 @@ namespace ScreenLock {
 std::mutex ScreenLockManager::instanceLock_;
 ScreenLockManager* ScreenLockManager::instance_ = nullptr;
 bool ScreenLockManager::isScreenLocked_ = false;
+int32_t ScreenLockManager::isLockedWithUserIdErr_ = E_SCREENLOCK_OK;
+std::map<int32_t, bool> ScreenLockManager::isLockedWithUserMap_;
 
 ScreenLockManager* ScreenLockManager::GetInstance()
 {
@@ -38,14 +40,41 @@ bool ScreenLockManager::IsScreenLocked()
     return isScreenLocked_;
 }
 
+int32_t ScreenLockManager::IsLockedWithUserId(int32_t userId, bool &isLocked)
+{
+    if (isLockedWithUserIdErr_ != E_SCREENLOCK_OK) {
+        return isLockedWithUserIdErr_;
+    }
+    auto it = isLockedWithUserMap_.find(userId);
+    if (it == isLockedWithUserMap_.end()) {
+        // Same as the real screenlock service, an unknown user is locked by default.
+        isLocked = true;
+        return E_SCREENLOCK_OK;
+    }
+    isLocked = it->second;
+    return E_SCREENLOCK_OK;
+}
+
 void ScreenLockManager::SetScreenLocked(bool locked)
 {
     isScreenLocked_ = locked;
 }
 
+void ScreenLockManager::SetLockedWithUserId(int32_t userId, bool isLocked)
+{
+    isLockedWithUserMap_[userId] = isLocked;
+}
+
+void ScreenLockManager::SetLockedWithUserIdError(int32_t errCode)
+{
+    isLockedWithUserIdErr_ = errCode;
+}
+
 void ScreenLockManager::Reset()
 {
     isScreenLocked_ = false;
+    isLockedWithUserIdErr_ = E_SCREENLOCK_OK;
+    isLockedWithUserMap_.clear();
 }
 
 } // namespace ScreenLock

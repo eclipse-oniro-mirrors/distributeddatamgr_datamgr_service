@@ -106,6 +106,7 @@ private:
         const StoreMetaData meta_;
         const uint32_t garbageInterval_;
     };
+    static Stores GetUnblockedStores(std::map<std::string, Delegate> &delegates, const std::string &storeKey);
     static constexpr uint32_t DEFAULT_INTERVAL = 60 * 1000;
     static constexpr int32_t MAX_CREATOR_NUM = 30;
 

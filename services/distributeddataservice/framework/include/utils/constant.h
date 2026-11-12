@@ -86,6 +86,8 @@ public:
     API_EXPORT static bool IsValidPath(const std::string &path);
     static constexpr const char *KEY_SEPARATOR = "###";
     static constexpr const char *TOKEN_ID = "tokenId";
+    static constexpr const char *USER_ID = "userId";
+    static constexpr const char *AREA = "area";
 
 private:
     API_EXPORT static bool DCopy(uint8_t *tag, size_t tagLen, const uint8_t *src, size_t srcLen);

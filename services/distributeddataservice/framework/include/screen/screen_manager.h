@@ -39,6 +39,7 @@ public:
     ScreenManager() = default;
     virtual ~ScreenManager() = default;
     virtual bool IsLocked();
+    virtual bool IsLocked(int32_t user);
     virtual bool IsScreenOff();
     virtual void Subscribe(std::shared_ptr<Observer> observer);
     virtual void Unsubscribe(std::shared_ptr<Observer> observer);

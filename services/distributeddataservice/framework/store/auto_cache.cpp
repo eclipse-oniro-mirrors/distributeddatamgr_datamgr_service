@@ -28,6 +28,19 @@ namespace OHOS::DistributedData {
 namespace {
 constexpr uint32_t AUTO_CACHE_XCOLLIE_TIMEOUT = 3 * 60;
 constexpr uint32_t AUTO_CACHE_XCOLLIE_FLAG = XCollie::XCOLLIE_LOG | XCollie::XCOLLIE_RECOVERY;
+
+// The el4 keys of the user are unloaded while the screen of the user is locked, the delegate of
+// such store must not be handed out or closed, it is not accessible and would crash the process.
+// The user 0 convention of CheckStatusBeforeOpen applies: the system user takes no user level
+// lock state, it has no unlock events and is never seeded.
+bool IsBlockedByLock(int32_t area, const std::string &user)
+{
+    int32_t userId = atoi(user.c_str());
+    if (area != GeneralStore::EL4 || userId == 0) {
+        return false;
+    }
+    return ScreenManager::GetInstance()->IsLocked(userId);
+}
 } // namespace
 
 using Account = AccountDelegate;
@@ -93,7 +106,7 @@ std::string AutoCache::GenerateKey(const std::string &path, const std::string &s
 
 int32_t AutoCache::CheckStatusBeforeOpen(const StoreMetaData &meta)
 {
-    if (meta.area == GeneralStore::EL4 && ScreenManager::GetInstance()->IsLocked()) {
+    if (IsBlockedByLock(meta.area, meta.user)) {
         ZLOGW("screen is locked, user:%{public}s, bundleName:%{public}s, storeName:%{public}s", meta.user.c_str(),
             meta.bundleName.c_str(), meta.GetStoreAlias().c_str());
         return E_SCREEN_LOCKED;
@@ -178,23 +191,33 @@ AutoCache::Store AutoCache::GetStore(const StoreMetaData &meta)
     return GetDBStore(meta).second;
 }
 
+AutoCache::Stores AutoCache::GetUnblockedStores(std::map<std::string, Delegate> &delegates, const std::string &storeKey)
+{
+    Stores stores;
+    if (storeKey.empty()) {
+        for (auto &[_, delegate] : delegates) {
+            if (!IsBlockedByLock(delegate.GetArea(), delegate.GetMeta().user)) {
+                stores.push_back(delegate);
+            }
+        }
+    } else {
+        auto it = delegates.find(storeKey);
+        if (it != delegates.end() && !IsBlockedByLock(it->second.GetArea(), it->second.GetMeta().user)) {
+            stores.push_back(it->second);
+        }
+    }
+    return stores;
+}
+
 AutoCache::Stores AutoCache::GetStoresIfPresent(uint32_t tokenId, const std::string &path, const std::string &storeName)
 {
     Stores stores;
     auto storeKey = GenerateKey(path, storeName);
     XCollie xcollie(__FUNCTION__, AUTO_CACHE_XCOLLIE_FLAG, AUTO_CACHE_XCOLLIE_TIMEOUT);
     stores_.ComputeIfPresent(tokenId, [&stores, &storeKey](auto &, std::map<std::string, Delegate> &delegates) -> bool {
-        if (storeKey.empty()) {
-            for (auto &[_, delegate] : delegates) {
-                stores.push_back(delegate);
-            }
-        } else {
-            auto it = delegates.find(storeKey);
-            if (it != delegates.end()) {
-                stores.push_back(it->second);
-            }
-        }
-        return !stores.empty();
+        stores = GetUnblockedStores(delegates, storeKey);
+        // A miss must not drop the token node, otherwise all other cached stores are closed.
+        return !delegates.empty();
     });
     return stores;
 }
@@ -226,14 +249,13 @@ void AutoCache::StartTimer()
 void AutoCache::CloseStore(uint32_t tokenId, const std::string &path, const std::string &storeId)
 {
     ZLOGD("close store start, store:%{public}s, token:%{public}u", Anonymous::Change(storeId).c_str(), tokenId);
-    bool isScreenLocked = ScreenManager::GetInstance()->IsLocked();
     auto storeKey = GenerateKey(path, storeId);
     XCollie xcollie(__FUNCTION__, AUTO_CACHE_XCOLLIE_FLAG, AUTO_CACHE_XCOLLIE_TIMEOUT);
-    stores_.ComputeIfPresent(tokenId, [&storeKey, isScreenLocked](auto &, auto &delegates) {
+    stores_.ComputeIfPresent(tokenId, [&storeKey](auto &, auto &delegates) {
         auto it = delegates.begin();
         while (it != delegates.end()) {
             if ((it->first == storeKey || storeKey.empty()) &&
-                (!isScreenLocked || it->second.GetArea() != GeneralStore::EL4)) {
+                !IsBlockedByLock(it->second.GetArea(), it->second.GetMeta().user)) {
                 it->second.Close();
                 it = delegates.erase(it);
             } else {
@@ -253,6 +275,9 @@ void AutoCache::CloseStore(const AutoCache::Filter &filter)
     stores_.EraseIf([&filter](auto &tokenId, auto &delegates) {
         auto it = delegates.begin();
         while (it != delegates.end()) {
+            // The filtered close is only invoked on the account switch, it is a forced close. The
+            // crash risk of touching the unloaded el4 keys is accepted there, keeping the store
+            // open would risk the database consistency instead.
             if (filter(it->second.GetMeta())) {
                 it->second.Close();
                 it = delegates.erase(it);
@@ -267,16 +292,20 @@ void AutoCache::CloseStore(const AutoCache::Filter &filter)
 void AutoCache::GarbageCollect(bool isForce)
 {
     auto current = std::chrono::steady_clock::now();
-    bool isScreenLocked = ScreenManager::GetInstance()->IsLocked();
     uint32_t removeCount = 0;
     uint32_t remainCount = 0;
     XCollie xcollie(__FUNCTION__, AUTO_CACHE_XCOLLIE_FLAG, AUTO_CACHE_XCOLLIE_TIMEOUT);
-    stores_.EraseIf([&current, isForce, isScreenLocked, &removeCount, &remainCount](
+    stores_.EraseIf([&current, isForce, &removeCount, &remainCount](
                         auto &key, std::map<std::string, Delegate> &delegates) {
         for (auto it = delegates.begin(); it != delegates.end();) {
             // if the store is BUSY we wait more INTERVAL minutes again
-            if ((!isScreenLocked || it->second.GetArea() != GeneralStore::EL4) && (isForce || it->second < current) &&
-                it->second.Close()) {
+            // Note: the el4 store of a user that is removed or stopped keeps locked forever and
+            // is retained here until the process restarts. Closing or destroying it would touch
+            // the encrypted files whose keys are gone; the retention is bounded by the el4 store
+            // count of such users and the account cleanup path force closes it via the filtered
+            // CloseStore instead.
+            if (!IsBlockedByLock(it->second.GetArea(), it->second.GetMeta().user) &&
+                (isForce || it->second < current) && it->second.Close()) {
                 it = delegates.erase(it);
                 ++removeCount;
             } else {

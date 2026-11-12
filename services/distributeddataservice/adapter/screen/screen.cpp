@@ -34,6 +34,27 @@ bool Screen::IsLocked()
     return manager->IsScreenLocked();
 }
 
+bool Screen::IsLocked(int32_t user)
+{
+    auto [code, isLocked] = lockStates_.Find(user);
+    if (code) {
+        return isLocked;
+    }
+    // No cached state yet: no lock or unlock event of the user has been observed since the
+    // process started. Ask the screenlock service once and cache the answer, the events keep
+    // it fresh afterwards. A failed query is not cached and stays fail closed, the same
+    // default the screenlock service applies to unknown users, so the next call retries.
+    bool queried = true;
+    auto manager = ScreenLockManager::GetInstance();
+    if (manager == nullptr || manager->IsLockedWithUserId(user, queried) != E_SCREENLOCK_OK) {
+        ZLOGW("query lock state of user %{public}d failed, keep locked", user);
+        return true;
+    }
+    lockStates_.InsertOrAssign(user, queried);
+    ZLOGI("query lock state of user %{public}d once, locked:%{public}d", user, queried);
+    return queried;
+}
+
 bool Screen::IsScreenOff()
 {
     return isScreenOff_.load();
@@ -47,10 +68,9 @@ void EventSubscriber::OnReceiveEvent(const CommonEventData &event)
 {
     const auto want = event.GetWant();
     const auto action = want.GetAction();
-    if (action != CommonEventSupport::COMMON_EVENT_SCREEN_UNLOCKED && action !=
-        CommonEventSupport::COMMON_EVENT_SCREEN_LOCKED &&
-        action != CommonEventSupport::COMMON_EVENT_SCREEN_ON &&
-        action != CommonEventSupport::COMMON_EVENT_SCREEN_OFF) {
+    if (action != CommonEventSupport::COMMON_EVENT_SCREEN_UNLOCKED &&
+        action != CommonEventSupport::COMMON_EVENT_SCREEN_LOCKED &&
+        action != CommonEventSupport::COMMON_EVENT_SCREEN_ON && action != CommonEventSupport::COMMON_EVENT_SCREEN_OFF) {
         return;
     }
     ZLOGI("Want Action is %{public}s", action.c_str());
@@ -156,6 +176,7 @@ void Screen::UnsubscribeEvent()
 
 void Screen::NotifyUnlocked(int32_t user)
 {
+    lockStates_.InsertOrAssign(user, false);
     observerMap_.ForEach([user](const auto &key, auto &val) {
         val->OnScreenUnlocked(user);
         return false;
@@ -164,6 +185,7 @@ void Screen::NotifyUnlocked(int32_t user)
 
 void Screen::NotifyLocked(int32_t user)
 {
+    lockStates_.InsertOrAssign(user, true);
     observerMap_.ForEach([user](const auto &key, auto &val) {
         val->OnScreenLocked(user);
         return false;
