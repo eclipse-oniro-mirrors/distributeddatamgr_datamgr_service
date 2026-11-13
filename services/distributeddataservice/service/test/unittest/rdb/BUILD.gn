@@ -270,6 +270,12 @@ ohos_unittest("RdbFlowControlManagerTest") {
 }
 
 ohos_unittest("RdbServiceImplTest") {
+  sanitize = {
+    cfi = true
+    cfi_cross_dso = true
+    debug = false
+    blocklist = "${datamgr_service_path}/cfi_blocklist.txt"
+  }
   module_out_path = module_output_path
   ldflags = [ "-Wl,--allow-multiple-definition" ]
   sources = [

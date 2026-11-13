@@ -13,6 +13,21 @@
 import("//build/ohos.gni")
 import("//foundation/distributeddatamgr/datamgr_service/datamgr_service.gni")
 
+config("access_token_headers") {
+  # Calls from tested DSOs must resolve to the same provider as calls from the executable.
+  ldflags = [
+    "-Wl,--export-dynamic-symbol=_ZN4OHOS8Security11AccessToken*",
+    "-Wl,--export-dynamic-symbol=_ZNK4OHOS8Security11AccessToken*",
+    "-Wl,--export-dynamic-symbol=_ZN4OHOS11IPCSkeleton*Token*",
+    "-Wl,--export-dynamic-symbol=GetAccessTokenId",
+    "-Wl,--export-dynamic-symbol=GetSelfTokenID",
+    "-Wl,--export-dynamic-symbol=SetSelfTokenID",
+  ]
+  include_dirs = [
+    ".",
+  ]
+}
+
 config("module_private_config") {
   visibility = [ ":*" ]
 

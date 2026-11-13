@@ -18,6 +18,9 @@
 #include "accesstoken_kit.h"
 #include "bootstrap.h"
 #include "hap_token_info.h"
+#include "iservice_registry.h"
+#include "mock_bundle_manager.h"
+#include "system_ability_definition.h"
 #include "nativetoken_kit.h"
 #include "utils/crypto.h"
 using namespace testing::ext;
@@ -30,16 +33,21 @@ public:
     void SetUp();
     void TearDown();
     NativeTokenInfoParams infoInstance{0};
+    OHOS::sptr<OHOS::ISystemAbilityManager> originalSamgr_;
+    OHOS::sptr<testing::NiceMock<OHOS::AppExecFwk::SystemAbilityManagerMock>> samgr_;
+    OHOS::sptr<testing::StrictMock<OHOS::AppExecFwk::BundleMgrMock>> bundleMgr_;
 };
 
 void CheckerManagerTest::SetUp(void)
 {
-    infoInstance.dcapsNum = 0;
-    infoInstance.permsNum = 0;
-    infoInstance.aclsNum = 0;
-    infoInstance.dcaps = nullptr;
-    infoInstance.perms = nullptr;
-    infoInstance.acls = nullptr;
+    auto &client = OHOS::SystemAbilityManagerClient::GetInstance();
+    originalSamgr_ = client.systemAbilityManager_;
+    samgr_ = new testing::NiceMock<OHOS::AppExecFwk::SystemAbilityManagerMock>();
+    bundleMgr_ = new testing::StrictMock<OHOS::AppExecFwk::BundleMgrMock>();
+    ON_CALL(*samgr_, GetSystemAbility(OHOS::BUNDLE_MGR_SERVICE_SYS_ABILITY_ID))
+        .WillByDefault(testing::Return(bundleMgr_->AsObject()));
+    client.systemAbilityManager_ = samgr_;
+
     infoInstance.processName = "CheckerManagerTest";
     infoInstance.aplStr = "system_core";
 
@@ -82,6 +90,11 @@ void CheckerManagerTest::SetUp(void)
 
 void CheckerManagerTest::TearDown()
 {
+    OHOS::SystemAbilityManagerClient::GetInstance().systemAbilityManager_ = originalSamgr_;
+    bundleMgr_ = nullptr;
+    samgr_ = nullptr;
+    CheckerManager::GetInstance().ClearCache();
+
     auto tokenId = AccessTokenKit::GetHapTokenID(100, "ohos.test.demo", 0);
     AccessTokenKit::DeleteToken(tokenId);
 }
@@ -190,16 +203,20 @@ HWTEST_F(CheckerManagerTest, IsStatic, TestSize.Level0)
 * @tc.desc: test ClearCache function of CheckerManager.
 * @tc.type: FUNC
 * @tc.require:
-* @tc.author:
+* @tc.author: agent
 */
 HWTEST_F(CheckerManagerTest, ClearCache, TestSize.Level0)
 {
+    EXPECT_CALL(*bundleMgr_, GetAppIdByBundleName("ohos.test.demo", 10))
+        .Times(2).WillRepeatedly(testing::Return("ohos.test.demo.test-app-id"));
+
     CheckerManager::StoreInfo storeInfo;
     storeInfo.uid = 2000000;
     storeInfo.tokenId = AccessTokenKit::GetHapTokenID(100, "ohos.test.demo", 0);
     storeInfo.bundleName = "ohos.test.demo";
 
     std::string appId = CheckerManager::GetInstance().GetAppId(storeInfo);
+    ASSERT_FALSE(appId.empty()) << "cache test must resolve a real checker appId";
 
     CheckerManager::GetInstance().ClearCache();
     std::string appIdAfterClear = CheckerManager::GetInstance().GetAppId(storeInfo);
@@ -212,10 +229,13 @@ HWTEST_F(CheckerManagerTest, ClearCache, TestSize.Level0)
 * @tc.desc: test ClearCache function of BundleChecker.
 * @tc.type: FUNC
 * @tc.require:
-* @tc.author:
+* @tc.author: agent
 */
 HWTEST_F(CheckerManagerTest, BundleCheckerClearCache, TestSize.Level0)
 {
+    EXPECT_CALL(*bundleMgr_, GetAppIdByBundleName("ohos.test.demo", 10))
+        .Times(2).WillRepeatedly(testing::Return("ohos.test.demo.test-app-id"));
+
     auto *checker = CheckerManager::GetInstance().GetChecker("BundleChecker");
     ASSERT_NE(checker, nullptr);
     CheckerManager::StoreInfo storeInfo;
@@ -224,6 +244,7 @@ HWTEST_F(CheckerManagerTest, BundleCheckerClearCache, TestSize.Level0)
     storeInfo.bundleName = "ohos.test.demo";
 
     std::string appId = checker->GetAppId(storeInfo);
+    ASSERT_FALSE(appId.empty()) << "cache test must resolve a real checker appId";
 
     checker->ClearCache();
     std::string appIdAfterClear = checker->GetAppId(storeInfo);

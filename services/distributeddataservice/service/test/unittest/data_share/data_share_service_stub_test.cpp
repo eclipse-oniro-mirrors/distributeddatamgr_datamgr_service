@@ -26,6 +26,7 @@
 #include "dataproxy_handle_common.h"
 #include "ipc_skeleton.h"
 #include "itypes_util.h"
+#include "mock_access_token_state.h"
 #include "token_setproc.h"
 #include "log_print.h"
 
@@ -119,6 +120,12 @@ HWTEST_F(DataShareServiceStubTest, OnRemoteRequest002, TestSize.Level1)
 HWTEST_F(DataShareServiceStubTest, OnRemoteRequest003, TestSize.Level1)
 {
     ZLOGI("DataShareServiceStubTest::OnRemoteRequest003 start");
+    Security::AccessToken::HapInfoParams info{};
+    info.userID = 100;
+    info.bundleName = "ohos.datashare.stub.test";
+    auto token = Security::AccessToken::MockAccessTokenState::Allocate(info, {});
+    ASSERT_NE(token.tokenIDEx, 0);
+    Security::AccessToken::ScopedMockToken caller(token.tokenIDEx);
     uint32_t code = DataShare::DataShareServiceImpl::DATA_SHARE_SERVICE_CMD_ADD_TEMPLATE;
     MessageParcel request;
     MessageParcel reply;
