@@ -14,9 +14,12 @@
  */
 #include "clone_manager.h"
 
+#include <cerrno>
+#include <cstdlib>
 #include <fcntl.h>
 
 #include "crypto/crypto_manager.h"
+#include "dfx/reporter.h"
 #include "hisysevent.h"
 #include "unique_fd.h"
 #include "directory/directory_manager.h"
@@ -29,6 +32,7 @@
 
 namespace OHOS::DistributedKv {
 using namespace OHOS::DistributedData;
+using namespace OHOS::DistributedDataDfx;
 using SecretKeyMeta = DistributedData::SecretKeyMetaData;
 
 constexpr const char *CLONE_KEY_ALIAS = "distributed_db_backup_key";
@@ -134,18 +138,88 @@ std::vector<uint8_t> ReEncryptKey(const SecretKeyMetaData &secretKeyMeta,
     return reEncryptedKey;
 }
 
-// Item-level failures are skipped by design, so the flow result alone cannot reveal them;
-// emit a summary log and a fault event whenever any item was skipped.
-void ReportClone(const char *eventName, const std::string &userId, int32_t total, int32_t skipped)
+// Bundles the parameters for ReportCloneResult so callers pass a single aggregate
+// instead of a long positional argument list.
+struct CloneReportInfo {
+    BehaviourType behaviourType;  // DATABASE_BACKUP or DATABASE_RECOVERY
+    std::string userId;
+    std::string osVersion;
+    bool oldFormat;
+    int32_t total;
+    int32_t skipped;
+};
+
+// Emits a per-operation DFX summary so that the old/new format split and the outcome are
+// observable even when the flow returns normally: an info log for traceability (userId in
+// plaintext via %{public}s), a behaviour report via the existing Reporter singleton
+// (DATABASE_BEHAVIOUR event, summary packed into extensionInfo), and -- when any item was
+// skipped -- a FAULT event via DISTRIBUTED_DATA_RDB_FAULT so partial failures remain
+// visible on the fault channel.
+void ReportCloneResult(const CloneReportInfo &info)
 {
-    if (skipped <= 0) {
+    int32_t success = info.total - info.skipped;
+    const char *formatType = info.oldFormat ? "old" : "new";
+    ZLOGI("Clone summary, userId:%{public}s, osVersion:%{public}s, format:%{public}s, "
+        "total:%{public}d, success:%{public}d, skipped:%{public}d",
+        info.userId.c_str(), info.osVersion.c_str(), formatType, info.total, success, info.skipped);
+    // Reuse the existing BehaviourReporter (writes DATABASE_BEHAVIOUR); pack the clone summary
+    // (peer OSVersion, format selection, item counts) into extensionInfo.
+    std::string extensionInfo = "osVersion:" + info.osVersion + ", format:" + formatType +
+        ", total:" + std::to_string(info.total) + ", success:" + std::to_string(success) +
+        ", skipped:" + std::to_string(info.skipped);
+    Reporter::GetInstance()->GetBehaviourReporter()->Report(
+        { Anonymous::Change(info.userId), "clone", "", info.behaviourType, extensionInfo });
+    if (info.skipped <= 0) {
         return;
     }
-    ZLOGE("Clone partial fail, total:%{public}d, skipped:%{public}d, userId:%{public}s", total, skipped,
-        Anonymous::Change(userId).c_str());
-    HiSysEventWrite(OHOS::HiviewDFX::HiSysEvent::Domain::DISTRIBUTED_DATAMGR, eventName,
-        OHOS::HiviewDFX::HiSysEvent::EventType::FAULT, "USER_ID", Anonymous::Change(userId).c_str(),
-        "TOTAL_COUNT", total, "SKIPPED_COUNT", skipped);
+    const char *faultType = info.behaviourType == BehaviourType::DATABASE_BACKUP
+        ? "CLONE_BACKUP_PARTIAL_FAIL" : "CLONE_RESTORE_PARTIAL_FAIL";
+    std::string appendix = "userId:" + Anonymous::Change(info.userId) +
+        ", total:" + std::to_string(info.total) +
+        ", skipped:" + std::to_string(info.skipped);
+    ZLOGE("Clone partial fail, total:%{public}d, skipped:%{public}d, userId:%{public}s",
+        info.total, info.skipped, Anonymous::Change(info.userId).c_str());
+    HiSysEventWrite(OHOS::HiviewDFX::HiSysEvent::Domain::DISTRIBUTED_DATAMGR,
+        "DISTRIBUTED_DATA_RDB_FAULT",
+        OHOS::HiviewDFX::HiSysEvent::EventType::FAULT,
+        "FAULT_TYPE", faultType,
+        "BUNDLE_NAME", "clone",
+        "ERROR_CODE", info.skipped,
+        "APPENDIX", appendix.c_str());
+}
+
+// Loads and re-encrypts a single store's secret key into a BackupItem.
+// Returns true on success; returns false (and increments skipped) on any per-item failure.
+bool BuildBackupItem(const StoreMetaData &storeMeta, const std::string &bundleName,
+    const std::string &userId, bool oldFormat, const std::vector<uint8_t> &iv,
+    SecretKeyBackupData::BackupItem &item, int32_t &skipped)
+{
+    auto key = storeMeta.GetSecretKey();
+    SecretKeyMetaData secretKeyMeta;
+    if (!MetaDataManager::GetInstance().LoadMeta(key, secretKeyMeta, true)) {
+        ++skipped;
+        return false;
+    };
+    // Old format reuses the shared iv; new format starts with an empty nonce so
+    // ReEncryptKey generates a fresh random one per item.
+    std::vector<uint8_t> nonce = oldFormat ? iv : std::vector<uint8_t>{};
+    auto reEncryptedKey = ReEncryptKey(secretKeyMeta, storeMeta, nonce);
+    if (reEncryptedKey.size() == 0) {
+        ++skipped;
+        return false;
+    };
+    item.time = secretKeyMeta.time;
+    item.bundleName = bundleName;
+    item.dbName = storeMeta.storeId;
+    item.instanceId = storeMeta.instanceId;
+    item.sKey = DistributedData::Base64::Encode(reEncryptedKey);
+    item.storeType = secretKeyMeta.storeType;
+    item.user = userId;
+    item.area = storeMeta.area;
+    if (!oldFormat) {
+        item.nonce = DistributedData::Base64::Encode(nonce);
+    }
+    return true;
 }
 
 std::string GetSecretKeyBackup(const std::vector<DistributedData::CloneBundleInfo> &bundleInfos,
@@ -157,47 +231,34 @@ std::string GetSecretKeyBackup(const std::vector<DistributedData::CloneBundleInf
     int32_t skipped = 0;
     bool oldFormat = IsOldOsVersion(osVersion);
     for (const auto &bundleInfo : bundleInfos) {
-        std::string metaPrefix = StoreMetaData::GetKey({ localDeviceId, userId, "default", bundleInfo.bundleName });
-        std::vector<StoreMetaData> StoreMetas;
-        if (!MetaDataManager::GetInstance().LoadMeta(metaPrefix, StoreMetas, true)) {
+        std::string metaPrefix = StoreMetaData::GetKey(
+            { localDeviceId, userId, "default", bundleInfo.bundleName });
+        std::vector<StoreMetaData> storeMetas;
+        if (!MetaDataManager::GetInstance().LoadMeta(metaPrefix, storeMetas, true)) {
             continue;
         };
-        for (const auto &storeMeta : StoreMetas) {
+        for (const auto &storeMeta : storeMetas) {
             if (!storeMeta.isEncrypt) {
                 continue;
             };
             ++total;
-            auto key = storeMeta.GetSecretKey();
-            SecretKeyMetaData secretKeyMeta;
-            if (!MetaDataManager::GetInstance().LoadMeta(key, secretKeyMeta, true)) {
-                ++skipped;
-                continue;
-            };
-            // Old format reuses the shared iv handed in by the framework; new format starts
-            // with an empty nonce so ReEncryptKey generates a fresh random one per item.
-            std::vector<uint8_t> nonce = oldFormat ? iv : std::vector<uint8_t>{};
-            auto reEncryptedKey = ReEncryptKey(secretKeyMeta, storeMeta, nonce);
-            if (reEncryptedKey.size() == 0) {
-                ++skipped;
-                continue;
-            };
             SecretKeyBackupData::BackupItem item;
-            item.time = secretKeyMeta.time;
-            item.bundleName = bundleInfo.bundleName;
-            item.dbName = storeMeta.storeId;
-            item.instanceId = storeMeta.instanceId;
-            item.sKey = DistributedData::Base64::Encode(reEncryptedKey);
-            item.storeType = secretKeyMeta.storeType;
-            item.user = userId;
-            item.area = storeMeta.area;
-            if (!oldFormat) {
-                item.nonce = DistributedData::Base64::Encode(nonce);
+            if (BuildBackupItem(storeMeta, bundleInfo.bundleName, userId, oldFormat, iv, item,
+                skipped)) {
+                backupInfos.infos.push_back(std::move(item));
             }
-            backupInfos.infos.push_back(std::move(item));
         }
     }
-    ReportClone("CLONE_BACKUP_PARTIAL_FAIL", userId, total, skipped);
-    return Serializable::Marshall(backupInfos);
+    std::string content = Serializable::Marshall(backupInfos);
+    ReportCloneResult({
+        .behaviourType = BehaviourType::DATABASE_BACKUP,
+        .userId = userId,
+        .osVersion = osVersion,
+        .oldFormat = oldFormat,
+        .total = total,
+        .skipped = skipped,
+    });
+    return content;
 }
 
 int32_t OnBackup(MessageParcel &data, MessageParcel &reply, const std::string &localDeviceId)
@@ -214,6 +275,14 @@ int32_t OnBackup(MessageParcel &data, MessageParcel &reply, const std::string &l
         return -1;
     }
 
+    // Validate the userId before importing the HUKS clone key: if the input is invalid we
+    // return immediately so the heavy ImportCloneKey operation is never triggered, avoiding
+    // any HKS key residue that would otherwise need cleanup.
+    if (!IsNumber(backupInfo.userId)) {
+        ZLOGE("userId is not number, userId:%{public}s", backupInfo.userId.c_str());
+        return -1;
+    }
+
     if (!ImportCloneKey(backupInfo.encryptionInfo.symkey)) {
         return -1;
     }
@@ -222,10 +291,6 @@ int32_t OnBackup(MessageParcel &data, MessageParcel &reply, const std::string &l
         backupInfo.osVersion);
     DeleteCloneKey();
 
-    if (!IsNumber(backupInfo.userId)) {
-        ZLOGE("userId is not number, userId:%{public}s", backupInfo.userId.c_str());
-        return -1;
-    }
     std::string backupPath = DirectoryManager::GetInstance().GetClonePath(backupInfo.userId);
     if (backupPath.empty()) {
         ZLOGE("GetClonePath failed, userId:%{public}s errno: %{public}d", backupInfo.userId.c_str(), errno);
@@ -371,7 +436,14 @@ int32_t OnRestore(MessageParcel &data, MessageParcel &reply)
             continue;
         }
     }
-    ReportClone("CLONE_RESTORE_PARTIAL_FAIL", backupInfo.userId, total, skipped);
+    ReportCloneResult({
+        .behaviourType = BehaviourType::DATABASE_RECOVERY,
+        .userId = backupInfo.userId,
+        .osVersion = backupInfo.osVersion,
+        .oldFormat = IsOldOsVersion(backupInfo.osVersion),
+        .total = total,
+        .skipped = skipped,
+    });
     DeleteCloneKey();
     return ReplyForRestore(reply, 0);
 }
@@ -394,8 +466,24 @@ bool IsOldOsVersion(const std::string &osVersion)
             osVersion.c_str());
         return true;
     }
-    long major = atol(tokens[0].c_str());
-    long minor = atol(tokens[1].c_str());
+    // strtol with errno replaces atol: atol has undefined behavior (signed overflow) on
+    // excessively long numeric strings, whereas strtol clamps to LONG_MAX/LONG_MIN and
+    // sets errno=ERANGE. A version segment that overflows is clearly >= 7.1, so the peer
+    // is treated as a new-format device.
+    errno = 0;
+    long major = strtol(tokens[0].c_str(), nullptr, 10);
+    if (errno == ERANGE) {
+        ZLOGW("Peer device version major overflow, treat as new format, version:%{public}s",
+            osVersion.c_str());
+        return false;
+    }
+    errno = 0;
+    long minor = strtol(tokens[1].c_str(), nullptr, 10);
+    if (errno == ERANGE) {
+        ZLOGW("Peer device version minor overflow, treat as new format, version:%{public}s",
+            osVersion.c_str());
+        return false;
+    }
     return major < NEW_FORMAT_VERSION_MAJOR ||
         (major == NEW_FORMAT_VERSION_MAJOR && minor < NEW_FORMAT_VERSION_MINOR);
 }
