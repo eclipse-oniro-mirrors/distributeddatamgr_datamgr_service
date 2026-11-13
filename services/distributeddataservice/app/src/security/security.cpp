@@ -14,15 +14,22 @@
  */
 
 #include "security.h"
-#include <regex>
+
 #include <sys/stat.h>
-#include <thread>
 #include <unistd.h>
+
+#include <cstdlib>
+#include <regex>
+#include <thread>
+
 #include "dev_slinfo_mgr.h"
 #include "device_manager_adapter.h"
 #include "log_print.h"
+#include "screen/screen_manager.h"
 #include "security_label.h"
+#include "store/general_store.h"
 #include "utils/anonymous.h"
+#include "utils/constant.h"
 
 #undef LOG_TAG
 #define LOG_TAG "Security"
@@ -60,6 +67,32 @@ bool Security::IsAccessControlled() const
 {
     auto curStatus = GetCurrentUserStatus();
     return !(curStatus == UNLOCK || curStatus == NO_PWD);
+}
+
+bool Security::IsAccessControlled(const DistributedDB::Property &property) const
+{
+    auto userIt = property.find(DistributedData::Constant::USER_ID);
+    auto areaIt = property.find(DistributedData::Constant::AREA);
+    if (userIt == property.end() || areaIt == property.end()) {
+        // The guard payload is missing, the store is left open (legacy behavior). It happens
+        // when SetProperty failed or the versions across the repos do not match, keep it
+        // observable so the lost protection can be located.
+        ZLOGW("no user or area in the property, the guard cannot decide, keep the store open");
+        return false;
+    }
+    auto user = std::get_if<uint32_t>(&userIt->second);
+    auto area = std::get_if<uint32_t>(&areaIt->second);
+    if (user == nullptr || area == nullptr) {
+        ZLOGW("unexpected type of user or area in the property, the guard cannot decide, keep the store open");
+        return false;
+    }
+    if (*user == 0) {
+        // Same user 0 convention as CheckStatusBeforeOpen, the system user takes no user
+        // level lock state.
+        return false;
+    }
+    return *area == static_cast<uint32_t>(DistributedData::GeneralStore::EL4) &&
+        DistributedData::ScreenManager::GetInstance()->IsLocked(static_cast<int32_t>(*user));
 }
 
 DBStatus Security::SetSecurityOption(const std::string &filePath, const SecurityOption &option)

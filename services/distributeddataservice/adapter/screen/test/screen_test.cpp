@@ -627,56 +627,240 @@ HWTEST_F(ScreenTest, Destructor001, TestSize.Level0)
 }
 
 /**
- * @tc.name: IsLocked001
- * @tc.desc: test IsLocked method when screen is not locked
+ * @tc.name: Screen_IsLocked_NoParam_ReflectsScreenLockManager
+ * @tc.desc: test the no parameter IsLocked, it keeps the legacy device level behavior and
+ *           reflects the state of the screenlock manager
  * @tc.type: FUNC
  * @tc.require:
  * @tc.author: agent
  */
-HWTEST_F(ScreenTest, IsLocked001, TestSize.Level0)
+HWTEST_F(ScreenTest, Screen_IsLocked_NoParam_ReflectsScreenLockManager, TestSize.Level0)
 {
-    ScreenLockManager::SetScreenLocked(false);
-
-    bool isLocked = screen_->IsLocked();
-
-    EXPECT_FALSE(isLocked);
-}
-
-/**
- * @tc.name: IsLocked002
- * @tc.desc: test IsLocked method when screen is locked
- * @tc.type: FUNC
- * @tc.require:
- * @tc.author: agent
- */
-HWTEST_F(ScreenTest, IsLocked002, TestSize.Level0)
-{
-    ScreenLockManager::SetScreenLocked(true);
-
-    bool isLocked = screen_->IsLocked();
-
-    EXPECT_TRUE(isLocked);
-}
-
-/**
- * @tc.name: IsLocked003
- * @tc.desc: test IsLocked method returns correct value after state change
- * @tc.type: FUNC
- * @tc.require:
- * @tc.author: agent
- */
-HWTEST_F(ScreenTest, IsLocked003, TestSize.Level0)
-{
-    ScreenLockManager::SetScreenLocked(false);
-    EXPECT_FALSE(screen_->IsLocked());
-
     ScreenLockManager::SetScreenLocked(true);
     EXPECT_TRUE(screen_->IsLocked());
 
     ScreenLockManager::SetScreenLocked(false);
     EXPECT_FALSE(screen_->IsLocked());
 }
+/**
+ * @tc.name: Screen_IsLocked_QueryFailedOnMiss_FailClosed
+ * @tc.desc: test IsLocked, when the user has no cached state and the lock state query fails,
+ *           it fails closed and stays locked
+ * @tc.type: FUNC
+ * @tc.require:
+ * @tc.author: agent
+ */
+HWTEST_F(ScreenTest, Screen_IsLocked_QueryFailedOnMiss_FailClosed, TestSize.Level0)
+{
+    ScreenLockManager::SetLockedWithUserIdError(1);
+    EXPECT_TRUE(screen_->IsLocked(TEST_USER_ID));
+    EXPECT_TRUE(screen_->IsLocked(TEST_USER_ID + 1));
+}
+/**
+ * @tc.name: Screen_IsLocked_ReceiveUnlockEvent_ReturnsUnlocked
+ * @tc.desc: test IsLocked method, the user becomes unlocked after the unlock event arrives
+ * @tc.type: FUNC
+ * @tc.require:
+ * @tc.author: agent
+ */
+HWTEST_F(ScreenTest, Screen_IsLocked_ReceiveUnlockEvent_ReturnsUnlocked, TestSize.Level0)
+{
+    OHOS::EventFwk::CommonEventManager::PublishScreenUnlockEvent(TEST_USER_ID);
 
+    EXPECT_FALSE(screen_->IsLocked(TEST_USER_ID));
+}
+
+/**
+ * @tc.name: Screen_IsLocked_ReceiveLockedEvent_ReturnsLocked
+ * @tc.desc: test IsLocked method, the user becomes locked after the lock event arrives
+ * @tc.type: FUNC
+ * @tc.require:
+ * @tc.author: agent
+ */
+HWTEST_F(ScreenTest, Screen_IsLocked_ReceiveLockedEvent_ReturnsLocked, TestSize.Level0)
+{
+    OHOS::EventFwk::CommonEventManager::PublishScreenUnlockEvent(TEST_USER_ID);
+    ASSERT_FALSE(screen_->IsLocked(TEST_USER_ID));
+
+    OHOS::EventFwk::CommonEventManager::PublishScreenLockedEvent(TEST_USER_ID);
+
+    EXPECT_TRUE(screen_->IsLocked(TEST_USER_ID));
+}
+
+/**
+ * @tc.name: Screen_IsLocked_StateChangesFollowEvents_ReturnsLatest
+ * @tc.desc: test IsLocked method always returns the latest state driven by the events
+ * @tc.type: FUNC
+ * @tc.require:
+ * @tc.author: agent
+ */
+HWTEST_F(ScreenTest, Screen_IsLocked_StateChangesFollowEvents_ReturnsLatest, TestSize.Level0)
+{
+    OHOS::EventFwk::CommonEventManager::PublishScreenUnlockEvent(TEST_USER_ID);
+    EXPECT_FALSE(screen_->IsLocked(TEST_USER_ID));
+
+    OHOS::EventFwk::CommonEventManager::PublishScreenLockedEvent(TEST_USER_ID);
+    EXPECT_TRUE(screen_->IsLocked(TEST_USER_ID));
+
+    OHOS::EventFwk::CommonEventManager::PublishScreenUnlockEvent(TEST_USER_ID);
+    EXPECT_FALSE(screen_->IsLocked(TEST_USER_ID));
+}
+
+/**
+ * @tc.name: Screen_IsLocked_OtherUserUnlocked_UserKeepsLocked
+ * @tc.desc: test IsLocked method in the multi user scenario, user 100 is locked and user 101
+ *           unlocks on the lock screen, user 100 keeps locked while user 101 is unlocked
+ * @tc.type: FUNC
+ * @tc.require:
+ * @tc.author: agent
+ */
+HWTEST_F(ScreenTest, Screen_IsLocked_OtherUserUnlocked_UserKeepsLocked, TestSize.Level0)
+{
+    constexpr int32_t otherUserId = TEST_USER_ID + 1;
+    OHOS::EventFwk::CommonEventManager::PublishScreenUnlockEvent(TEST_USER_ID);
+    ASSERT_FALSE(screen_->IsLocked(TEST_USER_ID));
+
+    // lock the screen while user 100 is the foreground user, its keys are unloaded later
+    OHOS::EventFwk::CommonEventManager::PublishScreenLockedEvent(TEST_USER_ID);
+    // user 101 unlocks on the lock screen and enters its own desktop
+    OHOS::EventFwk::CommonEventManager::PublishScreenUnlockEvent(otherUserId);
+
+    EXPECT_TRUE(screen_->IsLocked(TEST_USER_ID));
+    EXPECT_FALSE(screen_->IsLocked(otherUserId));
+}
+
+/**
+ * @tc.name: Screen_IsLocked_EventWithoutUserId_FallbackForegroundUser
+ * @tc.desc: test IsLocked method, the event without userId falls back to the foreground user
+ * @tc.type: FUNC
+ * @tc.require:
+ * @tc.author: agent
+ */
+HWTEST_F(ScreenTest, Screen_IsLocked_EventWithoutUserId_FallbackForegroundUser, TestSize.Level0)
+{
+    // the account delegate mock always reports user 100 as the foreground user
+    OHOS::EventFwk::Want want;
+    want.SetAction(OHOS::EventFwk::CommonEventSupport::COMMON_EVENT_SCREEN_UNLOCKED);
+    OHOS::EventFwk::CommonEventManager::PublishEvent(OHOS::EventFwk::CommonEventData(want));
+
+    EXPECT_FALSE(screen_->IsLocked(TEST_USER_ID));
+}
+
+/**
+ * @tc.name: Screen_IsLocked_NoCachedState_QueriesOnceAndCaches
+ * @tc.desc: test IsLocked, when the user has no cached state, it queries the screenlock
+ *           service once and caches the unlocked answer
+ * @tc.type: FUNC
+ * @tc.require:
+ * @tc.author: agent
+ */
+HWTEST_F(ScreenTest, Screen_IsLocked_NoCachedState_QueriesOnceAndCaches, TestSize.Level0)
+{
+    ScreenLockManager::SetLockedWithUserId(TEST_USER_ID, false);
+    EXPECT_FALSE(screen_->IsLocked(TEST_USER_ID));
+
+    // the cached answer is used once the query succeeded, a later failed query cannot
+    // change the cached state
+    ScreenLockManager::SetLockedWithUserIdError(1);
+    EXPECT_FALSE(screen_->IsLocked(TEST_USER_ID));
+}
+
+/**
+ * @tc.name: Screen_IsLocked_NoCachedState_QueryReturnsLocked
+ * @tc.desc: test IsLocked, when the user has no cached state, it queries the screenlock
+ *           service once and returns the locked answer
+ * @tc.type: FUNC
+ * @tc.require:
+ * @tc.author: agent
+ */
+HWTEST_F(ScreenTest, Screen_IsLocked_NoCachedState_QueryReturnsLocked, TestSize.Level0)
+{
+    ScreenLockManager::SetLockedWithUserId(TEST_USER_ID, true);
+    EXPECT_TRUE(screen_->IsLocked(TEST_USER_ID));
+}
+
+/**
+ * @tc.name: Screen_IsLocked_QueryFailsThenRecovers_QueriesAgain
+ * @tc.desc: test IsLocked, a failed query is not cached, once the source recovers the next
+ *           call queries again and gets the fresh state
+ * @tc.type: FUNC
+ * @tc.require:
+ * @tc.author: agent
+ */
+HWTEST_F(ScreenTest, Screen_IsLocked_QueryFailsThenRecovers_QueriesAgain, TestSize.Level0)
+{
+    ScreenLockManager::SetLockedWithUserId(TEST_USER_ID, false);
+    ScreenLockManager::SetLockedWithUserIdError(1);
+    EXPECT_TRUE(screen_->IsLocked(TEST_USER_ID)); // fail closed
+
+    ScreenLockManager::SetLockedWithUserIdError(0); // the source recovers
+    EXPECT_FALSE(screen_->IsLocked(TEST_USER_ID)); // queried again
+}
+
+/**
+ * @tc.name: Screen_GetTask_SubscribeFailsThenRecovers_RetryKeepsRunning
+ * @tc.desc: test GetTask, a failing subscription is retried and recovers; the lock state
+ *           queries do not depend on the subscription state
+ * @tc.type: FUNC
+ * @tc.require:
+ * @tc.author: agent
+ */
+HWTEST_F(ScreenTest, Screen_GetTask_SubscribeFailsThenRecovers_RetryKeepsRunning, TestSize.Level0)
+{
+    OHOS::EventFwk::CommonEventManager::SetSubscribeResult(false);
+    ScreenLockManager::SetLockedWithUserId(TEST_USER_ID, false);
+
+    auto task = ScreenTestHelper::GetTask(*screen_, 0);
+    ASSERT_TRUE(task);
+    task(); // the subscribe fails, a retry is scheduled
+
+    // the lock state is queried on demand and does not depend on the subscription
+    EXPECT_FALSE(screen_->IsLocked(TEST_USER_ID));
+
+    // the event service recovers, the scheduled retry subscribes successfully
+    OHOS::EventFwk::CommonEventManager::SetSubscribeResult(true);
+    std::this_thread::sleep_for(std::chrono::milliseconds(1500));
+    EXPECT_FALSE(screen_->IsLocked(TEST_USER_ID));
+}
+/**
+ * @tc.name: Screen_IsLocked_EventUpdatesCacheAfterQuery
+ * @tc.desc: test IsLocked, the lock and unlock events keep the cached state fresh after the
+ *           first query filled it
+ * @tc.type: FUNC
+ * @tc.require:
+ * @tc.author: agent
+ */
+HWTEST_F(ScreenTest, Screen_IsLocked_EventUpdatesCacheAfterQuery, TestSize.Level0)
+{
+    ScreenLockManager::SetLockedWithUserId(TEST_USER_ID, false);
+    EXPECT_FALSE(screen_->IsLocked(TEST_USER_ID)); // filled by the query
+
+    OHOS::EventFwk::CommonEventManager::PublishScreenLockedEvent(TEST_USER_ID);
+    EXPECT_TRUE(screen_->IsLocked(TEST_USER_ID)); // refreshed by the event
+
+    OHOS::EventFwk::CommonEventManager::PublishScreenUnlockEvent(TEST_USER_ID);
+    EXPECT_FALSE(screen_->IsLocked(TEST_USER_ID));
+}
+/**
+ * @tc.name: Screen_GetTask_RetryExhausted_StopsRetrying
+ * @tc.desc: test GetTask, once the fast retries are exhausted the screen stops retrying,
+ *           the lock state queries still work on demand
+ * @tc.type: FUNC
+ * @tc.require:
+ * @tc.author: agent
+ */
+HWTEST_F(ScreenTest, Screen_GetTask_RetryExhausted_StopsRetrying, TestSize.Level0)
+{
+    OHOS::EventFwk::CommonEventManager::SetSubscribeResult(false);
+    ScreenLockManager::SetLockedWithUserId(TEST_USER_ID, false);
+
+    auto task = ScreenTestHelper::GetTask(*screen_, MAX_RETRY_TIMES);
+    ASSERT_TRUE(task);
+    task(); // the fast retry budget is exhausted, no more retry is scheduled
+
+    // the lock state queries do not depend on the subscription
+    EXPECT_FALSE(screen_->IsLocked(TEST_USER_ID));
+}
 /**
  * @tc.name: MultiUserNotify001
  * @tc.desc: notify different users to observers

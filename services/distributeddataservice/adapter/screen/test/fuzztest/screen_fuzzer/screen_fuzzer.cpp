@@ -47,7 +47,8 @@ void SubscribeFuzz(FuzzedDataProvider &provider)
     std::string name = provider.ConsumeRandomLengthString();
     observer->SetName(name);
     screen->Subscribe(observer);
-    screen->IsLocked();
+    int user = provider.ConsumeIntegral<int>();
+    screen->IsLocked(user);
 }
 
 void UnsubscribeFuzz(FuzzedDataProvider &provider)

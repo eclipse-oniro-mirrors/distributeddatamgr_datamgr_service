@@ -18,6 +18,10 @@
 #include <gtest/gtest.h>
 
 #include "device_manager_adapter.h"
+#include "screen/screen_manager.h"
+#include "screen_manager_mock.h"
+#include "store/general_store.h"
+#include "utils/constant.h"
 
 using namespace testing::ext;
 using namespace OHOS::DistributedKv;
@@ -202,5 +206,137 @@ HWTEST_F(SecurityTest, GetSecurityOption004, TestSize.Level1)
     EXPECT_EQ(res, DBStatus::OK);
     EXPECT_EQ(getOption.securityLabel, S3);
     EXPECT_EQ(getOption.securityFlag, SECE);
+}
+
+/**
+ * @tc.name: Security_IsAccessControlled_PropertyEL4UserLocked_ReturnsTrue
+ * @tc.desc: Test that IsAccessControlled with property returns true when the area is EL4 and the
+ *           screen of the user in the property is locked, the keys of the store are unloaded
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(SecurityTest, Security_IsAccessControlled_PropertyEL4UserLocked_ReturnsTrue, TestSize.Level1)
+{
+    auto screenManagerMock = std::make_shared<DistributedData::ScreenManagerMock>();
+    EXPECT_CALL(*screenManagerMock, IsLocked(100)).WillOnce(testing::Return(true));
+    DistributedData::ScreenManager::RegisterInstance(screenManagerMock);
+
+    auto security = std::make_shared<DistributedKv::Security>();
+    DistributedDB::Property property = {
+        { OHOS::DistributedData::Constant::USER_ID, static_cast<uint32_t>(100) },
+        { OHOS::DistributedData::Constant::AREA, static_cast<uint32_t>(OHOS::DistributedData::GeneralStore::EL4) },
+    };
+    EXPECT_TRUE(security->IsAccessControlled(property));
+
+    DistributedData::ScreenManager::RegisterInstance(nullptr);
+}
+
+/**
+ * @tc.name: Security_IsAccessControlled_PropertyEL4UserUnlocked_ReturnsFalse
+ * @tc.desc: Test that IsAccessControlled with property returns false when the area is EL4 but the
+ *           screen of the user in the property is unlocked
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(SecurityTest, Security_IsAccessControlled_PropertyEL4UserUnlocked_ReturnsFalse, TestSize.Level1)
+{
+    auto screenManagerMock = std::make_shared<DistributedData::ScreenManagerMock>();
+    EXPECT_CALL(*screenManagerMock, IsLocked(100)).WillOnce(testing::Return(false));
+    DistributedData::ScreenManager::RegisterInstance(screenManagerMock);
+
+    auto security = std::make_shared<DistributedKv::Security>();
+    DistributedDB::Property property = {
+        { OHOS::DistributedData::Constant::USER_ID, static_cast<uint32_t>(100) },
+        { OHOS::DistributedData::Constant::AREA, static_cast<uint32_t>(OHOS::DistributedData::GeneralStore::EL4) },
+    };
+    EXPECT_FALSE(security->IsAccessControlled(property));
+
+    DistributedData::ScreenManager::RegisterInstance(nullptr);
+}
+
+/**
+ * @tc.name: Security_IsAccessControlled_PropertyUserZero_ReturnsFalse
+ * @tc.desc: Test that IsAccessControlled with property returns false when the user is 0,
+ *           the system user takes no user level lock state
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(SecurityTest, Security_IsAccessControlled_PropertyUserZero_ReturnsFalse, TestSize.Level1)
+{
+    auto screenManagerMock = std::make_shared<DistributedData::ScreenManagerMock>();
+    // the lock state of user 0 must not be queried
+    EXPECT_CALL(*screenManagerMock, IsLocked(0)).Times(0);
+    DistributedData::ScreenManager::RegisterInstance(screenManagerMock);
+
+    auto security = std::make_shared<DistributedKv::Security>();
+    DistributedDB::Property property = {
+        { OHOS::DistributedData::Constant::USER_ID, static_cast<uint32_t>(0) },
+        { OHOS::DistributedData::Constant::AREA,
+            static_cast<uint32_t>(OHOS::DistributedData::GeneralStore::EL4) },
+    };
+    EXPECT_FALSE(security->IsAccessControlled(property));
+
+    DistributedData::ScreenManager::RegisterInstance(nullptr);
+}
+/**
+ * @tc.name: Security_IsAccessControlled_PropertyNotEL4_ReturnsFalse
+ * @tc.desc: Test that IsAccessControlled with property returns false when the area is not EL4,
+ *           the keys of the non el4 store are not unloaded with the screen lock
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(SecurityTest, Security_IsAccessControlled_PropertyNotEL4_ReturnsFalse, TestSize.Level1)
+{
+    auto screenManagerMock = std::make_shared<DistributedData::ScreenManagerMock>();
+    EXPECT_CALL(*screenManagerMock, IsLocked(100)).Times(0); // must not be queried for a non el4 area
+    DistributedData::ScreenManager::RegisterInstance(screenManagerMock);
+
+    auto security = std::make_shared<DistributedKv::Security>();
+    DistributedDB::Property property = {
+        { OHOS::DistributedData::Constant::USER_ID, static_cast<uint32_t>(100) },
+        { OHOS::DistributedData::Constant::AREA, static_cast<uint32_t>(OHOS::DistributedData::GeneralStore::EL2) },
+    };
+    EXPECT_FALSE(security->IsAccessControlled(property));
+
+    DistributedData::ScreenManager::RegisterInstance(nullptr);
+}
+
+/**
+ * @tc.name: Security_IsAccessControlled_PropertyKeysMissing_ReturnsFalse
+ * @tc.desc: Test that IsAccessControlled with property returns false when the user or the area is
+ *           missing in the property or holds an unexpected type, keep the legacy behavior
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(SecurityTest, Security_IsAccessControlled_PropertyKeysMissing_ReturnsFalse, TestSize.Level1)
+{
+    auto screenManagerMock = std::make_shared<DistributedData::ScreenManagerMock>();
+    DistributedData::ScreenManager::RegisterInstance(screenManagerMock);
+
+    auto security = std::make_shared<DistributedKv::Security>();
+    // empty property, nothing is set
+    DistributedDB::Property emptyProperty;
+    EXPECT_FALSE(security->IsAccessControlled(emptyProperty));
+
+    // only the area is set
+    DistributedDB::Property areaOnlyProperty = {
+        { OHOS::DistributedData::Constant::AREA, static_cast<uint32_t>(OHOS::DistributedData::GeneralStore::EL4) },
+    };
+    EXPECT_FALSE(security->IsAccessControlled(areaOnlyProperty));
+
+    // only the user is set
+    DistributedDB::Property userOnlyProperty = {
+        { OHOS::DistributedData::Constant::USER_ID, static_cast<uint32_t>(100) },
+    };
+    EXPECT_FALSE(security->IsAccessControlled(userOnlyProperty));
+
+    // the user is not a number, the value type is unexpected
+    DistributedDB::Property badTypeProperty = {
+        { OHOS::DistributedData::Constant::USER_ID, std::string("100") },
+        { OHOS::DistributedData::Constant::AREA, static_cast<uint32_t>(OHOS::DistributedData::GeneralStore::EL4) },
+    };
+    EXPECT_FALSE(security->IsAccessControlled(badTypeProperty));
+
+    DistributedData::ScreenManager::RegisterInstance(nullptr);
 }
 } // namespace OHOS::Test

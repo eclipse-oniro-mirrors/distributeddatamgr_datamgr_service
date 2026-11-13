@@ -105,6 +105,30 @@ public:
         return metaData;
     }
 
+    StoreMetaData GetAreaStoreMetaData(
+        const std::string &storeId, uint32_t storeType, uint32_t tokenId, const std::string &user, int32_t area)
+    {
+        auto meta = GetStoreMetaData(storeId);
+        meta.storeType = storeType;
+        meta.tokenId = tokenId;
+        meta.user = user;
+        meta.area = area;
+        return meta;
+    }
+
+    int32_t RegisterAreaStoreCreator(
+        uint32_t storeType, std::shared_ptr<AutoCacheTestGeneralStoreMock> mock, int *creationCount)
+    {
+        AutoCache::Creator creator = [mock, creationCount](const StoreMetaData &,
+                                         const AutoCache::StoreOption &) -> std::pair<int32_t, GeneralStore *> {
+            if (creationCount != nullptr) {
+                ++(*creationCount);
+            }
+            return { E_OK, mock.get() };
+        };
+        return AutoCache::GetInstance().RegCreator(storeType, creator);
+    }
+
     std::string GetValidPath()
     {
         auto base = std::filesystem::temp_directory_path();
@@ -755,6 +779,35 @@ HWTEST_F(AutoCacheTest, AutoCache_GetDBStore_DisableEnable_StoreAvailability, Te
 }
 
 /**
+ * @tc.name: AutoCache_GetDBStore_User0EL4Store_OpenWithoutUserLockCheck
+ * @tc.desc: Test that the el4 store of user 0 opens without the user level lock check,
+ *           following the user 0 convention of CheckStatusBeforeOpen
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(AutoCacheTest, AutoCache_GetDBStore_User0EL4Store_OpenWithoutUserLockCheck, TestSize.Level1)
+{
+    const uint32_t el4StoreType = 13;
+    const uint32_t tokenId = 413;
+
+    auto screenManagerMock = std::make_shared<ScreenManagerMock>();
+    // user 0 takes no user level lock state, the lock state of it must not be queried
+    EXPECT_CALL(*screenManagerMock, IsLocked(0)).Times(0);
+    ScreenManager::RegisterInstance(screenManagerMock);
+    accountDelegatProxy->SetAccountDelegateMock(defaultAccountDelegateMock);
+
+    auto mock = std::make_shared<AutoCacheTestGeneralStoreMock>();
+    EXPECT_CALL(*mock, SetExecutor).Times(1);
+    ASSERT_EQ(RegisterAreaStoreCreator(el4StoreType, mock, nullptr), E_OK);
+
+    auto meta = GetAreaStoreMetaData("user0_el4_test.db", el4StoreType, tokenId, "0",
+        GeneralStore::Area::EL4);
+    auto [err, store] = AutoCache::GetInstance().GetDBStore(meta, {});
+    EXPECT_EQ(err, E_OK);
+    ASSERT_NE(store, nullptr);
+    EXPECT_EQ(store.get(), mock.get());
+}
+/**
  * @tc.name: AutoCache_GetDBStore_CheckStatusBeforeOpen_EL4ScreenLocked
  * @tc.desc: Test that GetDBStore returns E_SCREEN_LOCKED when area is EL4 and screen is locked
  * Step 1: Create mock ScreenManager that reports screen as locked
@@ -768,9 +821,9 @@ HWTEST_F(AutoCacheTest, AutoCache_GetDBStore_CheckStatusBeforeOpen_EL4ScreenLock
     const uint32_t storeType = 13;
     const uint32_t tokenId = 403;
 
-    // Create mock screen manager that reports screen as locked
+    // Create mock screen manager that reports screen of the user as locked
     auto screenManagerMock = std::make_shared<ScreenManagerMock>();
-    EXPECT_CALL(*screenManagerMock, IsLocked()).WillOnce(Return(true));
+    EXPECT_CALL(*screenManagerMock, IsLocked(100)).WillRepeatedly(Return(true));
 
     // Register the mock instance
     ScreenManager::RegisterInstance(screenManagerMock);
@@ -790,6 +843,7 @@ HWTEST_F(AutoCacheTest, AutoCache_GetDBStore_CheckStatusBeforeOpen_EL4ScreenLock
     auto meta = GetStoreMetaData("el4_screen_locked_test.db");
     meta.storeType = storeType;
     meta.tokenId = tokenId;
+    meta.user = "100";
     meta.area = GeneralStore::Area::EL4;  // This area checks for screen lock
 
     // Call GetDBStore and expect E_SCREEN_LOCKED error
@@ -903,9 +957,9 @@ HWTEST_F(AutoCacheTest, AutoCache_GetDBStore_CheckStatusBeforeOpen_EL4ScreenUnlo
     const uint32_t storeType = 17;
     const uint32_t tokenId = 407;
 
-    // Create mock screen manager that reports screen as unlocked
+    // Create mock screen manager that reports screen of the user as unlocked
     auto screenManagerMock = std::make_shared<ScreenManagerMock>();
-    EXPECT_CALL(*screenManagerMock, IsLocked()).WillOnce(Return(false));
+    EXPECT_CALL(*screenManagerMock, IsLocked(100)).WillRepeatedly(Return(false));
 
     // Register the mock instance
     ScreenManager::RegisterInstance(screenManagerMock);
@@ -991,6 +1045,241 @@ HWTEST_F(AutoCacheTest, AutoCache_GetDBStore_CheckStatusBeforeOpen_ValidUserVeri
     EXPECT_EQ(creationCount, 1);
 }
 
+/**
+ * @tc.name: AutoCache_GetStoresIfPresent_EL4UserLocked_FilterOutDelegate
+ * @tc.desc: Test that GetStoresIfPresent does not hand out the delegate of the el4 store whose
+ *           user is locked, the keys of the store are unloaded and it is not accessible
+ * Step 1: Create the el4 store of user 100 while the user is unlocked
+ * Step 2: Lock user 100
+ * Step 3: Call GetStoresIfPresent with empty key and with the specific store key
+ * Step 4: Verify no delegate is returned for the el4 store while a non el4 store is returned
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(AutoCacheTest, AutoCache_GetStoresIfPresent_EL4UserLocked_FilterOutDelegate, TestSize.Level1)
+{
+    const uint32_t el4StoreType = 8;
+    const uint32_t el2StoreType = 9;
+    const uint32_t tokenId = 409;
+
+    auto screenManagerMock = std::make_shared<ScreenManagerMock>();
+    // unlock the user to create the store, then keep it locked
+    EXPECT_CALL(*screenManagerMock, IsLocked(100)).WillOnce(Return(false)).WillRepeatedly(Return(true));
+    ScreenManager::RegisterInstance(screenManagerMock);
+    accountDelegatProxy->SetAccountDelegateMock(defaultAccountDelegateMock);
+
+    auto el4Mock = std::make_shared<AutoCacheTestGeneralStoreMock>();
+    EXPECT_CALL(*el4Mock, SetExecutor).Times(1);
+    ASSERT_EQ(
+        AutoCache::GetInstance().RegCreator(el4StoreType,
+            [el4Mock](const StoreMetaData &, const AutoCache::StoreOption &) -> std::pair<int32_t, GeneralStore *> {
+                return { E_OK, el4Mock.get() };
+            }),
+        E_OK);
+    auto el2Mock = std::make_shared<AutoCacheTestGeneralStoreMock>();
+    EXPECT_CALL(*el2Mock, SetExecutor).Times(1);
+    ASSERT_EQ(
+        AutoCache::GetInstance().RegCreator(el2StoreType,
+            [el2Mock](const StoreMetaData &, const AutoCache::StoreOption &) -> std::pair<int32_t, GeneralStore *> {
+                return { E_OK, el2Mock.get() };
+            }),
+        E_OK);
+
+    auto el4Meta = GetStoreMetaData("el4_locked_present_test.db");
+    el4Meta.storeType = el4StoreType;
+    el4Meta.tokenId = tokenId;
+    el4Meta.user = "100";
+    el4Meta.area = GeneralStore::Area::EL4;
+    auto [err, store] = AutoCache::GetInstance().GetDBStore(el4Meta, {});
+    EXPECT_EQ(err, E_OK);
+    ASSERT_NE(store, nullptr);
+
+    auto el2Meta = GetStoreMetaData("el2_locked_present_test.db");
+    el2Meta.storeType = el2StoreType;
+    el2Meta.tokenId = tokenId;
+    el2Meta.user = "100";
+    el2Meta.area = GeneralStore::Area::EL2;
+    std::tie(err, store) = AutoCache::GetInstance().GetDBStore(el2Meta, {});
+    EXPECT_EQ(err, E_OK);
+    ASSERT_NE(store, nullptr);
+
+    // the el4 store must not be handed out with the empty key, the el2 store is not affected
+    auto stores = AutoCache::GetInstance().GetStoresIfPresent(tokenId);
+    ASSERT_EQ(stores.size(), 1);
+    EXPECT_EQ(stores.front().get(), el2Mock.get());
+
+    // the el4 store must not be handed out with the specific store key either
+    stores = AutoCache::GetInstance().GetStoresIfPresent(tokenId, el4Meta.dataDir, el4Meta.storeId);
+    ASSERT_EQ(stores.size(), 0);
+
+    // the el2 store is handed out with its specific store key
+    stores = AutoCache::GetInstance().GetStoresIfPresent(tokenId, el2Meta.dataDir, el2Meta.storeId);
+    ASSERT_EQ(stores.size(), 1);
+    EXPECT_EQ(stores.front().get(), el2Mock.get());
+}
+
+/**
+ * @tc.name: AutoCache_GetStoresIfPresent_EL4UserUnlocked_ReturnDelegate
+ * @tc.desc: Test that GetStoresIfPresent returns the el4 delegate when the user is unlocked
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(AutoCacheTest, AutoCache_GetStoresIfPresent_EL4UserUnlocked_ReturnDelegate, TestSize.Level1)
+{
+    const uint32_t el4StoreType = 11;
+    const uint32_t tokenId = 410;
+
+    auto screenManagerMock = std::make_shared<ScreenManagerMock>();
+    EXPECT_CALL(*screenManagerMock, IsLocked(100)).WillRepeatedly(Return(false));
+    ScreenManager::RegisterInstance(screenManagerMock);
+    accountDelegatProxy->SetAccountDelegateMock(defaultAccountDelegateMock);
+
+    auto el4Mock = std::make_shared<AutoCacheTestGeneralStoreMock>();
+    EXPECT_CALL(*el4Mock, SetExecutor).Times(1);
+    ASSERT_EQ(
+        AutoCache::GetInstance().RegCreator(el4StoreType,
+            [el4Mock](const StoreMetaData &, const AutoCache::StoreOption &) -> std::pair<int32_t, GeneralStore *> {
+                return { E_OK, el4Mock.get() };
+            }),
+        E_OK);
+
+    auto el4Meta = GetStoreMetaData("el4_unlocked_present_test.db");
+    el4Meta.storeType = el4StoreType;
+    el4Meta.tokenId = tokenId;
+    el4Meta.user = "100";
+    el4Meta.area = GeneralStore::Area::EL4;
+    auto [err, store] = AutoCache::GetInstance().GetDBStore(el4Meta, {});
+    EXPECT_EQ(err, E_OK);
+    ASSERT_NE(store, nullptr);
+
+    auto stores = AutoCache::GetInstance().GetStoresIfPresent(tokenId);
+    ASSERT_EQ(stores.size(), 1);
+    EXPECT_EQ(stores.front().get(), el4Mock.get());
+
+    stores = AutoCache::GetInstance().GetStoresIfPresent(tokenId, el4Meta.dataDir, el4Meta.storeId);
+    ASSERT_EQ(stores.size(), 1);
+    EXPECT_EQ(stores.front().get(), el4Mock.get());
+}
+
+/**
+ * @tc.name: AutoCache_CloseStore_FilterEL4UserLocked_ForcedClose
+ * @tc.desc: Test that CloseStore with a filter forces the close of the el4 store even while the
+ *           user screen is locked, the filtered close is only invoked on the account switch and
+ *           keeping the store open would risk the database consistency
+ * Step 1: Create the el4 store of user 100 while the user is unlocked
+ * Step 2: Lock user 100 and close the store with an always true filter
+ * Step 3: Try to open the store again while the user is still locked
+ * Step 4: Verify the open is rejected by the status check and the creator is not called again
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(AutoCacheTest, AutoCache_CloseStore_FilterEL4UserLocked_ForcedClose, TestSize.Level1)
+{
+    const uint32_t el4StoreType = 12;
+    const uint32_t tokenId = 411;
+
+    auto screenManagerMock = std::make_shared<ScreenManagerMock>();
+    // the creation needs the unlocked user, the later opens keep the user locked
+    EXPECT_CALL(*screenManagerMock, IsLocked(100)).WillOnce(Return(false)).WillRepeatedly(Return(true));
+    ScreenManager::RegisterInstance(screenManagerMock);
+    accountDelegatProxy->SetAccountDelegateMock(defaultAccountDelegateMock);
+
+    auto el4Mock = std::make_shared<AutoCacheTestGeneralStoreMock>();
+    EXPECT_CALL(*el4Mock, SetExecutor).Times(1);
+    auto creationCount = 0;
+    ASSERT_EQ(RegisterAreaStoreCreator(el4StoreType, el4Mock, &creationCount), E_OK);
+
+    auto el4Meta = GetAreaStoreMetaData("el4_locked_filter_close_test.db", el4StoreType, tokenId, "100",
+        GeneralStore::Area::EL4);
+    auto [err, store] = AutoCache::GetInstance().GetDBStore(el4Meta, {});
+    EXPECT_EQ(err, E_OK);
+    ASSERT_NE(store, nullptr);
+    store = nullptr;
+
+    // the filtered close force closes the el4 store even while the user is locked
+    AutoCache::GetInstance().CloseStore([](const StoreMetaData &) { return true; });
+
+    // the next open while the user is still locked is rejected by the status check before open
+    auto [err2, store2] = AutoCache::GetInstance().GetDBStore(el4Meta, {});
+    EXPECT_EQ(err2, E_SCREEN_LOCKED);
+    EXPECT_EQ(store2, nullptr);
+    EXPECT_EQ(creationCount, 1);
+}
+/**
+ * @tc.name: AutoCache_GarbageCollect_EL4LockedUser_KeepEL4CloseOthers
+ * @tc.desc: Test that the garbage collection keeps the el4 store of a locked user while it still
+ *           collects the non el4 stores of the unlocked users. The collection is driven by the
+ *           background timer, the same way the production service does it.
+ * Step 1: Create an el4 store of user 100 and an el2 store of user 101 with a short interval
+ * Step 2: Lock user 100 only and wait for the interval collection
+ * Step 3: Verify the el4 store of user 100 is still cached after the collection
+ * Step 4: Verify the el2 store of user 101 is re-created after the collection
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(AutoCacheTest, AutoCache_GarbageCollect_EL4LockedUser_KeepEL4CloseOthers, TestSize.Level1)
+{
+    const uint32_t el4StoreType = 6;
+    const uint32_t el2StoreType = 7;
+    const uint32_t tokenId = 412;
+    const uint32_t garbageInterval = 100; // collect once 100ms
+
+    auto screenManagerMock = std::make_shared<ScreenManagerMock>();
+    // the lock state of user 100 is changed by the test steps, a fixed call sequence is not stable
+    // against the background timer cycles
+    auto isUser100Locked = std::make_shared<bool>(false);
+    ON_CALL(*screenManagerMock, IsLocked(100)).WillByDefault(Invoke([isUser100Locked](int32_t user) {
+        return *isUser100Locked;
+    }));
+    // user 101 is unlocked, its non el4 store is collectable
+    ON_CALL(*screenManagerMock, IsLocked(101)).WillByDefault(Return(false));
+    ScreenManager::RegisterInstance(screenManagerMock);
+    accountDelegatProxy->SetAccountDelegateMock(defaultAccountDelegateMock);
+
+    auto el4Mock = std::make_shared<AutoCacheTestGeneralStoreMock>();
+    EXPECT_CALL(*el4Mock, SetExecutor).Times(1);
+    auto el4CreationCount = 0;
+    ASSERT_EQ(RegisterAreaStoreCreator(el4StoreType, el4Mock, &el4CreationCount), E_OK);
+    auto el2Mock = std::make_shared<AutoCacheTestGeneralStoreMock>();
+    EXPECT_CALL(*el2Mock, SetExecutor).Times(2);
+    auto el2CreationCount = 0;
+    ASSERT_EQ(RegisterAreaStoreCreator(el2StoreType, el2Mock, &el2CreationCount), E_OK);
+
+    AutoCache::GetInstance().Configure(garbageInterval);
+    auto el4Meta = GetAreaStoreMetaData("el4_locked_gc_test.db", el4StoreType, tokenId, "100", GeneralStore::Area::EL4);
+    auto [err, store] = AutoCache::GetInstance().GetDBStore(el4Meta, {});
+    EXPECT_EQ(err, E_OK);
+    ASSERT_NE(store, nullptr);
+    store = nullptr;
+
+    auto el2Meta = GetAreaStoreMetaData("el2_gc_test.db", el2StoreType, tokenId, "101", GeneralStore::Area::EL2);
+    std::tie(err, store) = AutoCache::GetInstance().GetDBStore(el2Meta, {});
+    EXPECT_EQ(err, E_OK);
+    ASSERT_NE(store, nullptr);
+    store = nullptr;
+
+    // lock user 100, the timer collection must keep its el4 store and collect the expired el2 store
+    *isUser100Locked = true;
+    std::this_thread::sleep_for(std::chrono::milliseconds(garbageInterval * 3));
+    // stretch the interval back and drain the pending short cycle while the user is still locked,
+    // so no further collection races with the unlocked checks below
+    AutoCache::GetInstance().Configure(1000 * 60);
+    std::this_thread::sleep_for(std::chrono::milliseconds(garbageInterval * 2));
+    *isUser100Locked = false;
+
+    // the el4 store of the locked user survives the collection
+    auto stores = AutoCache::GetInstance().GetStoresIfPresent(tokenId);
+    ASSERT_EQ(stores.size(), 1);
+    EXPECT_EQ(stores.front().get(), el4Mock.get());
+    EXPECT_EQ(el4CreationCount, 1);
+
+    // the el2 store of the unlocked user is collected and re-created
+    auto [err3, store3] = AutoCache::GetInstance().GetDBStore(el2Meta, {});
+    EXPECT_EQ(err3, E_OK);
+    ASSERT_NE(store3, nullptr);
+    EXPECT_EQ(store3.get(), el2Mock.get());
+    EXPECT_EQ(el2CreationCount, 2);
+}
 /**
  * @tc.name: AutoCache_GenerateKey_NonEmptyPath_NonExistentPath
  * @tc.desc: Test GenerateKey indirectly when path is non-empty but does not exist.
@@ -1335,6 +1624,42 @@ HWTEST_F(AutoCacheTest, AutoCache_GenerateKey_GetStoresIfPresent_NonEmptyPath, T
     // Verify no match with different invalid path
     stores = AutoCache::GetInstance().GetStoresIfPresent(tokenId, "/nonexistent/other/path", "get_stores_invalid.db");
     EXPECT_EQ(stores.size(), 0);
+}
+
+/**
+ * @tc.name: GetStoresIfPresent_MissingStore_PreservesOtherCachedStores
+ * @tc.desc: A failed lookup must neither evict other stores nor invoke their creator again.
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(AutoCacheTest, GetStoresIfPresent_MissingStore_PreservesOtherCachedStores, TestSize.Level1)
+{
+    constexpr uint32_t missingStoreType = 25;
+    constexpr uint32_t missingTokenId = 60525;
+    auto mock = std::make_shared<NiceMock<AutoCacheTestGeneralStoreMock>>();
+    auto creations = std::make_shared<int>(0);
+    auto result = AutoCache::GetInstance().RegCreator(
+        missingStoreType, [mock, creations](const StoreMetaData &, const AutoCache::StoreOption &) {
+            ++(*creations);
+            return std::pair<int32_t, GeneralStore *>{ E_OK, mock.get() };
+        });
+    ASSERT_EQ(result, E_OK);
+    auto meta = GetStoreMetaData("cached_store.db");
+    meta.tokenId = missingTokenId;
+    meta.storeType = missingStoreType;
+    meta.area = GeneralStore::EL1;
+    auto store = AutoCache::GetInstance().GetStore(meta);
+    ASSERT_NE(store, nullptr);
+    ASSERT_EQ(*creations, 1);
+
+    EXPECT_TRUE(AutoCache::GetInstance().GetStoresIfPresent(missingTokenId, "", "missing_store.db").empty());
+    auto remaining = AutoCache::GetInstance().GetStoresIfPresent(missingTokenId);
+    ASSERT_EQ(remaining.size(), 1u);
+    EXPECT_EQ(remaining.front().get(), store.get());
+    auto reopened = AutoCache::GetInstance().GetStore(meta);
+    EXPECT_EQ(reopened.get(), store.get());
+    EXPECT_EQ(*creations, 1);
+    AutoCache::GetInstance().CloseStore(missingTokenId);
 }
 } // namespace DistributedDataAutoCacheTest
 } // namespace OHOS::Test

@@ -43,6 +43,11 @@ public:
     // Check is the access of this device in locked state
     bool IsAccessControlled() const override;
 
+    // Check is the access of the store with the given property in locked state. The property of the
+    // store contains the user and the security area, the el4 store of a screen locked user is not
+    // accessible, its keys are unloaded.
+    bool IsAccessControlled(const DistributedDB::Property &property) const override;
+
     // Set the SecurityOption to the targe filepath.
     // If the filePath is a directory, the function would not effective.
     DBStatus SetSecurityOption(const std::string &filePath, const SecurityOption &option) override;

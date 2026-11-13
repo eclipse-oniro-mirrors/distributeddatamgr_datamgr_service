@@ -21,6 +21,11 @@ bool ScreenMock::IsLocked()
     return isLocked_;
 }
 
+bool ScreenMock::IsLocked(int32_t user)
+{
+    return isLocked_;
+}
+
 bool ScreenMock::IsScreenOff()
 {
     return false;

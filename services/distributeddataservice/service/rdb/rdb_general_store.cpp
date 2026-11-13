@@ -273,7 +273,9 @@ int32_t RdbGeneralStore::InitDelegate()
     if (delegate_ == nullptr) {
         return ret != DBStatus::OK ? ConvertStatus(ret) : GenErr::E_ERROR;
     }
-    auto res = delegate_->SetProperty({ { Constant::TOKEN_ID, meta_.tokenId } });
+    auto res = delegate_->SetProperty({ { Constant::TOKEN_ID, meta_.tokenId },
+        { Constant::USER_ID, static_cast<uint32_t>(atoi(meta_.user.c_str())) },
+        { Constant::AREA, static_cast<uint32_t>(meta_.area) } });
     if (res != DBStatus::OK) {
         ZLOGE("set DB property fail, res:%{public}d", res);
     }

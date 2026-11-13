@@ -68,6 +68,11 @@ bool ScreenManager::IsLocked()
     return false;
 }
 
+bool ScreenManager::IsLocked(int32_t user)
+{
+    return false;
+}
+
 bool ScreenManager::IsScreenOff()
 {
     return false;

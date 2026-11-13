@@ -49,6 +49,7 @@ private:
 class Screen : public ScreenManager {
 public:
     bool IsLocked();
+    bool IsLocked(int32_t user);
     bool IsScreenOff();
     void Subscribe(std::shared_ptr<Observer> observer) __attribute__((no_sanitize("cfi")));
     void Unsubscribe(std::shared_ptr<Observer> observer) __attribute__((no_sanitize("cfi")));
@@ -65,6 +66,7 @@ private:
     void NotifyScreenOff(int32_t user);
     ExecutorPool::Task GetTask(uint32_t retry);
     std::atomic<bool> isScreenOff_{false};
+    ConcurrentMap<int32_t, bool> lockStates_{};
     ConcurrentMap<std::string, std::shared_ptr<Observer>> observerMap_{};
     std::shared_ptr<ExecutorPool> executors_;
     std::shared_ptr<EventSubscriber> eventSubscriber_{};
