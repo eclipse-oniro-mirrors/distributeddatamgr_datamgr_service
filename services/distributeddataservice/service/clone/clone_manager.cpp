@@ -161,7 +161,8 @@ void ReportCloneResult(const CloneReportInfo &info)
     const char *formatType = info.oldFormat ? "old" : "new";
     ZLOGI("Clone summary, userId:%{public}s, osVersion:%{public}s, format:%{public}s, "
         "total:%{public}d, success:%{public}d, skipped:%{public}d",
-        info.userId.c_str(), info.osVersion.c_str(), formatType, info.total, success, info.skipped);
+        info.userId.c_str(), info.osVersion.c_str(), formatType,
+        info.total, success, info.skipped);
     // Reuse the existing BehaviourReporter (writes DATABASE_BEHAVIOUR); pack the clone summary
     // (peer OSVersion, format selection, item counts) into extensionInfo.
     std::string extensionInfo = "osVersion:" + info.osVersion + ", format:" + formatType +
@@ -188,47 +189,38 @@ void ReportCloneResult(const CloneReportInfo &info)
         "APPENDIX", appendix.c_str());
 }
 
-// Loads and re-encrypts a single store's secret key into a BackupItem.
-// Returns true on success; returns false (and increments skipped) on any per-item failure.
-bool BuildBackupItem(const StoreMetaData &storeMeta, const std::string &bundleName,
-    const std::string &userId, bool oldFormat, const std::vector<uint8_t> &iv,
-    SecretKeyBackupData::BackupItem &item, int32_t &skipped)
+void ReportCloneBackup(const std::string &userId, const std::string &osVersion,
+    int32_t total, int32_t skipped)
 {
-    auto key = storeMeta.GetSecretKey();
-    SecretKeyMetaData secretKeyMeta;
-    if (!MetaDataManager::GetInstance().LoadMeta(key, secretKeyMeta, true)) {
-        ++skipped;
-        return false;
-    };
-    // Old format reuses the shared iv; new format starts with an empty nonce so
-    // ReEncryptKey generates a fresh random one per item.
-    std::vector<uint8_t> nonce = oldFormat ? iv : std::vector<uint8_t>{};
-    auto reEncryptedKey = ReEncryptKey(secretKeyMeta, storeMeta, nonce);
-    if (reEncryptedKey.size() == 0) {
-        ++skipped;
-        return false;
-    };
-    item.time = secretKeyMeta.time;
-    item.bundleName = bundleName;
-    item.dbName = storeMeta.storeId;
-    item.instanceId = storeMeta.instanceId;
-    item.sKey = DistributedData::Base64::Encode(reEncryptedKey);
-    item.storeType = secretKeyMeta.storeType;
-    item.user = userId;
-    item.area = storeMeta.area;
-    if (!oldFormat) {
-        item.nonce = DistributedData::Base64::Encode(nonce);
-    }
-    return true;
+    ReportCloneResult({
+        .behaviourType = BehaviourType::DATABASE_BACKUP,
+        .userId = userId,
+        .osVersion = osVersion,
+        .oldFormat = IsOldOsVersion(osVersion),
+        .total = total,
+        .skipped = skipped,
+    });
+}
+
+void ReportCloneRestore(const std::string &userId, const std::string &osVersion,
+    int32_t total, int32_t skipped)
+{
+    ReportCloneResult({
+        .behaviourType = BehaviourType::DATABASE_RECOVERY,
+        .userId = userId,
+        .osVersion = osVersion,
+        .oldFormat = IsOldOsVersion(osVersion),
+        .total = total,
+        .skipped = skipped,
+    });
 }
 
 std::string GetSecretKeyBackup(const std::vector<DistributedData::CloneBundleInfo> &bundleInfos,
     const std::string &userId, const std::vector<uint8_t> &iv, const std::string &localDeviceId,
-    const std::string &osVersion)
+    const std::string &osVersion, int32_t *totalOut, int32_t *skippedOut)
 {
     SecretKeyBackupData backupInfos;
-    int32_t total = 0;
-    int32_t skipped = 0;
+    int32_t total = 0, skipped = 0;
     bool oldFormat = IsOldOsVersion(osVersion);
     for (const auto &bundleInfo : bundleInfos) {
         std::string metaPrefix = StoreMetaData::GetKey(
@@ -236,29 +228,42 @@ std::string GetSecretKeyBackup(const std::vector<DistributedData::CloneBundleInf
         std::vector<StoreMetaData> storeMetas;
         if (!MetaDataManager::GetInstance().LoadMeta(metaPrefix, storeMetas, true)) {
             continue;
-        };
+        }
         for (const auto &storeMeta : storeMetas) {
             if (!storeMeta.isEncrypt) {
                 continue;
-            };
-            ++total;
-            SecretKeyBackupData::BackupItem item;
-            if (BuildBackupItem(storeMeta, bundleInfo.bundleName, userId, oldFormat, iv, item,
-                skipped)) {
-                backupInfos.infos.push_back(std::move(item));
             }
+            ++total;
+            auto key = storeMeta.GetSecretKey();
+            SecretKeyMetaData secretKeyMeta;
+            if (!MetaDataManager::GetInstance().LoadMeta(key, secretKeyMeta, true)) {
+                ++skipped;
+                continue;
+            }
+            std::vector<uint8_t> nonce = oldFormat ? iv : std::vector<uint8_t>{};
+            auto reEncryptedKey = ReEncryptKey(secretKeyMeta, storeMeta, nonce);
+            if (reEncryptedKey.size() == 0) {
+                ++skipped;
+                continue;
+            }
+            SecretKeyBackupData::BackupItem item;
+            item.time = secretKeyMeta.time;
+            item.bundleName = bundleInfo.bundleName;
+            item.dbName = storeMeta.storeId;
+            item.instanceId = storeMeta.instanceId;
+            item.sKey = DistributedData::Base64::Encode(reEncryptedKey);
+            item.storeType = secretKeyMeta.storeType;
+            item.user = userId;
+            item.area = storeMeta.area;
+            if (!oldFormat) {
+                item.nonce = DistributedData::Base64::Encode(nonce);
+            }
+            backupInfos.infos.push_back(std::move(item));
         }
     }
-    std::string content = Serializable::Marshall(backupInfos);
-    ReportCloneResult({
-        .behaviourType = BehaviourType::DATABASE_BACKUP,
-        .userId = userId,
-        .osVersion = osVersion,
-        .oldFormat = oldFormat,
-        .total = total,
-        .skipped = skipped,
-    });
-    return content;
+    if (totalOut != nullptr) *totalOut = total;
+    if (skippedOut != nullptr) *skippedOut = skipped;
+    return Serializable::Marshall(backupInfos);
 }
 
 int32_t OnBackup(MessageParcel &data, MessageParcel &reply, const std::string &localDeviceId)
@@ -287,9 +292,12 @@ int32_t OnBackup(MessageParcel &data, MessageParcel &reply, const std::string &l
         return -1;
     }
 
+    int32_t total = 0;
+    int32_t skipped = 0;
     auto content = GetSecretKeyBackup(backupInfo.bundleInfos, backupInfo.userId, iv, localDeviceId,
-        backupInfo.osVersion);
+        backupInfo.osVersion, &total, &skipped);
     DeleteCloneKey();
+    ReportCloneBackup(backupInfo.userId, backupInfo.osVersion, total, skipped);
 
     std::string backupPath = DirectoryManager::GetInstance().GetClonePath(backupInfo.userId);
     if (backupPath.empty()) {
@@ -436,14 +444,7 @@ int32_t OnRestore(MessageParcel &data, MessageParcel &reply)
             continue;
         }
     }
-    ReportCloneResult({
-        .behaviourType = BehaviourType::DATABASE_RECOVERY,
-        .userId = backupInfo.userId,
-        .osVersion = backupInfo.osVersion,
-        .oldFormat = IsOldOsVersion(backupInfo.osVersion),
-        .total = total,
-        .skipped = skipped,
-    });
+    ReportCloneRestore(backupInfo.userId, backupInfo.osVersion, total, skipped);
     DeleteCloneKey();
     return ReplyForRestore(reply, 0);
 }
