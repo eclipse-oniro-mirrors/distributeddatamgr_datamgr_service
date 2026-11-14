@@ -139,17 +139,6 @@ std::vector<uint8_t> ReEncryptKey(const SecretKeyMetaData &secretKeyMeta,
     return reEncryptedKey;
 }
 
-// Bundles the parameters for ReportCloneResult so callers pass a single aggregate
-// instead of a long positional argument list.
-struct CloneReportInfo {
-    BehaviourType behaviourType;  // DATABASE_BACKUP or DATABASE_RECOVERY
-    std::string userId;
-    std::string osVersion;
-    bool oldFormat;
-    int32_t total;
-    int32_t skipped;
-};
-
 // Emits a per-operation DFX summary so that the old/new format split and the outcome are
 // observable even when the flow returns normally: an info log for traceability (userId in
 // plaintext via %{public}s), a behaviour report via the existing Reporter singleton
