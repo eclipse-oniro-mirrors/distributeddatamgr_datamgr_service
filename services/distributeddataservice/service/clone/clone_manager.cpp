@@ -210,7 +210,8 @@ std::string GetSecretKeyBackup(const std::vector<DistributedData::CloneBundleInf
     const std::string &osVersion)
 {
     SecretKeyBackupData backupInfos;
-    int32_t total = 0, skipped = 0;
+    int32_t total = 0;
+    int32_t skipped = 0;
     bool oldFormat = IsOldOsVersion(osVersion);
     for (const auto &bundleInfo : bundleInfos) {
         std::string metaPrefix = StoreMetaData::GetKey(
