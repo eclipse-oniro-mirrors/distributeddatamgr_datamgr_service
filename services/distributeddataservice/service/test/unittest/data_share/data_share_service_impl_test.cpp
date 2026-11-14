@@ -16,18 +16,23 @@
 
 #include "data_share_service_impl.h"
 
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include <unistd.h>
+#include <utility>
+#include <vector>
 
 #include "accesstoken_kit.h"
 #include "account_delegate_mock.h"
 #include "bundle_mgr_proxy.h"
+#include "bundlemgr/bundle_mgr_interface.h"
 #include "bundle_utils.h"
 #include "data_share_service_stub.h"
 #include "device_manager_adapter.h"
 #include "dump/dump_manager.h"
 #include "hap_token_info.h"
 #include "ipc_skeleton.h"
+#include "iremote_stub.h"
 #include "iservice_registry.h"
 #include "log_print.h"
 #include "metadata/meta_data_manager.h"
@@ -45,6 +50,14 @@ std::string TBL_NAME1 = "name1";
 std::string BUNDLE_NAME = "ohos.datasharetest.demo";
 namespace OHOS::Test {
 using OHOS::DataShare::LogLabel;
+class BundleMgrMock : public IRemoteStub<AppExecFwk::IBundleMgr> {
+public:
+    MOCK_METHOD(bool, GetBundleInfo,
+        (const std::string &, AppExecFwk::BundleFlag, AppExecFwk::BundleInfo &, int32_t), (override));
+    MOCK_METHOD(bool, GetBundleInfo,
+        (const std::string &, int32_t, AppExecFwk::BundleInfo &, int32_t), (override));
+};
+
 class DataShareServiceImplTest : public testing::Test {
 public:
     static constexpr int64_t USER_TEST = 100;
@@ -65,10 +78,44 @@ public:
     {
     }
     void SetSelfTokenInfo(int32_t user);
+    sptr<BundleMgrMock> MockBundleInfo();
     void SetUp();
     void TearDown();
     static inline AccountDelegateMock *accountDelegateMock = nullptr;
+
+private:
+    sptr<BundleMgrMock> bundleMgrMock_;
+    sptr<IRemoteObject> originalBms_;
+    std::vector<std::pair<std::string, int32_t>> mockedBundles_;
 };
+
+sptr<BundleMgrMock> DataShareServiceImplTest::MockBundleInfo()
+{
+    bundleMgrMock_ = new (std::nothrow) BundleMgrMock();
+    if (bundleMgrMock_ == nullptr) {
+        return nullptr;
+    }
+    auto bundleMgr = BundleMgrProxy::GetInstance();
+    originalBms_ = bundleMgr->proxy_;
+    bundleMgr->proxy_ = bundleMgrMock_->AsObject();
+    // These cases need an accessible provider without URI/store declarations.
+    // Keep BMS responses local because the caller identity is also process-local.
+    auto reply = [this](const std::string &name, int32_t, AppExecFwk::BundleInfo &info, int32_t userId) {
+        if (name.empty()) {
+            return false;
+        }
+        mockedBundles_.emplace_back(name, userId);
+        info = {};
+        info.name = name;
+        info.applicationInfo.isSystemApp = true;
+        return true;
+    };
+    ON_CALL(*bundleMgrMock_, GetBundleInfo(testing::_, testing::An<AppExecFwk::BundleFlag>(), testing::_, testing::_))
+        .WillByDefault(reply);
+    ON_CALL(*bundleMgrMock_, GetBundleInfo(testing::_, testing::An<int32_t>(), testing::_, testing::_))
+        .WillByDefault(reply);
+    return bundleMgrMock_;
+}
 
 void DataShareServiceImplTest::SetSelfTokenInfo(int32_t user)
 {
@@ -103,6 +150,14 @@ void DataShareServiceImplTest::SetUp(void)
 
 void DataShareServiceImplTest::TearDown(void)
 {
+    if (bundleMgrMock_ != nullptr) {
+        auto bundleMgr = BundleMgrProxy::GetInstance();
+        bundleMgr->proxy_ = originalBms_;
+        for (const auto &[name, userId] : mockedBundles_) {
+            bundleMgr->Delete(name, userId, 0);
+        }
+        bundleMgrMock_ = nullptr;
+    }
     testing::Mock::VerifyAndClearExpectations(accountDelegateMock);
     auto tokenId = AccessTokenKit::GetHapTokenID(USER_TEST, "ohos.datasharetest.demo", 0);
     AccessTokenKit::DeleteToken(tokenId);
@@ -498,12 +553,18 @@ HWTEST_F(DataShareServiceImplTest, Publish001, TestSize.Level1)
 
 /**
 * @tc.name: Publish002
+* @tc.author: agent
 * @tc.desc: test Publish uri and GetData bundleName is error
 * @tc.type: FUNC
 * @tc.require:SQL
 */
 HWTEST_F(DataShareServiceImplTest, Publish002, TestSize.Level1)
 {
+    auto bms = MockBundleInfo();
+    ASSERT_NE(bms, nullptr);
+    EXPECT_CALL(*bms, GetBundleInfo("com.acts.ohos.error",
+        testing::TypedEq<AppExecFwk::BundleFlag>(AppExecFwk::BundleFlag::GET_BUNDLE_WITH_EXTENSION_INFO),
+        testing::_, testing::_)).Times(testing::AtLeast(1));
     DataShareServiceImpl dataShareServiceImpl;
     DataShare::Data data;
     std::string bundleName = "com.acts.ohos.error";
@@ -913,12 +974,18 @@ HWTEST_F(DataShareServiceImplTest, CheckAllowList002, TestSize.Level1)
 
 /**
 * @tc.name: GetSilentProxyStatus001
+* @tc.author: agent
 * @tc.desc: test GetSilentProxyStatus001 function while creating helper
 * @tc.type: FUNC
 * @tc.require:
 */
 HWTEST_F(DataShareServiceImplTest, GetSilentProxyStatus001, TestSize.Level1)
 {
+    auto bms = MockBundleInfo();
+    ASSERT_NE(bms, nullptr);
+    EXPECT_CALL(*bms, GetBundleInfo("com.acts.ohos.data.datasharetest",
+        testing::TypedEq<AppExecFwk::BundleFlag>(AppExecFwk::BundleFlag::GET_BUNDLE_WITH_EXTENSION_INFO),
+        testing::_, testing::_)).Times(testing::AtLeast(1));
     ZLOGI("DataShareServiceImplTest GetSilentProxyStatus001 start");
     SetSelfTokenInfo(NATIVE_USER_ID);
     DataShareServiceImpl dataShareServiceImpl;
@@ -1068,12 +1135,16 @@ HWTEST_F(DataShareServiceImplTest, UpdateLaunchInfo001, TestSize.Level1)
 
 /**
 * @tc.name: BundleMgrProxyTest_GetSilentAccessStores
+* @tc.author: agent
 * @tc.desc: Test the GetSilentAccessStores method of BundleMgrProxy
 * @tc.type: FUNC
 * @tc.require:
 */
 HWTEST_F(DataShareServiceImplTest, BundleMgrProxyTest_GetSilentAccessStores, TestSize.Level1)
 {
+    auto bms = MockBundleInfo();
+    ASSERT_NE(bms, nullptr);
+    EXPECT_CALL(*bms, GetBundleInfo(testing::_, testing::An<int32_t>(), testing::_, testing::_)).Times(2);
     ZLOGI("DataShareServiceImplTest BundleMgrProxyTest_GetSilentAccessStores start");
     int32_t user = static_cast<int32_t>(USER_TEST);
     auto bundleMgr = BundleMgrProxy::GetInstance();
@@ -1103,12 +1174,16 @@ HWTEST_F(DataShareServiceImplTest, BundleMgrProxyTest_GetSilentAccessStores, Tes
 
 /**
 * @tc.name: BundleMgrProxyTest_ErrorCases
+* @tc.author: agent
 * @tc.desc: Test GetSilentAccessStores with various error cases
 * @tc.type: FUNC
 * @tc.require:
 */
 HWTEST_F(DataShareServiceImplTest, BundleMgrProxyTest_ErrorCases, TestSize.Level1)
 {
+    auto bms = MockBundleInfo();
+    ASSERT_NE(bms, nullptr);
+    EXPECT_CALL(*bms, GetBundleInfo(testing::_, testing::An<int32_t>(), testing::_, testing::_)).Times(3);
     ZLOGI("DataShareServiceImplTest BundleMgrProxyTest_ErrorCases start");
 
     auto bundleMgr = BundleMgrProxy::GetInstance();
@@ -1153,12 +1228,16 @@ HWTEST_F(DataShareServiceImplTest, BundleMgrProxyTest_BMSNull, TestSize.Level1)
 
 /**
 * @tc.name: BundleMgrProxyTest_EmptyStoresResult
+* @tc.author: agent
 * @tc.desc: Test GetSilentAccessStores returns empty list when no stores found
 * @tc.type: FUNC
 * @tc.require:
 */
 HWTEST_F(DataShareServiceImplTest, BundleMgrProxyTest_EmptyStoresResult, TestSize.Level1)
 {
+    auto bms = MockBundleInfo();
+    ASSERT_NE(bms, nullptr);
+    EXPECT_CALL(*bms, GetBundleInfo(testing::_, testing::An<int32_t>(), testing::_, testing::_)).Times(1);
     ZLOGI("DataShareServiceImplTest BundleMgrProxyTest_EmptyStoresResult start");
 
     auto bundleMgr = BundleMgrProxy::GetInstance();
@@ -1269,12 +1348,16 @@ HWTEST_F(DataShareServiceImplTest, SubscribeTimeChanged001, TestSize.Level1)
 
 /**
  * @tc.name: BundleMgrProxyTest_GetSilentAccessStoresWithStores
+ * @tc.author: agent
  * @tc.desc: Test GetSilentAccessStores when cache miss and BMS returns stores
  * @tc.type: FUNC
  * @tc.require:
  */
 HWTEST_F(DataShareServiceImplTest, BundleMgrProxyTest_GetSilentAccessStoresWithStores, TestSize.Level1)
 {
+    auto bms = MockBundleInfo();
+    ASSERT_NE(bms, nullptr);
+    EXPECT_CALL(*bms, GetBundleInfo(testing::_, testing::An<int32_t>(), testing::_, testing::_)).Times(1);
     ZLOGI("DataShareServiceImplTest BundleMgrProxyTest_GetSilentAccessStoresWithStores start");
 
     auto bundleMgr = BundleMgrProxy::GetInstance();

@@ -1,0 +1,33 @@
+# Copyright (c) 2026 Huawei Device Co., Ltd.
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Compile with the consuming TDD target's sanitizer configuration. A separately
+# sanitized source_set would add a partial __cfi_check to unsanitized tests.
+ddms_access_token_mock_sources = [
+  "//foundation/distributeddatamgr/datamgr_service/services/distributeddataservice/service/test/mock/mock_access_token_state.cpp",
+  "//foundation/distributeddatamgr/datamgr_service/services/distributeddataservice/service/test/mock/mock_access_token_sdk.cpp",
+  "//foundation/distributeddatamgr/datamgr_service/services/distributeddataservice/service/test/mock/mock_access_token_ipc.cpp",
+]
+ddms_access_token_mock_external_deps = [
+  "access_token:libaccesstoken_sdk",
+  "access_token:libnativetoken_shared",
+  "access_token:libtokensetproc_shared",
+  "access_token:libtokenid_sdk",
+  "googletest:gmock",
+  "googletest:gtest",
+  "ipc:ipc_core",
+]
+
+ddms_access_token_mock_configs = [
+  "//foundation/distributeddatamgr/datamgr_service/services/distributeddataservice/service/test/mock:access_token_headers",
+]

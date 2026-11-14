@@ -12,6 +12,7 @@
 # limitations under the License.
 import("//build/test.gni")
 import("//foundation/distributeddatamgr/datamgr_service/datamgr_service.gni")
+import("//foundation/distributeddatamgr/datamgr_service/services/distributeddataservice/service/test/mock/access_token_mock.gni")
 
 module_output_path = "datamgr_service/datamgr_service/distributeddataservice"
 
@@ -739,6 +740,13 @@ ohos_unittest("RouteHeadHandlerImplTest") {
 }
 
 ohos_unittest("BundleCheckerTest") {
+  sanitize = {
+    cfi = true
+    cfi_cross_dso = true
+    debug = false
+    blocklist = "${datamgr_service_path}/cfi_blocklist.txt"
+  }
+
   module_out_path = module_output_path
   sources = [ "unittest/bundle_checker_test.cpp" ]
 
@@ -759,6 +767,15 @@ ohos_unittest("BundleCheckerTest") {
     "${data_service_path}/app/src/checker:distributeddata_checker",
     "${data_service_path}/framework:distributeddatasvcfwk",
     "${data_service_path}/service:distributeddatasvc",
+  ]
+
+  sources += ddms_access_token_mock_sources
+  configs += ddms_access_token_mock_configs
+  external_deps += ddms_access_token_mock_external_deps
+  include_dirs = [ "${data_service_path}/adapter/bms/test/mock" ]
+  external_deps += [
+    "bundle_framework:appexecfwk_core",
+    "samgr:samgr_proxy",
   ]
 }
 

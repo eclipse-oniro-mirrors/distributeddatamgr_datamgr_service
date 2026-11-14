@@ -18,6 +18,7 @@
 
 #include "accesstoken_kit.h"
 #include "account/account_delegate.h"
+#include "account_delegate_mock.h"
 #include "bootstrap.h"
 #include "checker_mock.h"
 #include "cloud/cloud_conflict_handler.h"
@@ -120,6 +121,7 @@ static constexpr const int32_t DELETE = 2;
 static constexpr const int32_t NOT_HANDLE = 3;
 static constexpr const int32_t INTEGRATE = 4;
 static constexpr const int32_t OTHER_ERROR = -1;
+static constexpr int32_t TEST_USER_ID = 100;
 
 static constexpr const char *TEST_TRACE_ID = "123456789";
 static constexpr const char *TEST_CLOUD_BUNDLE = "test_cloud_bundleName";
@@ -210,6 +212,7 @@ protected:
     static void InitMetaData();
     static void InitSchemaMeta();
     static void InitCloudInfo();
+    static void InitAccountMock();
     static void SetCloudSchemaMeta();
     static std::shared_ptr<DBStoreMock> dbStoreMock_;
     static StoreMetaData metaData_;
@@ -218,6 +221,9 @@ protected:
     static NetworkDelegateMock delegate_;
     static int32_t dbStatus_;
     static CloudServerMock cloudServerMock_;
+    static AccountDelegate *originalAccount_;
+    static std::unique_ptr<testing::StrictMock<AccountDelegateMock>> accountMock_;
+    static std::unique_ptr<ExecutorPool> executor_;
 };
 
 std::pair<int32_t, CloudInfo> CloudDataTest::CloudServerMock::GetServerInfo(int32_t userId, bool needSpaceInfo)
@@ -310,6 +316,34 @@ DistributedData::CheckerMock CloudDataTest::checker_;
 NetworkDelegateMock CloudDataTest::delegate_;
 int32_t CloudDataTest::dbStatus_ = E_OK;
 CloudDataTest::CloudServerMock CloudDataTest::cloudServerMock_;
+AccountDelegate *CloudDataTest::originalAccount_ = nullptr;
+std::unique_ptr<testing::StrictMock<AccountDelegateMock>> CloudDataTest::accountMock_;
+std::unique_ptr<ExecutorPool> CloudDataTest::executor_;
+
+void CloudDataTest::InitAccountMock()
+{
+    accountMock_ = std::make_unique<testing::StrictMock<AccountDelegateMock>>();
+    // Keep production token-to-user resolution over the in-process AccessToken provider.
+    EXPECT_CALL(*accountMock_, GetUserByToken(testing::_)).Times(testing::AnyNumber())
+        .WillRepeatedly(testing::Invoke(originalAccount_, &AccountDelegate::GetUserByToken));
+    EXPECT_CALL(*accountMock_, IsVerified(testing::_)).Times(testing::AnyNumber())
+        .WillRepeatedly([](int user) { return user == TEST_USER_ID; });
+    EXPECT_CALL(*accountMock_, IsDeactivating(testing::_)).Times(testing::AnyNumber())
+        .WillRepeatedly([](int user) { return user != TEST_USER_ID; });
+    auto queryUsers = [](std::vector<int> &users) {
+        users = { TEST_USER_ID };
+        return true;
+    };
+    EXPECT_CALL(*accountMock_, QueryUsers(testing::_)).Times(testing::AnyNumber()).WillRepeatedly(queryUsers);
+    EXPECT_CALL(*accountMock_, QueryForegroundUsers(testing::_)).Times(testing::AnyNumber())
+        .WillRepeatedly(queryUsers);
+    EXPECT_CALL(*accountMock_, IsLoginAccount()).Times(testing::AnyNumber()).WillRepeatedly(testing::Return(false));
+    EXPECT_CALL(*accountMock_, IsLoginAccount(testing::_)).Times(testing::AnyNumber())
+        .WillRepeatedly(testing::Return(false));
+    EXPECT_CALL(*accountMock_, GetCurrentAccountId()).Times(testing::AnyNumber())
+        .WillRepeatedly(testing::Invoke(originalAccount_, &AccountDelegate::GetCurrentAccountId));
+}
+
 void CloudDataTest::InitMetaData()
 {
     metaData_.deviceId = DmAdapter::GetInstance().GetLocalDevice().uuid;
@@ -372,6 +406,11 @@ void CloudDataTest::InitCloudInfo()
 
 void CloudDataTest::SetUpTestCase(void)
 {
+    originalAccount_ = AccountDelegate::GetInstance();
+    ASSERT_NE(originalAccount_, nullptr);
+    InitAccountMock();
+    AccountDelegate::instance_ = nullptr;
+    ASSERT_TRUE(AccountDelegate::RegisterAccountInstance(accountMock_.get()));
     MetaDataManager::GetInstance().Initialize(dbStoreMock_, nullptr, "");
     MetaDataManager::GetInstance().SetSyncer([](const auto &, auto) {
         DeviceMatrix::GetInstance().OnChanged(DeviceMatrix::META_STORE_MASK);
@@ -394,12 +433,11 @@ void CloudDataTest::SetUpTestCase(void)
     size_t max = 12;
     size_t min = 5;
 
-    auto executor = std::make_shared<ExecutorPool>(max, min);
+    executor_ = std::make_unique<ExecutorPool>(max, min);
+    auto executor = std::shared_ptr<ExecutorPool>(executor_.get(), [](ExecutorPool *) {});
     cloudServiceImpl_->OnBind(
         { "CloudDataTest", static_cast<uint32_t>(IPCSkeleton::GetSelfTokenID()), std::move(executor) });
     Bootstrap::GetInstance().LoadCheckers();
-    auto dmExecutor = std::make_shared<ExecutorPool>(max, min);
-    DeviceManagerAdapter::GetInstance().Init(dmExecutor);
     NetworkDelegate::RegisterNetworkInstance(&delegate_);
     InitCloudInfo();
     InitMetaData();
@@ -421,6 +459,13 @@ void CloudDataTest::SetUpTestCase(void)
 
 void CloudDataTest::TearDownTestCase()
 {
+    // Join callbacks before restoring the account delegate they may still use.
+    executor_.reset();
+    cloudServiceImpl_->syncManager_.Bind(nullptr);
+    cloudServiceImpl_->executor_.reset();
+    AccountDelegate::instance_ = originalAccount_;
+    accountMock_.reset();
+    originalAccount_ = nullptr;
     SetSelfTokenID(g_selfTokenID);
 
     AutoCache::GetInstance().RegCreator(DistributedRdb::RDB_DEVICE_COLLABORATION,
@@ -462,6 +507,48 @@ void CloudDataTest::TearDown()
     StoreMetaMapping storeMetaMapping(metaData_);
     MetaDataManager::GetInstance().DelMeta(storeMetaMapping.GetKey(), true);
     MetaDataManager::GetInstance().DelMeta(cloudInfo_.GetSchemaKey(TEST_CLOUD_BUNDLE), true);
+}
+
+/**
+ * @tc.name: AccountMock_TokenResolution_PreservesDifferentAndInvalidUsers
+ * @tc.desc: Account state isolation keeps production token parsing instead of returning a fixed user.
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(CloudDataTest, AccountMock_TokenResolution_PreservesDifferentAndInvalidUsers, TestSize.Level0)
+{
+    HapInfoParams info{};
+    info.userID = TEST_USER_ID + 1;
+    info.bundleName = "test_cloud_other_user";
+    auto token = AccessTokenKit::AllocHapToken(info, {});
+    auto tokenId = token.tokenIdExStruct.tokenID;
+    ASSERT_NE(tokenId, 0u) << "other-user HAP setup failed";
+    auto account = AccountDelegate::GetInstance();
+
+    EXPECT_EQ(account->GetUserByToken(IPCSkeleton::GetCallingTokenID()), TEST_USER_ID);
+    EXPECT_EQ(account->GetUserByToken(tokenId), info.userID);
+    ASSERT_EQ(AccessTokenKit::DeleteToken(tokenId), RET_SUCCESS);
+    EXPECT_EQ(account->GetUserByToken(tokenId), -1) << "deleted token must not become test user 100";
+}
+
+/**
+ * @tc.name: AccountMock_OnlyTestUserVerified_PreservesUnverifiedBranches
+ * @tc.desc: A verified test account must not authorize invalid or unverified users.
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(CloudDataTest, AccountMock_OnlyTestUserVerified_PreservesUnverifiedBranches, TestSize.Level0)
+{
+    auto account = AccountDelegate::GetInstance();
+    EXPECT_TRUE(account->IsVerified(TEST_USER_ID));
+    EXPECT_FALSE(account->IsDeactivating(TEST_USER_ID));
+    EXPECT_FALSE(account->IsVerified(-1));
+    EXPECT_FALSE(account->IsVerified(1000));
+    EXPECT_FALSE(account->IsVerified(9999));
+    std::vector<int> users;
+    ASSERT_TRUE(account->QueryUsers(users));
+    ASSERT_EQ(users.size(), 1u);
+    EXPECT_EQ(users.front(), TEST_USER_ID);
 }
 
 /**

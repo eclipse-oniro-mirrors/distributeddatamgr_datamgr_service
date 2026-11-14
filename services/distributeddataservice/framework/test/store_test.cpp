@@ -51,6 +51,7 @@ public:
 
 class AutoCacheTest : public testing::Test {
 public:
+    static constexpr int32_t TEST_USER_ID = 100;
     static void SetUpTestCase(void);
     static void TearDownTestCase(void);
     void SetUp() {};
@@ -70,6 +71,7 @@ void AutoCacheTest::SetUpTestCase(void)
     accountDelegateMock_ = new (std::nothrow) AccountDelegateMock();
     AccountDelegate::RegisterAccountInstance(accountDelegateMock_);
     EXPECT_CALL(*accountDelegateMock_, IsDeactivating(testing::_)).WillRepeatedly(testing::Return(false));
+    EXPECT_CALL(*accountDelegateMock_, IsVerified(TEST_USER_ID)).WillRepeatedly(testing::Return(true));
 }
 
 void AutoCacheTest::TearDownTestCase(void)
@@ -240,7 +242,8 @@ HWTEST_F(AutoCacheTest, GetDBStore, TestSize.Level2)
     mock_->isLocked_ = true;
     meta.user = "0";
     EXPECT_EQ(AutoCache::GetInstance().GetDBStore(meta).first, GeneralError::E_OK);
-    meta.user = "";
+    // User 0 bypasses the user-level lock check; exercise EL4 with a normal user.
+    meta.user = std::to_string(TEST_USER_ID);
     meta.area = GeneralStore::EL4;
     EXPECT_EQ(AutoCache::GetInstance().GetDBStore(meta).first, GeneralError::E_SCREEN_LOCKED);
     meta.area = GeneralStore::EL1;
@@ -254,7 +257,7 @@ HWTEST_F(AutoCacheTest, GetDBStore, TestSize.Level2)
 
     mock_->isLocked_ = false;
     meta.area = GeneralStore::EL4;
-    EXPECT_NE(AutoCache::GetInstance().GetDBStore(meta).first, GeneralError::E_SCREEN_LOCKED);
+    EXPECT_EQ(AutoCache::GetInstance().GetDBStore(meta).first, GeneralError::E_OK);
     meta.area = GeneralStore::EL1;
     EXPECT_NE(AutoCache::GetInstance().GetDBStore(meta).first, GeneralError::E_SCREEN_LOCKED);
     meta.area = GeneralStore::EL2;

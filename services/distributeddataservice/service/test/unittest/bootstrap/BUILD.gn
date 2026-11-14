@@ -14,6 +14,7 @@
 import("//build/ohos_var.gni")
 import("//build/test.gni")
 import("//foundation/distributeddatamgr/datamgr_service/datamgr_service.gni")
+import("//foundation/distributeddatamgr/datamgr_service/services/distributeddataservice/service/test/mock/access_token_mock.gni")
 
 module_output_path = "datamgr_service/datamgr_service/service/bootstrap"
 
@@ -144,6 +145,10 @@ ohos_unittest("DirectoryManagerTest") {
   ]
 
   deps = [ "//foundation/distributeddatamgr/datamgr_service/services/distributeddataservice/framework:distributeddatasvcfwk" ]
+
+  sources += ddms_access_token_mock_sources
+  configs += ddms_access_token_mock_configs
+  external_deps += ddms_access_token_mock_external_deps
 }
 
 ###############################################################################

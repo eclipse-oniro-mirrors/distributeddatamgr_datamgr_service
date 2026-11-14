@@ -45,12 +45,18 @@ public:
         size_t min = 1;
         executors_ = std::make_shared<OHOS::ExecutorPool>(max, min);
     }
-    static void TearDownTestCase(void)
+    static void TearDownTestCase(void) {}
+    void SetUp()
+    {
+        NativeTokenInfoParams info{};
+        info.processName = "UtdServiceImplTest";
+        info.aplStr = "system_core";
+        SetSelfTokenID(GetAccessTokenId(&info));
+    }
+    void TearDown()
     {
         DeleteTestHapToken();
     }
-    void SetUp(){};
-    void TearDown(){};
     static void AllocTestHapToken1();
     static void DeleteTestHapToken();
 
@@ -94,8 +100,7 @@ void UtdServiceImplTest::AllocTestHapToken1()
             }
         }
     };
-    auto tokenID = AccessTokenKit::AllocHapToken(info, policy);
-    SetSelfTokenID(tokenID.tokenIDEx);
+    AccessTokenKit::AllocHapToken(info, policy);
 }
 void UtdServiceImplTest::DeleteTestHapToken()
 {
@@ -182,12 +187,15 @@ HWTEST_F(UtdServiceImplTest, NotifyUtdClients001, TestSize.Level1)
 * @tc.desc: Normal test of GetHapBundleNameByToken
 * @tc.type: FUNC
 * @tc.require:
+* @tc.author: agent
 */
 HWTEST_F(UtdServiceImplTest, GetHapBundleNameByToken001, TestSize.Level1)
 {
     AllocTestHapToken1();
     UtdServiceImpl utdServiceImpl;
     auto tokenId = AccessTokenKit::GetHapTokenID(userId, HAP_BUNDLE_NAME1, instIndex);
+    ASSERT_NE(tokenId, 0u) << "mock HAP token was not allocated";
+    ASSERT_EQ(AccessTokenKit::GetTokenTypeFlag(tokenId), TOKEN_HAP);
     std::string bundleName;
     bool ret = utdServiceImpl.GetHapBundleNameByToken(tokenId, bundleName);
     EXPECT_TRUE(ret);

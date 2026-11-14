@@ -17,6 +17,7 @@
 #include "cloud_service_impl.h"
 
 #include <gtest/gtest.h>
+#include <memory>
 #include <unistd.h>
 
 #include "accesstoken_kit.h"
@@ -78,6 +79,8 @@ static constexpr const char *TEST_CLOUD_STORE = "test_cloud_store";
 static constexpr const char *TEST_CLOUD_DATABASE_ALIAS_1 = "test_cloud_database_alias_1";
 constexpr const int32_t DISCONNECT_TIME = 21;
 constexpr const int32_t MOCK_USER = 200;
+constexpr size_t MAX_EXECUTOR_THREADS = 12;
+constexpr size_t MIN_EXECUTOR_THREADS = 5;
 class CloudServiceImplTest : public testing::Test {
 public:
     static void SetUpTestCase(void);
@@ -96,6 +99,7 @@ protected:
     static std::shared_ptr<DBStoreMock> dbStoreMock_;
     static StoreMetaData metaData_;
     static inline AccountDelegateMock *accountDelegateMock = nullptr;
+    std::unique_ptr<ExecutorPool> executor_;
 
     class SyncInfoObserverMock : public CloudData::ISyncInfoObserver {
     public:
@@ -229,11 +233,6 @@ auto CloudServiceImplTest::ReturnWithUserList(const std::vector<int> &users)
 
 void CloudServiceImplTest::SetUpTestCase(void)
 {
-    size_t max = 12;
-    size_t min = 5;
-    auto executor = std::make_shared<ExecutorPool>(max, min);
-    cloudServiceImpl_->OnBind(
-        { "CloudServiceImplTest", static_cast<uint32_t>(IPCSkeleton::GetSelfTokenID()), std::move(executor) });
     Bootstrap::GetInstance().LoadCheckers();
     CryptoManager::GetInstance().GenerateRootKey();
     MetaDataManager::GetInstance().Initialize(dbStoreMock_, nullptr, "");
@@ -244,14 +243,28 @@ void CloudServiceImplTest::SetUpTestCase(void)
 void CloudServiceImplTest::TearDownTestCase()
 {
     if (accountDelegateMock != nullptr) {
+        AccountDelegate::instance_ = nullptr;
         delete accountDelegateMock;
         accountDelegateMock = nullptr;
     }
 }
 
-void CloudServiceImplTest::SetUp() { }
+void CloudServiceImplTest::SetUp()
+{
+    executor_ = std::make_unique<ExecutorPool>(MAX_EXECUTOR_THREADS, MIN_EXECUTOR_THREADS);
+    // The fixture owns the pool so it can join workers while the service and its mocks are still alive.
+    auto executor = std::shared_ptr<ExecutorPool>(executor_.get(), [](ExecutorPool *) {});
+    cloudServiceImpl_->OnBind(
+        { "CloudServiceImplTest", static_cast<uint32_t>(IPCSkeleton::GetSelfTokenID()), std::move(executor) });
+}
 
-void CloudServiceImplTest::TearDown() { }
+void CloudServiceImplTest::TearDown()
+{
+    // Cancel pending work and wait for running tasks before the next test changes mock expectations.
+    executor_.reset();
+    cloudServiceImpl_->syncManager_.Bind(nullptr);
+    cloudServiceImpl_->executor_.reset();
+}
 
 /**
  * @tc.name: EnableCloud001
@@ -482,12 +495,14 @@ HWTEST_F(CloudServiceImplTest, DoSubscribe, TestSize.Level0)
  * @tc.desc: Test the OnAppInstallTest
  * @tc.type: FUNC
  * @tc.require:
+ * @tc.author: agent
  */
 HWTEST_F(CloudServiceImplTest, OnAppInstallTest, TestSize.Level0)
 {
     ZLOGI("CloudServiceImplTest OnAppInstallTest start.");
     ASSERT_NE(cloudServiceImpl_, nullptr);
     ASSERT_NE(cloudServiceImpl_->factory_.staticActs_, nullptr);
+    delete accountDelegateMock;
     accountDelegateMock = new (std::nothrow) AccountDelegateMock();
     ASSERT_NE(accountDelegateMock, nullptr);
     AccountDelegate::instance_ = nullptr;
@@ -1088,11 +1103,12 @@ HWTEST_F(ComponentConfigTest, ComponentConfig, TestSize.Level0)
  * @tc.desc: test the compensatory sync strategy for network disconnection times of less than 20 hours
  * @tc.type: FUNC
  * @tc.require:
- * @tc.author:
+ * @tc.author: agent
  */
 HWTEST_F(CloudServiceImplTest, NetworkRecoveryTest001, TestSize.Level0)
 {
     ASSERT_NE(cloudServiceImpl_, nullptr);
+    delete accountDelegateMock;
     accountDelegateMock = new (std::nothrow) AccountDelegateMock();
     ASSERT_NE(accountDelegateMock, nullptr);
     AccountDelegate::instance_ = nullptr;

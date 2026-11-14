@@ -25,7 +25,7 @@ namespace OHOS {
 namespace DistributedData {
 using namespace OHOS;
 
-// Adapted from security_access_token/blob/master/interfaces/innerkits/privacy/test/unittest/src/privacy_test_common
+// Helpers use the process-local AccessToken mock linked by the TDD target.
 class MockNativeToken {
 public:
     explicit MockNativeToken(const std::string& process);
@@ -36,16 +36,16 @@ private:
 
 class MockToken {
 public:
-    // Call in SetUp to save the current token id. Can't be called concurrently to avoid mismatching tokens
+    // Retained fixture entry point; per-test state isolation is provided by the mock listener.
     static void SetTestEnvironment();
-    // Call in TearDown to reset the saved current token id to 0 and avoid impact on other tests
+    // Retained fixture exit point. No real process token is modified.
     static void ResetTestEnvironment();
-    // Call by shell tokenid. Other processes don't have permission to dump info
+    // Register a simulated native identity independently of device process availability.
     static Security::AccessToken::AccessTokenID GetTokenByProcName(const std::string& process);
     static Security::AccessToken::AccessTokenIDEx AllocTestHapToken(
         const Security::AccessToken::HapInfoParams& hapInfo, Security::AccessToken::HapPolicyParams& hapPolicy
     );
-    // Don't call on real apps
+    // Delete a token from this test process only.
     static int32_t DeleteTestHapToken(Security::AccessToken::AccessTokenID tokenID);
 };
 }

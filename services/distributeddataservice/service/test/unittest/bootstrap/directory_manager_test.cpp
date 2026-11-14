@@ -87,6 +87,7 @@ protected:
 * @tc.type: FUNC
 * @tc.require:
 * @tc.author: Sven Wang
+* @tc.author: agent
 */
 HWTEST_F(DirectoryManagerTest, GetBundleStorePath, TestSize.Level0)
 {
@@ -97,6 +98,8 @@ HWTEST_F(DirectoryManagerTest, GetBundleStorePath, TestSize.Level0)
     metaData.securityLevel = SecurityLevel::S2;
     metaData.area = 1;
     metaData.tokenId = AccessTokenKit::GetHapTokenID(100, "ohos.test.demo", 0);
+    ASSERT_NE(metaData.tokenId, 0u) << "mock HAP token was not allocated";
+    ASSERT_EQ(AccessTokenKit::GetTokenTypeFlag(metaData.tokenId), TOKEN_HAP);
     metaData.storeType = KvStoreType::SINGLE_VERSION;
     metaData.appId = "ohos.test.demo_09AEF01D";
     auto path = DirectoryManager::GetInstance().GetStorePath(metaData);

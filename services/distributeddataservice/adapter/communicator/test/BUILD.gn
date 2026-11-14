@@ -21,11 +21,19 @@ ohos_unittest("CommunicationProviderTest") {
   module_out_path = module_output_path
 
   sources = [ "./unittest/communication_provider_impl_test.cpp" ]
+  external_deps = []
+  defines = [ "OPENSSL_SUPPRESS_DEPRECATED" ]
+  if (dm_part_is_enabled && datamgr_service_distributed) {
+    cflags_cc = [ "-fno-access-control" ]
+    sources += [ "./unittest/communication_provider_test_environment.cpp" ]
+    external_deps = [ "dsoftbus:softbus_client" ]
+  }
+
   include_dirs = [
     "${data_service_path}/adapter/include/communicator",
     "../src",
   ]
-  external_deps = [
+  external_deps += [
     "access_token:libaccesstoken_sdk",
     "hilog:libhilog",
     "ipc:ipc_core",
@@ -37,7 +45,6 @@ ohos_unittest("CommunicationProviderTest") {
     "${data_service_path}/adapter/communicator:distributeddata_communicator",
     "${data_service_path}/framework:distributeddatasvcfwk_src",
   ]
-  defines = [ "OPENSSL_SUPPRESS_DEPRECATED" ]
 }
 
 ohos_unittest("CommunicatorContextTest") {
