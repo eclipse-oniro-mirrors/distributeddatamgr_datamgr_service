@@ -217,7 +217,7 @@ void ReportCloneRestore(const std::string &userId, const std::string &osVersion,
 
 std::string GetSecretKeyBackup(const std::vector<DistributedData::CloneBundleInfo> &bundleInfos,
     const std::string &userId, const std::vector<uint8_t> &iv, const std::string &localDeviceId,
-    const std::string &osVersion, int32_t *totalOut, int32_t *skippedOut)
+    const std::string &osVersion)
 {
     SecretKeyBackupData backupInfos;
     int32_t total = 0, skipped = 0;
@@ -261,8 +261,7 @@ std::string GetSecretKeyBackup(const std::vector<DistributedData::CloneBundleInf
             backupInfos.infos.push_back(std::move(item));
         }
     }
-    if (totalOut != nullptr) *totalOut = total;
-    if (skippedOut != nullptr) *skippedOut = skipped;
+    ReportCloneBackup(userId, osVersion, total, skipped);
     return Serializable::Marshall(backupInfos);
 }
 
@@ -292,12 +291,9 @@ int32_t OnBackup(MessageParcel &data, MessageParcel &reply, const std::string &l
         return -1;
     }
 
-    int32_t total = 0;
-    int32_t skipped = 0;
     auto content = GetSecretKeyBackup(backupInfo.bundleInfos, backupInfo.userId, iv, localDeviceId,
-        backupInfo.osVersion, &total, &skipped);
+        backupInfo.osVersion);
     DeleteCloneKey();
-    ReportCloneBackup(backupInfo.userId, backupInfo.osVersion, total, skipped);
 
     std::string backupPath = DirectoryManager::GetInstance().GetClonePath(backupInfo.userId);
     if (backupPath.empty()) {

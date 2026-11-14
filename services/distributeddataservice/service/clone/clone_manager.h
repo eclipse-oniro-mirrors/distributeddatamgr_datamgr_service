@@ -107,7 +107,7 @@ std::vector<uint8_t> ReEncryptKey(const SecretKeyMetaData &secretKeyMeta,
  */
 std::string GetSecretKeyBackup(const std::vector<DistributedData::CloneBundleInfo> &bundleInfos,
     const std::string &userId, const std::vector<uint8_t> &iv, const std::string &localDeviceId,
-    const std::string &osVersion = "", int32_t *totalOut = nullptr, int32_t *skippedOut = nullptr);
+    const std::string &osVersion = "");
 
 
 /**
