@@ -197,7 +197,7 @@ bool PermitDelegate::IsDragExportRestricted(const CheckParam &param) const
 DataFlowCheckRet PermitDelegate::IsTransferAllowed(const CheckParam &param, const DBProperty &property)
 {
     if (IsDragExportRestricted(param)) {
-        ZLOGI("drag export denied by security subscription policy");
+        ZLOGE("drag export denied by security subscription policy");
         return DataFlowCheckRet::DENIED_SEND;
     }
     auto accountDelegate = AccountDelegate::GetInstance();
