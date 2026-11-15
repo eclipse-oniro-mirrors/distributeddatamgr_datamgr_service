@@ -591,7 +591,8 @@ HWTEST_F(CloneManagerTest, CloneBackupInfoUnmarshal_WithAndWithoutOSVersion, Tes
 
 /**
  * @tc.name: IsOldOsVersion_Matrix
- * @tc.desc: IsOldOsVersion returns true for pre-7.1, empty or unparseable forms, false for "major.minor" >= 7.1
+ * @tc.desc: IsOldOsVersion returns true for pre-7.1, empty or unparseable forms,
+ *           false for "major.minor" >= 7.1; overflow segments treated as new format
  * @tc.type: FUNC
  * @tc.require:
  * @tc.author: htt1997
@@ -610,6 +611,11 @@ HWTEST_F(CloneManagerTest, IsOldOsVersion_Matrix, TestSize.Level0)
     EXPECT_TRUE(IsOldOsVersion("7"));
     EXPECT_TRUE(IsOldOsVersion("abc"));
     EXPECT_TRUE(IsOldOsVersion(""));
+    // Overflow: a numeric segment exceeding LONG_MAX triggers strtol ERANGE and is treated
+    // as a new-format (>= 7.1) device, never as old.
+    EXPECT_FALSE(IsOldOsVersion("99999999999999999999999999.0"));
+    EXPECT_FALSE(IsOldOsVersion("7.99999999999999999999999999"));
+    EXPECT_FALSE(IsOldOsVersion("99999999999999999999999999.99999999999999999999999999"));
 }
 /**
  * @tc.name: CloneManagerPerItemNonceUniqueTest

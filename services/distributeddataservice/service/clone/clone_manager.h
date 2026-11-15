@@ -23,6 +23,7 @@
 #include <cctype>
 
 #include "clone_backup_info.h"
+#include "dfx/dfx_types.h"
 #include "metadata/secret_key_meta_data.h"
 #include "metadata/store_meta_data.h"
 #include "message_parcel.h"
@@ -31,6 +32,19 @@
 namespace OHOS {
 namespace DistributedKv {
 using namespace OHOS::DistributedData;
+
+/**
+ * @brief Bundles the parameters for ReportCloneResult so callers pass a single aggregate
+ *        instead of a long positional argument list.
+ */
+struct CloneReportInfo {
+    DistributedDataDfx::BehaviourType behaviourType;
+    std::string userId;
+    std::string osVersion;
+    bool oldFormat;
+    int32_t total;
+    int32_t skipped;
+};
 
 /**
  * @brief Handle backup request
