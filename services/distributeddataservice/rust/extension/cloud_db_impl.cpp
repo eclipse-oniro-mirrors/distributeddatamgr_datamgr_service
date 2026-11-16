@@ -28,6 +28,7 @@ CloudDbImpl::CloudDbImpl(OhCloudExtCloudDatabase *database) : database_(database
 
 CloudDbImpl::~CloudDbImpl()
 {
+    std::lock_guard<std::mutex> lock(mutex_);
     if (database_ != nullptr) {
         OhCloudExtCloudDbFree(database_);
         database_ = nullptr;
@@ -36,6 +37,10 @@ CloudDbImpl::~CloudDbImpl()
 
 int32_t CloudDbImpl::Execute(const std::string &table, const std::string &sql, const DBVBucket &extend)
 {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (database_ == nullptr) {
+        return DBErr::E_ERROR;
+    }
     OhCloudExtSql sqlInfo {
         .table = reinterpret_cast<const unsigned char *>(table.c_str()),
         .tableLen = table.size(),
@@ -53,6 +58,10 @@ int32_t CloudDbImpl::Execute(const std::string &table, const std::string &sql, c
 
 int32_t CloudDbImpl::BatchInsert(const std::string &table, DBVBuckets &&values, DBVBuckets &extends)
 {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (database_ == nullptr) {
+        return DBErr::E_ERROR;
+    }
     DBVBuckets inValues = values;
     auto valIn = ExtensionUtil::Convert(std::move(inValues));
     auto exdIn = ExtensionUtil::Convert(std::move(extends));
@@ -73,6 +82,10 @@ int32_t CloudDbImpl::BatchInsert(const std::string &table, DBVBuckets &&values, 
 
 int32_t CloudDbImpl::BatchUpdate(const std::string &table, DBVBuckets &&values, DBVBuckets &extends)
 {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (database_ == nullptr) {
+        return DBErr::E_ERROR;
+    }
     auto exdIn = ExtensionUtil::Convert(std::move(extends));
     auto valIn = ExtensionUtil::Convert(std::move(values));
     if (valIn.first == nullptr || exdIn.first == nullptr) {
@@ -92,6 +105,10 @@ int32_t CloudDbImpl::BatchUpdate(const std::string &table, DBVBuckets &&values, 
 
 int32_t CloudDbImpl::BatchUpdate(const std::string &table, DBVBuckets &&values, const DBVBuckets &extends)
 {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (database_ == nullptr) {
+        return DBErr::E_ERROR;
+    }
     auto exdIn = ExtensionUtil::Convert(std::move(const_cast<DBVBuckets &>(extends)));
     auto valIn = ExtensionUtil::Convert(std::move(values));
     if (valIn.first == nullptr || exdIn.first == nullptr) {
@@ -108,6 +125,10 @@ int32_t CloudDbImpl::BatchUpdate(const std::string &table, DBVBuckets &&values, 
 
 int32_t CloudDbImpl::BatchDelete(const std::string &table, DBVBuckets &extends)
 {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (database_ == nullptr) {
+        return DBErr::E_ERROR;
+    }
     auto data = ExtensionUtil::Convert(std::move(extends));
     if (data.first == nullptr) {
         return DBErr::E_ERROR;
@@ -121,6 +142,10 @@ int32_t CloudDbImpl::BatchDelete(const std::string &table, DBVBuckets &extends)
 
 std::pair<int32_t, std::shared_ptr<DBCursor>> CloudDbImpl::Query(const std::string &table, const DBVBucket &extend)
 {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (database_ == nullptr) {
+        return std::make_pair(DBErr::E_ERROR, nullptr);
+    }
     std::string cursor;
     auto it = extend.find(DistributedData::SchemaMeta::CURSOR_FIELD);
     if (it != extend.end()) {
@@ -143,6 +168,10 @@ std::pair<int32_t, std::shared_ptr<DBCursor>> CloudDbImpl::Query(const std::stri
 
 int32_t CloudDbImpl::Lock()
 {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (database_ == nullptr) {
+        return DBErr::E_ERROR;
+    }
     int expire = 0;
     auto status = OhCloudExtCloudDbLock(database_, &expire);
     interval_ = expire;
@@ -151,22 +180,32 @@ int32_t CloudDbImpl::Lock()
 
 int32_t CloudDbImpl::Heartbeat()
 {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (database_ == nullptr) {
+        return DBErr::E_ERROR;
+    }
     return ExtensionUtil::ConvertStatus(OhCloudExtCloudDbHeartbeat(database_));
 }
 
 int32_t CloudDbImpl::Unlock()
 {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (database_ == nullptr) {
+        return DBErr::E_ERROR;
+    }
     auto status = OhCloudExtCloudDbUnlock(database_);
     return ExtensionUtil::ConvertStatus(status);
 }
 
 int64_t CloudDbImpl::AliveTime()
 {
+    std::lock_guard<std::mutex> lock(mutex_);
     return interval_;
 }
 
 int32_t CloudDbImpl::Close()
 {
+    std::lock_guard<std::mutex> lock(mutex_);
     if (database_ != nullptr) {
         OhCloudExtCloudDbFree(database_);
         database_ = nullptr;
