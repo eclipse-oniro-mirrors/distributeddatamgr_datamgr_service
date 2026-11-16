@@ -371,6 +371,13 @@ ohos_unittest("UdmfDragProxyAuthorizationTest") {
 
 ohos_unittest("UdmfServiceStubTest") {
   module_out_path = module_output_path
+  # The production stub performs CFI virtual-call checks on test subclasses.
+  sanitize = {
+    cfi = true
+    cfi_cross_dso = true
+    debug = false
+    blocklist = "${datamgr_service_path}/cfi_blocklist.txt"
+  }
   sources = [ "udmf_service_stub_test.cpp" ]
 
   include_dirs = [

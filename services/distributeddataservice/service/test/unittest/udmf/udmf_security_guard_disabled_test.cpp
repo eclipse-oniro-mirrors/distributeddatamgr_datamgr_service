@@ -120,7 +120,8 @@ HWTEST_F(UdmfSecurityGuardDisabledTest, GetData_SecurityGuardDisabled_ReturnsAut
     UnifiedKey key(query.key);
     ASSERT_TRUE(key.IsValid());
     EXPECT_CALL(GetDisabledAuthPermissionChecker(), IsValid(_, _)).WillOnce(Return(true));
-    EXPECT_CALL(*store_, Get(query.key, _)).WillOnce([&](const auto &, UnifiedData &data) {
+    // Instantiate the matcher here to retain CFI metadata for its callbacks.
+    EXPECT_CALL(*store_, Get(Eq(query.key), _)).WillOnce([&](const auto &, UnifiedData &data) {
         data = Payload();
         return UDMF::E_OK;
     });
@@ -144,7 +145,7 @@ HWTEST_F(UdmfSecurityGuardDisabledTest, GetData_SecurityGuardDisabled_PreservesA
     UnifiedKey key(query.key);
     ASSERT_TRUE(key.IsValid());
     EXPECT_CALL(GetDisabledAuthPermissionChecker(), IsValid(_, _)).WillOnce(Return(false));
-    EXPECT_CALL(*store_, Get(query.key, _)).WillOnce([&](const auto &, UnifiedData &data) {
+    EXPECT_CALL(*store_, Get(Eq(query.key), _)).WillOnce([&](const auto &, UnifiedData &data) {
         data = Payload();
         return UDMF::E_OK;
     });
