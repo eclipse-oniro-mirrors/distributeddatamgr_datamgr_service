@@ -16,6 +16,8 @@
 #ifndef OHOS_DISTRIBUTED_DATA_SERVICES_EXTENSION_CLOUD_DB_IMPL_H
 #define OHOS_DISTRIBUTED_DATA_SERVICES_EXTENSION_CLOUD_DB_IMPL_H
 
+#include <mutex>
+
 #include "cloud/cloud_db.h"
 #include "cloud/schema_meta.h"
 #include "cloud_extension.h"
@@ -57,8 +59,9 @@ public:
     bool HasCloudUpdate(const std::string &tableName, const std::string &localWaterMark) override;
 private:
 
+    std::mutex mutex_;
     OhCloudExtCloudDatabase *database_ = nullptr;
-    int32_t interval_ = 0;
+    std::atomic<int32_t> interval_ = 0;
 };
 } // namespace OHOS::CloudData
 #endif // OHOS_DISTRIBUTED_DATA_SERVICES_EXTENSION_CLOUD_DB_IMPL_H
