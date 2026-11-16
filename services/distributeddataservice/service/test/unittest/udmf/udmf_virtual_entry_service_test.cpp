@@ -400,10 +400,11 @@ HWTEST_F(UdmfVirtualEntryServiceTest, RegisterVirtualEntry_StoreUnavailable_Retu
  */
 HWTEST_F(UdmfVirtualEntryServiceTest, RegisterVirtualEntry_StoredDataMissing_ReturnNotFound, TestSize.Level0)
 {
-    EXPECT_CALL(*store_, Get(query_.key, _)).WillOnce(Return(E_DB_ERROR));
+    // Instantiate the matcher here to retain CFI metadata for its callbacks.
+    EXPECT_CALL(*store_, Get(Eq(query_.key), _)).WillOnce(Return(E_DB_ERROR));
     EXPECT_EQ(service_.RegisterVirtualEntry(query_.key, 0, MakeServiceEntry(), provider_->AsObject()), E_NOT_FOUND);
     storedData_ = UnifiedData();
-    EXPECT_CALL(*store_, Get(query_.key, _)).WillOnce(DoAll(SetArgReferee<1>(storedData_), Return(E_OK)));
+    EXPECT_CALL(*store_, Get(Eq(query_.key), _)).WillOnce(DoAll(SetArgReferee<1>(storedData_), Return(E_OK)));
     EXPECT_EQ(service_.RegisterVirtualEntry(query_.key, 0, MakeServiceEntry(), provider_->AsObject()), E_NOT_FOUND);
 }
 
