@@ -49,7 +49,7 @@ public:
     int SendRequest(uint32_t code, MessageParcel &data, MessageParcel &reply, MessageOption &option) override
     {
         (void)reply;
-        (void)option;
+        receivedOptionFlags = option.GetFlags();
         requestCount++;
         receivedCode = code;
         if (captureParcel) {
@@ -83,6 +83,7 @@ public:
     bool captureParcel = false;
     uint32_t requestCount = 0;
     uint32_t receivedCode = 0;
+    int32_t receivedOptionFlags = 0;
     std::u16string receivedToken;
     int32_t receivedCodeValue = 0;
     std::string receivedResult;
@@ -128,6 +129,8 @@ HWTEST_F(DataFabricAddressCallbackProxyTest, DataFabricAddressCallbackProxyTest0
     EXPECT_EQ(mock->receivedToken, IDataFabricAddressCallback::GetDescriptor());
     EXPECT_EQ(mock->receivedCodeValue, static_cast<int32_t>(StatusCode::SUCCESS));
     EXPECT_EQ(mock->receivedResult, "data changed");
+    // The notification is sent asynchronously so that the caller is not blocked by the client.
+    EXPECT_EQ(mock->receivedOptionFlags, static_cast<int32_t>(MessageOption::TF_ASYNC));
 }
 
 /**
@@ -172,4 +175,19 @@ HWTEST_F(DataFabricAddressCallbackProxyTest, DataFabricAddressCallbackProxyTest0
     proxy.OnDataFabricAddressChanged(response);
 
     EXPECT_EQ(mock->requestCount, 0u);
+}
+
+/**
+ * @tc.name: DataFabricAddressCallbackProxyTest004
+ * @tc.desc: Test OnDataFabricAddressChanged does not send anything when the callback remote has been released.
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(DataFabricAddressCallbackProxyTest, DataFabricAddressCallbackProxyTest004, TestSize.Level0)
+{
+    sptr<IRemoteObject> remote;
+    DataFabricAddressCallbackProxy proxy(remote);
+    EXPECT_TRUE(proxy.Remote() == nullptr);
+    NativePreferences::DataProcessingResponse response = MakeResponse(StatusCode::SUCCESS, "data changed");
+    EXPECT_NO_FATAL_FAILURE(proxy.OnDataFabricAddressChanged(response));
 }

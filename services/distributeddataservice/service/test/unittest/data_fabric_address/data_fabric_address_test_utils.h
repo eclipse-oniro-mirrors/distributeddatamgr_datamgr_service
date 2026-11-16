@@ -35,6 +35,7 @@ public:
     {
         lastCode = response.code;
         lastResult = response.result;
+        callCount++;
     }
 
     sptr<IRemoteObject> AsObject() override
@@ -44,6 +45,7 @@ public:
 
     NativePreferences::StatusCode lastCode = NativePreferences::StatusCode::FAILURE;
     std::string lastResult;
+    int32_t callCount = 0;
 
 private:
     sptr<IRemoteObject> stableObject_;

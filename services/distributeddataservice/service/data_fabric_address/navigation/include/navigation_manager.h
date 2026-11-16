@@ -16,6 +16,7 @@
 #ifndef NAVIGATION_MANAGER_H
 #define NAVIGATION_MANAGER_H
 
+#include <condition_variable>
 #include <cstdint>
 #include <mutex>
 
@@ -36,13 +37,30 @@ public:
         const sptr<NativePreferences::IDataFabricAddressCallback> &callback);
     int32_t UnsubscribeNavigationManager();
 private:
+    // mutex_ is held for the state transitions only, the dependencies are called outside of it because they
+    // call their system ability synchronously. A caller which finds a transition in progress waits for it.
+    enum class State {
+        NOT_SUBSCRIBED,
+        SUBSCRIBING,
+        SUBSCRIBED,
+        UNSUBSCRIBING,
+    };
+
     NavigationManager() = default;
     ~NavigationManager() = default;
-    int32_t DoSubscribeAction(const sptr<NativePreferences::IDataFabricAddressCallback> &callback);
-    int32_t DoUpdateAction();
+    int32_t DoSubscribeAction(const NativePreferences::LocationPoint &homePoint,
+        const NativePreferences::LocationPoint &companyPoint,
+        const sptr<NativePreferences::IDataFabricAddressCallback> &callback);
+    int32_t DoUpdateAction(const NativePreferences::LocationPoint &homePoint,
+        const NativePreferences::LocationPoint &companyPoint);
+    // Waits for a transition in progress to settle, the caller passes its locked mutex_.
+    void WaitForStableState(std::unique_lock<std::mutex> &lock);
+    // Called without mutex_ held, after the dependencies of a transition have been handled.
+    void FinishStateChange(State state);
 
-    std::mutex mutex_;          // Protects the state field (isSubscribed_)
-    bool isSubscribed_ = false;
+    std::mutex mutex_;
+    std::condition_variable stateCond_;
+    State state_ = State::NOT_SUBSCRIBED;
 };
 } // End of namespace DataFabricAddress
 } // End of namespace OHOS

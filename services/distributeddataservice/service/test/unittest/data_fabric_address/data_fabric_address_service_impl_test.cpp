@@ -20,6 +20,7 @@
 #include "data_fabric_address_service_impl.h"
 #include "data_fabric_address_test_utils.h"
 #include "fakes/navigation_mock.h"
+#include "navigation_common_utils.h"
 #include "system_ability_definition.h"
 
 using namespace OHOS;
@@ -305,7 +306,7 @@ HWTEST_F(DataFabricAddressServiceImplTest, DataFabricAddressServiceImplTest013, 
  */
 HWTEST_F(DataFabricAddressServiceImplTest, DataFabricAddressServiceImplTest014, TestSize.Level0)
 {
-    DataFabricAddressTest::SetGetDistanceResult(true, 500.0);
+    DataFabricAddressTest::SetGetDistanceResult(true, 499.0);
     DataFabricAddressServiceImpl service;
     NativePreferences::DataFabricAddressParams params =
         DataFabricAddressTest::MakeCommuteSubscriptionParams(DataFabricAddressTest::MakeWgs84HomePoint(),
@@ -530,8 +531,13 @@ HWTEST_F(DataFabricAddressServiceImplTest, DataFabricAddressServiceImplTest026, 
             DataFabricAddressTest::MakeWgs84CompanyPoint());
     sptr<IRemoteObject> callbackObject { nullptr };
     sptr<IRemoteObject::DeathRecipient> deathRecipient { nullptr };
-    int32_t result = service->RemoveCallback(params, callbackObject, deathRecipient);
+    // Simulate that another caller owns the last cached subscription.
+    service->lastSubscribedToken_ = 0xFFFF8888FFFF6666ULL;
+    bool removed = true;
+    int32_t result = service->RemoveCallback(params, callbackObject, deathRecipient, removed);
     EXPECT_EQ(result, RUN_OK);
+    // The caller does not own the subscription, so it must not tear the navigation manager down.
+    EXPECT_FALSE(removed);
     EXPECT_TRUE(callbackObject == nullptr);
     EXPECT_TRUE(deathRecipient == nullptr);
 }
@@ -552,8 +558,10 @@ HWTEST_F(DataFabricAddressServiceImplTest, DataFabricAddressServiceImplTest027, 
     ASSERT_EQ(service->subscribeCacheMap_.size(), 1u);
     sptr<IRemoteObject> callbackObject { nullptr };
     sptr<IRemoteObject::DeathRecipient> deathRecipient { nullptr };
-    int32_t result = service->RemoveCallback(params, callbackObject, deathRecipient);
+    bool removed = false;
+    int32_t result = service->RemoveCallback(params, callbackObject, deathRecipient, removed);
     EXPECT_EQ(result, RUN_OK);
+    EXPECT_TRUE(removed);
     EXPECT_TRUE(callbackObject != nullptr);
     EXPECT_TRUE(deathRecipient != nullptr);
     EXPECT_TRUE(service->subscribeCacheMap_.empty());
@@ -576,8 +584,10 @@ HWTEST_F(DataFabricAddressServiceImplTest, DataFabricAddressServiceImplTest028, 
     ASSERT_EQ(service->subscribeCacheMap_.size(), 2u);
     sptr<IRemoteObject> callbackObject { nullptr };
     sptr<IRemoteObject::DeathRecipient> deathRecipient { nullptr };
-    int32_t result = service->RemoveCallback(params1, callbackObject, deathRecipient);
+    bool removed = false;
+    int32_t result = service->RemoveCallback(params1, callbackObject, deathRecipient, removed);
     EXPECT_EQ(result, RUN_OK);
+    EXPECT_TRUE(removed);
     ASSERT_EQ(service->subscribeCacheMap_.size(), 1u);
     EXPECT_TRUE(service->subscribeCacheMap_.find(params2) != service->subscribeCacheMap_.end());
 }
@@ -752,4 +762,468 @@ HWTEST_F(DataFabricAddressServiceImplTest, DataFabricAddressServiceImplTest036, 
     EXPECT_EQ(DataFabricAddressTest::GetSubscribeActionCount(), 2);
     EXPECT_EQ(DataFabricAddressTest::GetLastSubscribeAction(),
         static_cast<int32_t>(NativePreferences::ActionType::UPDATE));
+}
+
+/**
+ * @tc.name: DataFabricAddressServiceImplTest037
+ * @tc.desc: Test IsSupportedCommuteDistance accepts the distance equal to the minimum supported distance.
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(DataFabricAddressServiceImplTest, DataFabricAddressServiceImplTest037, TestSize.Level0)
+{
+    DataFabricAddressTest::SetGetDistanceResult(true, DEFAULT_MIN_SUPPORTED_COMMUTE_DISTANCE);
+    DataFabricAddressServiceImpl service;
+    NativePreferences::LocationPoint homePoint = DataFabricAddressTest::MakeWgs84HomePoint();
+    NativePreferences::LocationPoint companyPoint = DataFabricAddressTest::MakeWgs84CompanyPoint();
+    int32_t result = service.IsSupportedCommuteDistance(homePoint, companyPoint);
+    EXPECT_EQ(result, RUN_OK);
+}
+
+/**
+ * @tc.name: DataFabricAddressServiceImplTest038
+ * @tc.desc: Test IsSupportedCommuteDistance rejects the distance less than the minimum supported distance.
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(DataFabricAddressServiceImplTest, DataFabricAddressServiceImplTest038, TestSize.Level0)
+{
+    DataFabricAddressTest::SetGetDistanceResult(true, DEFAULT_MIN_SUPPORTED_COMMUTE_DISTANCE - 1.0);
+    DataFabricAddressServiceImpl service;
+    NativePreferences::LocationPoint homePoint = DataFabricAddressTest::MakeWgs84HomePoint();
+    NativePreferences::LocationPoint companyPoint = DataFabricAddressTest::MakeWgs84CompanyPoint();
+    int32_t result = service.IsSupportedCommuteDistance(homePoint, companyPoint);
+    EXPECT_EQ(result, ABNORMAL_OPERATION_EXCEPTION);
+}
+
+/**
+ * @tc.name: DataFabricAddressServiceImplTest039
+ * @tc.desc: Test ValidateParams accepts the commute distance of 750 m which was rejected by the old 1000 m threshold.
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(DataFabricAddressServiceImplTest, DataFabricAddressServiceImplTest039, TestSize.Level0)
+{
+    DataFabricAddressTest::SetGetDistanceResult(true, 750.0);
+    DataFabricAddressServiceImpl service;
+    NativePreferences::DataFabricAddressParams params =
+        DataFabricAddressTest::MakeCommuteSubscriptionParams(DataFabricAddressTest::MakeWgs84HomePoint(),
+            DataFabricAddressTest::MakeWgs84CompanyPoint());
+    NativePreferences::LocationPoint homePoint;
+    NativePreferences::LocationPoint companyPoint;
+    int32_t result = service.ValidateParams(params, homePoint, companyPoint);
+    EXPECT_EQ(result, RUN_OK);
+}
+
+/**
+ * @tc.name: DataFabricAddressServiceImplTest040
+ * @tc.desc: Test Subscribe with the update action fails when the subscription state cannot be re-established.
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(DataFabricAddressServiceImplTest, DataFabricAddressServiceImplTest040, TestSize.Level0)
+{
+    InitFactory();
+    DataFabricAddressTest::SetGetDistanceResult(true, 5000.0);
+    DataFabricAddressTest::SetSubscribeNavigationManagerResult(INTERNAL_EXCEPTION);
+    DataFabricAddressServiceImpl service;
+    sptr<IDataFabricAddressCallback> callback = new TestDataFabricAddressCallbackStub();
+    NativePreferences::DataFabricAddressParams params =
+        DataFabricAddressTest::MakeCommuteUpdateParams(DataFabricAddressTest::MakeWgs84HomePoint(),
+            DataFabricAddressTest::MakeWgs84CompanyPoint());
+    int32_t result = service.Subscribe(params, callback);
+    EXPECT_EQ(result, INTERNAL_EXCEPTION);
+    // The update action must not be sent when the re-subscription failed.
+    EXPECT_EQ(DataFabricAddressTest::GetSubscribeActionCount(), 1);
+    EXPECT_EQ(DataFabricAddressTest::GetLastSubscribeAction(),
+        static_cast<int32_t>(NativePreferences::ActionType::SUBSCRIPTION));
+}
+
+/**
+ * @tc.name: DataFabricAddressServiceImplTest041
+ * @tc.desc: Test RemoveCallback erases a cached entry whose callback has been released.
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(DataFabricAddressServiceImplTest, DataFabricAddressServiceImplTest041, TestSize.Level0)
+{
+    InitFactory();
+    auto service = std::make_shared<DataFabricAddressServiceImpl>();
+    sptr<IDataFabricAddressCallback> callback = new TestDataFabricAddressCallbackStub();
+    NativePreferences::DataFabricAddressParams params =
+        DataFabricAddressTest::MakeCommuteSubscriptionParams(DataFabricAddressTest::MakeWgs84HomePoint(),
+            DataFabricAddressTest::MakeWgs84CompanyPoint());
+    ASSERT_TRUE(service->AddCallback(params, callback));
+    service->subscribeCacheMap_[params].callback = nullptr;
+    int32_t result = service->Unsubscribe(params);
+    EXPECT_EQ(result, RUN_OK);
+    EXPECT_TRUE(service->subscribeCacheMap_.empty());
+}
+
+/**
+ * @tc.name: DataFabricAddressServiceImplTest042
+ * @tc.desc: Test RemoveCallback erases a cached entry whose death recipient has been released.
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(DataFabricAddressServiceImplTest, DataFabricAddressServiceImplTest042, TestSize.Level0)
+{
+    InitFactory();
+    auto service = std::make_shared<DataFabricAddressServiceImpl>();
+    sptr<IDataFabricAddressCallback> callback = new TestDataFabricAddressCallbackStub();
+    NativePreferences::DataFabricAddressParams params =
+        DataFabricAddressTest::MakeCommuteSubscriptionParams(DataFabricAddressTest::MakeWgs84HomePoint(),
+            DataFabricAddressTest::MakeWgs84CompanyPoint());
+    ASSERT_TRUE(service->AddCallback(params, callback));
+    service->subscribeCacheMap_[params].cbDeathRecipient = nullptr;
+    int32_t result = service->Unsubscribe(params);
+    EXPECT_EQ(result, RUN_OK);
+    EXPECT_TRUE(service->subscribeCacheMap_.empty());
+}
+
+/**
+ * @tc.name: DataFabricAddressServiceImplTest043
+ * @tc.desc: Test OnRemoteDied erases a cached entry whose death recipient has been released.
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(DataFabricAddressServiceImplTest, DataFabricAddressServiceImplTest043, TestSize.Level0)
+{
+    auto service = std::make_shared<DataFabricAddressServiceImpl>();
+    sptr<IDataFabricAddressCallback> callback = new TestDataFabricAddressCallbackStub();
+    NativePreferences::DataFabricAddressParams params =
+        DataFabricAddressTest::MakeCommuteSubscriptionParams(DataFabricAddressTest::MakeWgs84HomePoint(),
+            DataFabricAddressTest::MakeWgs84CompanyPoint());
+    ASSERT_TRUE(service->AddCallback(params, callback));
+    service->subscribeCacheMap_[params].cbDeathRecipient = nullptr;
+    std::weak_ptr<DataFabricAddressServiceImpl> weakService = service;
+    DataFabricAddressServiceImpl::DeathRecipientListener listener(weakService);
+    wptr<IRemoteObject> remote(callback->AsObject().GetRefPtr());
+    listener.OnRemoteDied(remote);
+    EXPECT_TRUE(service->subscribeCacheMap_.empty());
+}
+
+/**
+ * @tc.name: DataFabricAddressServiceImplTest044
+ * @tc.desc: Test Subscribe rejects a second caller when another caller already owns the subscription.
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(DataFabricAddressServiceImplTest, DataFabricAddressServiceImplTest044, TestSize.Level0)
+{
+    InitFactory();
+    DataFabricAddressTest::SetGetDistanceResult(true, 5000.0);
+    auto service = std::make_shared<DataFabricAddressServiceImpl>();
+    sptr<IDataFabricAddressCallback> ownerCallback = new TestDataFabricAddressCallbackStub();
+    sptr<IDataFabricAddressCallback> otherCallback = new TestDataFabricAddressCallbackStub();
+    NativePreferences::DataFabricAddressParams ownerParams =
+        DataFabricAddressTest::MakeCommuteSubscriptionParams(DataFabricAddressTest::MakeWgs84HomePoint(),
+            DataFabricAddressTest::MakeWgs84CompanyPoint());
+    NativePreferences::DataFabricAddressParams otherParams =
+        DataFabricAddressTest::MakeCommuteSubscriptionParams({ 31.5, 121.5 }, { 32.0, 122.0 });
+    ASSERT_TRUE(service->AddCallback(ownerParams, ownerCallback));
+    // Simulate that the cached subscription was registered by another caller.
+    service->subscribeCacheMap_[ownerParams].callerFullTokenId = 0xFFFF8888FFFF6666ULL;
+
+    int32_t result = service->Subscribe(otherParams, otherCallback);
+
+    EXPECT_EQ(result, SUBSCRIBE_EXCEPTION);
+    ASSERT_EQ(service->subscribeCacheMap_.size(), 1u);
+    EXPECT_TRUE(service->subscribeCacheMap_.find(otherParams) == service->subscribeCacheMap_.end());
+    EXPECT_TRUE(service->subscribeCacheMap_[ownerParams].callback == ownerCallback);
+    // The rejected caller must not reach the navigation manager.
+    EXPECT_EQ(DataFabricAddressTest::GetSubscribeActionCount(), 0);
+}
+
+/**
+ * @tc.name: DataFabricAddressServiceImplTest045
+ * @tc.desc: Test a repeated subscription of the same caller keeps one cache entry and one death recipient.
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(DataFabricAddressServiceImplTest, DataFabricAddressServiceImplTest045, TestSize.Level0)
+{
+    InitFactory();
+    DataFabricAddressTest::SetGetDistanceResult(true, 5000.0);
+    auto service = std::make_shared<DataFabricAddressServiceImpl>();
+    sptr<IDataFabricAddressCallback> firstCallback = new TestDataFabricAddressCallbackStub();
+    sptr<IDataFabricAddressCallback> secondCallback = new TestDataFabricAddressCallbackStub();
+    NativePreferences::DataFabricAddressParams params =
+        DataFabricAddressTest::MakeCommuteSubscriptionParams(DataFabricAddressTest::MakeWgs84HomePoint(),
+            DataFabricAddressTest::MakeWgs84CompanyPoint());
+    ASSERT_TRUE(service->AddCallback(params, firstCallback));
+    sptr<IRemoteObject::DeathRecipient> firstDeathRecipient =
+        service->subscribeCacheMap_[params].cbDeathRecipient;
+
+    int32_t result = service->Subscribe(params, secondCallback);
+
+    EXPECT_EQ(result, RUN_OK);
+    ASSERT_EQ(service->subscribeCacheMap_.size(), 1u);
+    EXPECT_TRUE(service->subscribeCacheMap_[params].callback == firstCallback);
+    EXPECT_TRUE(service->subscribeCacheMap_[params].cbDeathRecipient == firstDeathRecipient);
+    EXPECT_EQ(DataFabricAddressTest::GetSubscribeActionCount(), 1);
+}
+
+/**
+ * @tc.name: DataFabricAddressServiceImplTest046
+ * @tc.desc: Test Subscribe of the origin caller with different params is rejected because only one
+ *           subscription exists, the reference points can only be changed by an update action.
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(DataFabricAddressServiceImplTest, DataFabricAddressServiceImplTest046, TestSize.Level0)
+{
+    InitFactory();
+    DataFabricAddressTest::SetGetDistanceResult(true, 5000.0);
+    auto service = std::make_shared<DataFabricAddressServiceImpl>();
+    sptr<IDataFabricAddressCallback> callback = new TestDataFabricAddressCallbackStub();
+    NativePreferences::DataFabricAddressParams ownerParams =
+        DataFabricAddressTest::MakeCommuteSubscriptionParams(DataFabricAddressTest::MakeWgs84HomePoint(),
+            DataFabricAddressTest::MakeWgs84CompanyPoint());
+    NativePreferences::DataFabricAddressParams otherParams =
+        DataFabricAddressTest::MakeCommuteSubscriptionParams({ 31.5, 121.5 }, { 32.0, 122.0 });
+    ASSERT_TRUE(service->AddCallback(ownerParams, callback));
+
+    int32_t result = service->Subscribe(otherParams, callback);
+
+    EXPECT_EQ(result, SUBSCRIBE_EXCEPTION);
+    ASSERT_EQ(service->subscribeCacheMap_.size(), 1u);
+    EXPECT_TRUE(service->subscribeCacheMap_.find(otherParams) == service->subscribeCacheMap_.end());
+    EXPECT_TRUE(service->subscribeCacheMap_[ownerParams].callback == callback);
+    EXPECT_EQ(DataFabricAddressTest::GetSubscribeActionCount(), 0);
+}
+
+/**
+ * @tc.name: DataFabricAddressServiceImplTest047
+ * @tc.desc: Test Subscribe with the update action of the origin caller with new reference points reaches
+ *           the navigation manager and keeps the cached callback.
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(DataFabricAddressServiceImplTest, DataFabricAddressServiceImplTest047, TestSize.Level0)
+{
+    InitFactory();
+    DataFabricAddressTest::SetGetDistanceResult(true, 5000.0);
+    auto service = std::make_shared<DataFabricAddressServiceImpl>();
+    sptr<IDataFabricAddressCallback> ownerCallback = new TestDataFabricAddressCallbackStub();
+    sptr<IDataFabricAddressCallback> updateCallback = new TestDataFabricAddressCallbackStub();
+    NativePreferences::DataFabricAddressParams ownerParams =
+        DataFabricAddressTest::MakeCommuteSubscriptionParams(DataFabricAddressTest::MakeWgs84HomePoint(),
+            DataFabricAddressTest::MakeWgs84CompanyPoint());
+    NativePreferences::DataFabricAddressParams updateParams =
+        DataFabricAddressTest::MakeCommuteUpdateParams({ 31.5, 121.5 }, { 32.0, 122.0 });
+    ASSERT_TRUE(service->AddCallback(ownerParams, ownerCallback));
+
+    int32_t result = service->Subscribe(updateParams, updateCallback);
+
+    EXPECT_EQ(result, RUN_OK);
+    ASSERT_EQ(service->subscribeCacheMap_.size(), 1u);
+    EXPECT_TRUE(service->subscribeCacheMap_[ownerParams].callback == ownerCallback);
+    EXPECT_EQ(DataFabricAddressTest::GetSubscribeActionCount(), 2);
+    EXPECT_EQ(DataFabricAddressTest::GetLastSubscribeAction(),
+        static_cast<int32_t>(NativePreferences::ActionType::UPDATE));
+}
+
+/**
+ * @tc.name: DataFabricAddressServiceImplTest048
+ * @tc.desc: Test a failed subscription rolls back the cache so that another caller can subscribe.
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(DataFabricAddressServiceImplTest, DataFabricAddressServiceImplTest048, TestSize.Level0)
+{
+    InitFactory();
+    DataFabricAddressTest::SetGetDistanceResult(true, 5000.0);
+    DataFabricAddressTest::SetSubscribeNavigationManagerResult(INTERNAL_EXCEPTION);
+    auto service = std::make_shared<DataFabricAddressServiceImpl>();
+    sptr<IDataFabricAddressCallback> firstCallback = new TestDataFabricAddressCallbackStub();
+    sptr<IDataFabricAddressCallback> secondCallback = new TestDataFabricAddressCallbackStub();
+    NativePreferences::DataFabricAddressParams firstParams =
+        DataFabricAddressTest::MakeCommuteSubscriptionParams(DataFabricAddressTest::MakeWgs84HomePoint(),
+            DataFabricAddressTest::MakeWgs84CompanyPoint());
+    NativePreferences::DataFabricAddressParams secondParams =
+        DataFabricAddressTest::MakeCommuteSubscriptionParams({ 31.5, 121.5 }, { 32.0, 122.0 });
+
+    EXPECT_EQ(service->Subscribe(firstParams, firstCallback), INTERNAL_EXCEPTION);
+    EXPECT_TRUE(service->subscribeCacheMap_.empty());
+
+    // The failed subscription must not keep the single subscriber slot occupied.
+    DataFabricAddressTest::SetSubscribeNavigationManagerResult(RUN_OK);
+    EXPECT_EQ(service->Subscribe(secondParams, secondCallback), RUN_OK);
+    ASSERT_EQ(service->subscribeCacheMap_.size(), 1u);
+    EXPECT_TRUE(service->subscribeCacheMap_[secondParams].callback == secondCallback);
+}
+
+/**
+ * @tc.name: DataFabricAddressServiceImplTest049
+ * @tc.desc: Test the subscription cache lock is free while the navigation manager is called, and the
+ *           cache slot has been reserved before the call so that the single subscriber check still holds.
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(DataFabricAddressServiceImplTest, DataFabricAddressServiceImplTest049, TestSize.Level0)
+{
+    InitFactory();
+    DataFabricAddressTest::SetGetDistanceResult(true, 5000.0);
+    auto service = std::make_shared<DataFabricAddressServiceImpl>();
+    sptr<IDataFabricAddressCallback> callback = new TestDataFabricAddressCallbackStub();
+    NativePreferences::DataFabricAddressParams params =
+        DataFabricAddressTest::MakeCommuteSubscriptionParams(DataFabricAddressTest::MakeWgs84HomePoint(),
+            DataFabricAddressTest::MakeWgs84CompanyPoint());
+    bool cacheLockAvailable = false;
+    size_t cachedCount = 0;
+    DataFabricAddressTest::SetSubscribeNavigationManagerHook([&service, &cacheLockAvailable, &cachedCount]() {
+        cacheLockAvailable = service->subscribersMutex_.try_lock();
+        if (cacheLockAvailable) {
+            cachedCount = service->subscribeCacheMap_.size();
+            service->subscribersMutex_.unlock();
+        }
+    });
+
+    int32_t result = service->Subscribe(params, callback);
+
+    EXPECT_EQ(result, RUN_OK);
+    // The navigation manager calls the geofence and locator services synchronously, the cache lock must
+    // not be held during it, otherwise a concurrent subscription or a client death is blocked.
+    EXPECT_TRUE(cacheLockAvailable);
+    // The subscription slot is reserved before the call, a concurrent second subscription is rejected.
+    EXPECT_EQ(cachedCount, 1u);
+    EXPECT_EQ(DataFabricAddressTest::GetSubscribeActionCount(), 1);
+}
+/**
+ * @tc.name: DataFabricAddressServiceImplTest050
+ * @tc.desc: Test Unsubscribe of a caller which does not own the subscription neither removes the cached
+ *           entry nor tears the navigation manager down.
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(DataFabricAddressServiceImplTest, DataFabricAddressServiceImplTest050, TestSize.Level0)
+{
+    InitFactory();
+    auto service = std::make_shared<DataFabricAddressServiceImpl>();
+    sptr<IDataFabricAddressCallback> ownerCallback = new TestDataFabricAddressCallbackStub();
+    NativePreferences::DataFabricAddressParams ownerParams =
+        DataFabricAddressTest::MakeCommuteSubscriptionParams(DataFabricAddressTest::MakeWgs84HomePoint(),
+            DataFabricAddressTest::MakeWgs84CompanyPoint());
+    NativePreferences::DataFabricAddressParams otherParams =
+        DataFabricAddressTest::MakeCommuteSubscriptionParams({ 31.5, 121.5 }, { 32.0, 122.0 });
+    ASSERT_TRUE(service->AddCallback(ownerParams, ownerCallback));
+    // Simulate that the cached subscription was registered by another caller.
+    service->subscribeCacheMap_[ownerParams].callerFullTokenId = 0xFFFF8888FFFF6666ULL;
+    service->lastSubscribedToken_ = 0xFFFF8888FFFF6666ULL;
+
+    int32_t result = service->Unsubscribe(otherParams);
+
+    // The caller is treated as already unsubscribed, the collection of the owner keeps running.
+    EXPECT_EQ(result, RUN_OK);
+    EXPECT_EQ(DataFabricAddressTest::GetUnsubscribeManagerCallCount(), 0);
+    ASSERT_EQ(service->subscribeCacheMap_.size(), 1u);
+    EXPECT_TRUE(service->subscribeCacheMap_[ownerParams].callback == ownerCallback);
+}
+
+/**
+ * @tc.name: DataFabricAddressServiceImplTest051
+ * @tc.desc: Test the owner retries Unsubscribe after its cache entry has been removed, the navigation
+ *           manager tear down is retried so that a partial tear down failure can be recovered.
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(DataFabricAddressServiceImplTest, DataFabricAddressServiceImplTest051, TestSize.Level0)
+{
+    InitFactory();
+    auto service = std::make_shared<DataFabricAddressServiceImpl>();
+    sptr<IDataFabricAddressCallback> callback = new TestDataFabricAddressCallbackStub();
+    NativePreferences::DataFabricAddressParams params =
+        DataFabricAddressTest::MakeCommuteSubscriptionParams(DataFabricAddressTest::MakeWgs84HomePoint(),
+            DataFabricAddressTest::MakeWgs84CompanyPoint());
+    ASSERT_TRUE(service->AddCallback(params, callback));
+    ASSERT_EQ(service->Unsubscribe(params), RUN_OK);
+    ASSERT_EQ(DataFabricAddressTest::GetUnsubscribeManagerCallCount(), 1);
+    ASSERT_TRUE(service->subscribeCacheMap_.empty());
+
+    // The cache entry is already removed, the second call only retries the navigation manager tear down.
+    EXPECT_EQ(service->Unsubscribe(params), RUN_OK);
+    EXPECT_EQ(DataFabricAddressTest::GetUnsubscribeManagerCallCount(), 2);
+}
+
+/**
+ * @tc.name: DataFabricAddressServiceImplTest052
+ * @tc.desc: Test the death of the only subscriber tears the navigation manager down, so that the
+ *           collection does not outlive the subscriber which can never receive the reports.
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(DataFabricAddressServiceImplTest, DataFabricAddressServiceImplTest052, TestSize.Level0)
+{
+    auto service = std::make_shared<DataFabricAddressServiceImpl>();
+    sptr<IDataFabricAddressCallback> callback = new TestDataFabricAddressCallbackStub();
+    NativePreferences::DataFabricAddressParams params =
+        DataFabricAddressTest::MakeCommuteSubscriptionParams(DataFabricAddressTest::MakeWgs84HomePoint(),
+            DataFabricAddressTest::MakeWgs84CompanyPoint());
+    ASSERT_TRUE(service->AddCallback(params, callback));
+    std::weak_ptr<DataFabricAddressServiceImpl> weakService = service;
+    DataFabricAddressServiceImpl::DeathRecipientListener listener(weakService);
+    wptr<IRemoteObject> remote(callback->AsObject().GetRefPtr());
+
+    listener.OnRemoteDied(remote);
+
+    EXPECT_TRUE(service->subscribeCacheMap_.empty());
+    EXPECT_EQ(DataFabricAddressTest::GetUnsubscribeManagerCallCount(), 1);
+}
+
+/**
+ * @tc.name: DataFabricAddressServiceImplTest053
+ * @tc.desc: Test the death of a client which does not own the subscription neither removes the cached
+ *           entry nor tears the navigation manager down.
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(DataFabricAddressServiceImplTest, DataFabricAddressServiceImplTest053, TestSize.Level0)
+{
+    auto service = std::make_shared<DataFabricAddressServiceImpl>();
+    sptr<IDataFabricAddressCallback> ownerCallback = new TestDataFabricAddressCallbackStub();
+    sptr<IDataFabricAddressCallback> otherCallback = new TestDataFabricAddressCallbackStub();
+    NativePreferences::DataFabricAddressParams params =
+        DataFabricAddressTest::MakeCommuteSubscriptionParams(DataFabricAddressTest::MakeWgs84HomePoint(),
+            DataFabricAddressTest::MakeWgs84CompanyPoint());
+    ASSERT_TRUE(service->AddCallback(params, ownerCallback));
+    std::weak_ptr<DataFabricAddressServiceImpl> weakService = service;
+    DataFabricAddressServiceImpl::DeathRecipientListener listener(weakService);
+    wptr<IRemoteObject> remote(otherCallback->AsObject().GetRefPtr());
+
+    listener.OnRemoteDied(remote);
+
+    ASSERT_EQ(service->subscribeCacheMap_.size(), 1u);
+    EXPECT_TRUE(service->subscribeCacheMap_[params].callback == ownerCallback);
+    EXPECT_EQ(DataFabricAddressTest::GetUnsubscribeManagerCallCount(), 0);
+}
+
+/**
+ * @tc.name: DataFabricAddressServiceImplTest054
+ * @tc.desc: Test the death of one subscriber keeps the collection running when another subscription is
+ *           still cached.
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(DataFabricAddressServiceImplTest, DataFabricAddressServiceImplTest054, TestSize.Level0)
+{
+    auto service = std::make_shared<DataFabricAddressServiceImpl>();
+    sptr<IDataFabricAddressCallback> deadCallback = new TestDataFabricAddressCallbackStub();
+    sptr<IDataFabricAddressCallback> aliveCallback = new TestDataFabricAddressCallbackStub();
+    NativePreferences::DataFabricAddressParams deadParams =
+        DataFabricAddressTest::MakeCommuteSubscriptionParams({ 30.0, 120.0 }, { 30.5, 120.5 });
+    NativePreferences::DataFabricAddressParams aliveParams =
+        DataFabricAddressTest::MakeCommuteSubscriptionParams({ 31.0, 121.0 }, { 31.5, 121.5 });
+    ASSERT_TRUE(service->AddCallback(deadParams, deadCallback));
+    ASSERT_TRUE(service->AddCallback(aliveParams, aliveCallback));
+    std::weak_ptr<DataFabricAddressServiceImpl> weakService = service;
+    DataFabricAddressServiceImpl::DeathRecipientListener listener(weakService);
+    wptr<IRemoteObject> remote(deadCallback->AsObject().GetRefPtr());
+
+    listener.OnRemoteDied(remote);
+
+    ASSERT_EQ(service->subscribeCacheMap_.size(), 1u);
+    EXPECT_TRUE(service->subscribeCacheMap_.find(deadParams) == service->subscribeCacheMap_.end());
+    EXPECT_TRUE(service->subscribeCacheMap_[aliveParams].callback == aliveCallback);
+    EXPECT_EQ(DataFabricAddressTest::GetUnsubscribeManagerCallCount(), 0);
 }

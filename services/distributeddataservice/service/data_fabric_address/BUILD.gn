@@ -16,7 +16,9 @@ import("//build/ohos.gni")
 config("data_fabric_address_service_config") {
   visibility = [ ":*" ]
   include_dirs = [
+    ".",
     "navigation/include",
+    "navigation/include/data_collect",
   ]
 }
 
@@ -34,6 +36,8 @@ ohos_source_set("data_fabric_address_service") {
     "data_fabric_address_service_impl.cpp",
     "data_fabric_address_service_stub.cpp",
     "data_fabric_address_types_util.cpp",
+    "navigation/src/data_collect/navigation_live_view_monitor.cpp",
+    "navigation/src/data_collect/navigation_passive_location_handler.cpp",
     "navigation/src/navigation_common_utils.cpp",
     "navigation/src/navigation_manager.cpp",
   ]
@@ -61,13 +65,13 @@ ohos_source_set("data_fabric_address_service") {
     "access_token:libtokenid_sdk",
     "c_utils:utils",
     "hilog:libhilog",
+    "hisysevent:libhisysevent",
     "init:libbegetutil",
     "ipc:ipc_core",
     "ipc:ipc_single",
     "kv_store:datamgr_common",
     "location:locator_sdk",
     "location:lbsservice_common",
-    "relational_store:native_rdb",
     "preferences:native_preferences",
     "samgr:samgr_proxy",
   ]

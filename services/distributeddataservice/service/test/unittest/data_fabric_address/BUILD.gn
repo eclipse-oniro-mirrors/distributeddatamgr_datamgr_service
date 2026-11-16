@@ -59,6 +59,7 @@ ohos_unittest("DataFabricAddressServiceTest") {
     "googletest:gmock_main",
     "googletest:gtest_main",
     "hilog:libhilog",
+    "hisysevent:libhisysevent",
     "init:libbegetutil",
     "ipc:ipc_core",
     "ipc:ipc_single",
@@ -85,12 +86,14 @@ ohos_unittest("DataFabricAddressNavigationTest") {
   include_dirs = [
     "${data_service_path}/service/data_fabric_address",
     "${data_service_path}/service/data_fabric_address/navigation/include",
+    "${data_service_path}/service/data_fabric_address/navigation/include/data_collect",
   ]
 
   sources = [
     "${data_service_path}/service/data_fabric_address/navigation/src/navigation_common_utils.cpp",
     "${data_service_path}/service/data_fabric_address/navigation/src/navigation_manager.cpp",
     "data_fabric_address_navigation_test.cpp",
+    "fakes/navigation_data_collect_fake.cpp",
   ]
 
   configs = [ module_private_config ]
@@ -103,11 +106,113 @@ ohos_unittest("DataFabricAddressNavigationTest") {
     "c_utils:utils",
     "googletest:gtest_main",
     "hilog:libhilog",
+    "hisysevent:libhisysevent",
     "ipc:ipc_core",
     "ipc:ipc_single",
     "kv_store:datamgr_common",
     "location:lbsservice_common",
     "location:locator_sdk",
+    "preferences:native_preferences",
+  ]
+
+  cflags = [
+    "-Wno-unused-parameter",
+    "-fno-access-control",
+  ]
+}
+
+###############################################################################
+# Data Fabric Address Navigation Data Collect Unit Tests
+###############################################################################
+
+# The "mocks/location" include dir shadows the location SDK headers used by the
+# navigation data collect module so that the locator dependency can be
+# controlled by the unit test.
+ohos_unittest("DataFabricAddressNavigationDataCollectTest") {
+  module_out_path = module_output_path
+
+  include_dirs = [
+    "mocks/location",
+    "${data_service_path}/service/data_fabric_address",
+    "${data_service_path}/service/data_fabric_address/navigation/include",
+    "${data_service_path}/service/data_fabric_address/navigation/include/data_collect",
+  ]
+
+  sources = [
+    "${data_service_path}/service/data_fabric_address/navigation/src/data_collect/navigation_live_view_monitor.cpp",
+    "${data_service_path}/service/data_fabric_address/navigation/src/data_collect/navigation_passive_location_handler.cpp",
+    "data_fabric_address_data_collect_test.cpp",
+    "fakes/navigation_common_utils_fake.cpp",
+    "mocks/location/location_mock.cpp",
+  ]
+
+  configs = [ module_private_config ]
+
+  deps = [
+    "${data_service_path}/framework:distributeddatasvcfwk",
+  ]
+
+  external_deps = [
+    "c_utils:utils",
+    "googletest:gmock_main",
+    "googletest:gtest_main",
+    "hilog:libhilog",
+    "hisysevent:libhisysevent",
+    "ipc:ipc_core",
+    "ipc:ipc_single",
+    "kv_store:datamgr_common",
+    "preferences:native_preferences",
+  ]
+
+  cflags = [
+    "-Wno-unused-parameter",
+    "-fno-access-control",
+  ]
+
+  # Redirects the geofence live view dynamic library calls to the test fakes.
+  ldflags = [
+    "-Wl,--wrap=dlopen",
+    "-Wl,--wrap=dlsym",
+    "-Wl,--wrap=dlclose",
+  ]
+}
+
+###############################################################################
+# Data Fabric Address Navigation Distance Unit Tests
+###############################################################################
+
+# The "mocks/location" include dir shadows the location SDK headers so that the
+# distance calculation of the navigation common utils can be controlled by the
+# unit test.
+ohos_unittest("DataFabricAddressNavigationDistanceTest") {
+  module_out_path = module_output_path
+
+  include_dirs = [
+    "mocks/location",
+    "${data_service_path}/service/data_fabric_address",
+    "${data_service_path}/service/data_fabric_address/navigation/include",
+  ]
+
+  sources = [
+    "${data_service_path}/service/data_fabric_address/navigation/src/navigation_common_utils.cpp",
+    "data_fabric_address_navigation_distance_test.cpp",
+    "mocks/location/location_mock.cpp",
+  ]
+
+  configs = [ module_private_config ]
+
+  deps = [
+    "${data_service_path}/framework:distributeddatasvcfwk",
+  ]
+
+  external_deps = [
+    "c_utils:utils",
+    "googletest:gtest_main",
+    "hilog:libhilog",
+    "hisysevent:libhisysevent",
+    "ipc:ipc_core",
+    "ipc:ipc_single",
+    "kv_store:datamgr_common",
     "preferences:native_preferences",
   ]
 
@@ -125,6 +230,8 @@ group("unittests") {
   testonly = true
 
   deps = [
+    ":DataFabricAddressNavigationDataCollectTest",
+    ":DataFabricAddressNavigationDistanceTest",
     ":DataFabricAddressNavigationTest",
     ":DataFabricAddressServiceTest",
   ]

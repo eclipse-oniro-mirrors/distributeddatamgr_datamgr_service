@@ -16,15 +16,25 @@
 #ifndef NAVIGATION_COMMON_UTILS_H
 #define NAVIGATION_COMMON_UTILS_H
 
+#include <string>
+
 #include "data_fabric_address_types.h"
 
 namespace OHOS {
 namespace DataFabricAddress {
+// Default distance thresholds of the navigation commute scenario (unit: meter).
+constexpr double DEFAULT_MIN_SUPPORTED_COMMUTE_DISTANCE = 500.0;
+constexpr double DEFAULT_MAX_NAVIGATION_END_DISTANCE = 2000.0;
+constexpr double DEFAULT_MAX_WAYPOINT_COLLECT_DISTANCE = 2000.0;
+constexpr double DEFAULT_MIN_NAVIGATION_TRIP_DISTANCE = 500.0;
 
 class NavigationCommonUtil {
 public:
+    static int64_t GetNowSecondTimestamp();
     static bool GetDistance(const NativePreferences::LocationPoint& startPoint,
         const NativePreferences::LocationPoint& endPoint, double& distance);
+    static bool IsDistanceLessThan(const NativePreferences::LocationPoint& startPoint,
+        const NativePreferences::LocationPoint& endPoint, double threshold);
     // Convert the GCJ02 coordinate system to the WGS84 coordinate system
     static bool Gcj02ToWgs84(const NativePreferences::LocationPoint& gcj02Point,
         NativePreferences::LocationPoint& wgs84Point);
