@@ -1239,8 +1239,4 @@ HWTEST_F(UdmfVirtualEntryServiceTest, GetData_ConsumeUnmarkedFile_LifecycleAccep
     EXPECT_EQ(completed.wait_for(std::chrono::seconds(2)), std::future_status::ready);
     EXPECT_EQ(UdmfFuseMountAdapterMock::mounts, 0u);
 }
-
-
-
-
 } // namespace OHOS::UDMF
