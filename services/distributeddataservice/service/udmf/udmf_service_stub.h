@@ -49,6 +49,7 @@ private:
     int32_t OnSetDelayInfo(MessageParcel &data, MessageParcel &reply);
     int32_t OnGetDataIfAvailable(MessageParcel &data, MessageParcel &reply);
     int32_t OnRegisterVirtualEntry(MessageParcel &data, MessageParcel &reply);
+    int32_t OnRollbackVirtualEntry(MessageParcel &data, MessageParcel &reply);
     int32_t NormalizeQueryOption(QueryOption &query);
 
     using Handler = int32_t (UdmfServiceStub::*)(MessageParcel &data, MessageParcel &reply);
@@ -71,6 +72,7 @@ private:
         &UdmfServiceStub::OnPushDelayData,
         &UdmfServiceStub::OnGetDataIfAvailable,
         &UdmfServiceStub::OnRegisterVirtualEntry,
+        &UdmfServiceStub::OnRollbackVirtualEntry,
     };
 };
 } // namespace UDMF

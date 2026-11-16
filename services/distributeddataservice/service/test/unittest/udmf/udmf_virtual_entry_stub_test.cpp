@@ -19,6 +19,8 @@
 #include "gtest/gtest.h"
 #include "ipc_object_stub.h"
 #include "udmf_service_stub.h"
+#include "udmf_types_util.h"
+#include "virtual_entry_parcel.h"
 
 using namespace testing;
 using namespace testing::ext;
@@ -52,6 +54,7 @@ public:
     MOCK_METHOD(int32_t, PushDelayData, (const std::string &, UnifiedData &, Summary &), (override));
     MOCK_METHOD(int32_t, GetDataIfAvailable,
         (const std::string &, const DataLoadInfo &, sptr<IRemoteObject>, std::shared_ptr<UnifiedData>), (override));
+    MOCK_METHOD(int32_t, RollbackVirtualEntry, (const std::string &), (override));
     MOCK_METHOD(int32_t, RegisterVirtualEntry,
         (const std::string &, uint32_t, const VirtualEntry &, sptr<IRemoteObject>), (override));
 };
@@ -97,7 +100,7 @@ VirtualEntry MakeStubDirectory(uint32_t childCount)
     return entry;
 }
 
-bool WriteEntryHeader(MessageParcel &parcel, const VirtualEntry &entry, uint32_t fields = 6)
+bool WriteNodeHeader(Parcel &parcel, const VirtualEntry &entry, uint32_t fields = 6)
 {
     return (fields < 1 || parcel.WriteString(entry.id)) && (fields < 2 || parcel.WriteString(entry.name)) &&
            (fields < 3 || parcel.WriteInt32(static_cast<int32_t>(entry.type))) &&
@@ -105,17 +108,37 @@ bool WriteEntryHeader(MessageParcel &parcel, const VirtualEntry &entry, uint32_t
            (fields < 6 || parcel.WriteUint32(static_cast<uint32_t>(entry.subItems.size())));
 }
 
-bool WriteEntryTree(MessageParcel &parcel, const VirtualEntry &entry)
+bool WritePayload(MessageParcel &parcel, const Parcel &payload)
 {
-    if (!WriteEntryHeader(parcel, entry)) {
+    return parcel.WriteUint32(1) && parcel.WriteUint32(payload.GetDataSize()) &&
+        (payload.GetDataSize() == 0 ||
+        parcel.WriteRawData(reinterpret_cast<const void *>(payload.GetData()), payload.GetDataSize()));
+}
+
+bool WriteEntryHeader(MessageParcel &parcel, const VirtualEntry &entry, uint32_t fields = 6)
+{
+    Parcel payload;
+    return WriteNodeHeader(payload, entry, fields) && WritePayload(parcel, payload);
+}
+
+bool WriteNodeTree(Parcel &parcel, const VirtualEntry &entry)
+{
+    if (!WriteNodeHeader(parcel, entry)) {
         return false;
     }
     for (const auto &child : entry.subItems) {
-        if (!WriteEntryTree(parcel, child)) {
+        if (!WriteNodeTree(parcel, child)) {
             return false;
         }
     }
     return true;
+}
+
+bool WriteEntryTree(MessageParcel &parcel, const VirtualEntry &entry)
+{
+    Parcel payload;
+    return payload.SetMaxCapacity(VirtualEntryParcel::MAX_BYTES) && WriteNodeTree(payload, entry) &&
+        WritePayload(parcel, payload);
 }
 
 bool WriteRegisterPrefix(MessageParcel &parcel, const std::string &key = TEST_KEY)
@@ -250,8 +273,10 @@ HWTEST_F(UdmfVirtualEntryStubTest, RegisterVirtualEntry_ChildrenExceedRemainingB
     MessageParcel reply;
     auto entry = MakeStubDirectory(0);
     ASSERT_TRUE(WriteRegisterPrefix(request));
-    ASSERT_TRUE(WriteEntryHeader(request, entry, 5));
-    ASSERT_TRUE(request.WriteUint32(NODE_LIMIT));
+    Parcel payload;
+    ASSERT_TRUE(WriteNodeHeader(payload, entry, 5));
+    ASSERT_TRUE(payload.WriteUint32(NODE_LIMIT));
+    ASSERT_TRUE(WritePayload(request, payload));
     EXPECT_CALL(service_, RegisterVirtualEntry(_, _, _, _)).Times(0);
     EXPECT_EQ(service_.OnRemoteRequest(REGISTER_CODE, request, reply), E_READ_PARCEL_ERROR);
 }
@@ -267,8 +292,10 @@ HWTEST_F(UdmfVirtualEntryStubTest, RegisterVirtualEntry_TruncatedChild_RejectPar
     MessageParcel request;
     MessageParcel reply;
     ASSERT_TRUE(WriteRegisterPrefix(request));
-    ASSERT_TRUE(WriteEntryHeader(request, MakeStubDirectory(1)));
-    ASSERT_TRUE(WriteEntryHeader(request, MakeStubFile(), 3));
+    Parcel payload;
+    ASSERT_TRUE(WriteNodeHeader(payload, MakeStubDirectory(1)));
+    ASSERT_TRUE(WriteNodeHeader(payload, MakeStubFile(), 3));
+    ASSERT_TRUE(WritePayload(request, payload));
     EXPECT_CALL(service_, RegisterVirtualEntry(_, _, _, _)).Times(0);
     EXPECT_EQ(service_.OnRemoteRequest(REGISTER_CODE, request, reply), E_READ_PARCEL_ERROR);
 }
@@ -304,7 +331,7 @@ HWTEST_F(UdmfVirtualEntryStubTest, RegisterVirtualEntry_ValidFile_PreserveMetada
     ASSERT_TRUE(WriteRegisterPrefix(request));
     ASSERT_TRUE(WriteEntryTree(request, entry));
     ASSERT_TRUE(request.WriteRemoteObject(provider_));
-    EXPECT_CALL(service_, RegisterVirtualEntry(TEST_KEY, RECORD_INDEX, _, provider_))
+    EXPECT_CALL(service_, RegisterVirtualEntry(Eq(std::string(TEST_KEY)), RECORD_INDEX, _, provider_))
         .WillOnce(DoAll(SaveArg<2>(&received), Return(E_NO_PERMISSION)));
 
     EXPECT_EQ(service_.OnRemoteRequest(REGISTER_CODE, request, reply), E_OK);
@@ -441,5 +468,88 @@ HWTEST_F(UdmfVirtualEntryStubTest, RegisterVirtualEntry_ReplyAllocationFailed_Re
     ASSERT_TRUE(request.WriteRemoteObject(provider_));
     EXPECT_CALL(service_, RegisterVirtualEntry(_, _, _, _)).WillOnce(Return(E_OK));
     EXPECT_EQ(service_.OnRemoteRequest(REGISTER_CODE, request, reply), E_WRITE_PARCEL_ERROR);
+}
+
+/**
+ * @tc.name: RegisterVirtualEntry_InvalidFrame_RejectVersionSizeAndTrailingBytes
+ * @tc.desc: Reject malformed envelopes and complete nodes followed by unexpected data before dispatch.
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(UdmfVirtualEntryStubTest, RegisterVirtualEntry_InvalidFrame_RejectVersionSizeAndTrailingBytes,
+    TestSize.Level0)
+{
+    EXPECT_CALL(service_, RegisterVirtualEntry(_, _, _, _)).Times(0);
+    for (uint32_t size : { 0u, VirtualEntryParcel::MAX_BYTES + 1 }) {
+        MessageParcel request;
+        MessageParcel reply;
+        ASSERT_TRUE(WriteRegisterPrefix(request));
+        ASSERT_TRUE(request.WriteUint32(1));
+        ASSERT_TRUE(request.WriteUint32(size));
+        EXPECT_EQ(service_.OnRemoteRequest(REGISTER_CODE, request, reply), E_READ_PARCEL_ERROR);
+    }
+    MessageParcel versionRequest;
+    MessageParcel versionReply;
+    ASSERT_TRUE(WriteRegisterPrefix(versionRequest));
+    ASSERT_TRUE(versionRequest.WriteUint32(2));
+    EXPECT_EQ(service_.OnRemoteRequest(REGISTER_CODE, versionRequest, versionReply), E_READ_PARCEL_ERROR);
+    MessageParcel request;
+    MessageParcel reply;
+    Parcel payload;
+    ASSERT_TRUE(WriteRegisterPrefix(request));
+    ASSERT_TRUE(WriteNodeTree(payload, MakeStubFile()));
+    ASSERT_TRUE(payload.WriteUint32(123));
+    ASSERT_TRUE(WritePayload(request, payload));
+    EXPECT_EQ(service_.OnRemoteRequest(REGISTER_CODE, request, reply), E_READ_PARCEL_ERROR);
+}
+
+/**
+ * @tc.name: RollbackVirtualEntry_DispatchAndInvalidKey_PreserveBoundary
+ * @tc.desc: Only a complete nonempty key reaches rollback and its result is returned.
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(UdmfVirtualEntryStubTest, RollbackVirtualEntry_DispatchAndInvalidKey_PreserveBoundary, TestSize.Level0)
+{
+    const auto code = static_cast<uint32_t>(UdmfServiceInterfaceCode::ROLLBACK_VIRTUAL_ENTRY);
+    MessageParcel request;
+    MessageParcel reply;
+    ASSERT_TRUE(request.WriteInterfaceToken(UdmfServiceStub::GetDescriptor()));
+    ASSERT_TRUE(request.WriteString(TEST_KEY));
+    EXPECT_CALL(service_, RollbackVirtualEntry(Eq(std::string(TEST_KEY)))).WillOnce(Return(E_NO_PERMISSION));
+    EXPECT_EQ(service_.OnRemoteRequest(code, request, reply), E_OK);
+    EXPECT_EQ(reply.ReadInt32(), E_NO_PERMISSION);
+    MessageParcel invalid;
+    MessageParcel invalidReply;
+    ASSERT_TRUE(invalid.WriteInterfaceToken(UdmfServiceStub::GetDescriptor()));
+    ASSERT_TRUE(invalid.WriteString(""));
+    EXPECT_EQ(service_.OnRemoteRequest(code, invalid, invalidReply), E_READ_PARCEL_ERROR);
+}
+
+/**
+ * @tc.name: RegisterVirtualEntry_InvalidNodeFields_RejectOversizedStringsAndFileChildren
+ * @tc.desc: Raw metadata must not bypass string budgets or attach children to files.
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(UdmfVirtualEntryStubTest, RegisterVirtualEntry_InvalidNodeFields_RejectOversizedStringsAndFileChildren,
+    TestSize.Level0)
+{
+    EXPECT_CALL(service_, RegisterVirtualEntry(_, _, _, _)).Times(0);
+    for (uint32_t scenario = 0; scenario < 3; ++scenario) {
+        auto entry = MakeStubFile();
+        if (scenario == 0) {
+            entry.id = std::string(1025, 'i');
+        } else if (scenario == 1) {
+            entry.name = std::string(256, 'n');
+        } else {
+            entry.subItems.push_back(MakeStubFile());
+        }
+        MessageParcel request;
+        MessageParcel reply;
+        ASSERT_TRUE(WriteRegisterPrefix(request));
+        ASSERT_TRUE(WriteEntryTree(request, entry));
+        EXPECT_EQ(service_.OnRemoteRequest(REGISTER_CODE, request, reply), E_READ_PARCEL_ERROR);
+    }
 }
 } // namespace OHOS::UDMF
