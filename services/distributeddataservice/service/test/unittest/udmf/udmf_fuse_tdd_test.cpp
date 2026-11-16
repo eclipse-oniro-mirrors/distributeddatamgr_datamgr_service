@@ -524,7 +524,7 @@ HWTEST_F(UdmfFuseTddTest, Activate_RepeatForSameTarget_ReuseUriAndMount, TestSiz
 {
     ASSERT_EQ(ActivateFile(), 0);
     EXPECT_EQ(UdmfFuseMountAdapterMock::lastMountPoint, "/mnt/data/100/udmf_fuse/files");
-    EXPECT_EQ(uri_.find("file:///data/storage/el2/udmf/files/"), 0u);
+    EXPECT_EQ(uri_.find("file:///data/service/el2/udmf_fuse/files/"), 0u);
     std::string repeated;
     EXPECT_EQ(manager_.Activate("tdd-session", TARGET_TOKEN, TARGET_UID, TARGET_UID, repeated), 0);
     EXPECT_EQ(repeated, uri_);

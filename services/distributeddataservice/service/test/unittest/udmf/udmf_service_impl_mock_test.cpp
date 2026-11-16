@@ -301,7 +301,7 @@ HWTEST_F(UdmfServiceImplMockTest, ResolveAutoLaunchTest001, TestSize.Level0)
 HWTEST_F(UdmfServiceImplMockTest, GetUdmfFuseMountPoint_SeparatedPaths_ReturnExpectedPath, TestSize.Level0)
 {
     EXPECT_EQ(UdmfFuseSessionManager::GetMountPoint(100), "/mnt/data/100/udmf_fuse/files");
-    EXPECT_EQ(UdmfFuseSessionManager::GetAppMountPoint(100), "/data/storage/el2/udmf/files");
+    EXPECT_EQ(UdmfFuseSessionManager::GetAppMountPoint(100), "/data/service/el2/udmf_fuse/files");
 }
 
 /**
