@@ -223,50 +223,6 @@ int32_t UdmfServiceImpl::AuthorizeDrag(const UnifiedData &data, uint32_t targetT
 #endif
 }
 
-int32_t UdmfServiceImpl::RollbackVirtualEntry(const std::string &key)
-{
-    UnifiedKey unifiedKey(key);
-    if (!unifiedKey.IsValid() || unifiedKey.intention != UD_INTENTION_MAP.at(UD_INTENTION_DRAG)) {
-        return E_INVALID_PARAMETERS;
-    }
-    auto store = StoreCache::GetInstance().GetStore(unifiedKey.intention);
-    if (store == nullptr) {
-        return E_DB_ERROR;
-    }
-    UnifiedData data;
-    auto status = store->Get(key, data);
-    if (status != E_OK) {
-        return status;
-    }
-    auto runtime = data.GetRuntime();
-    uint32_t callingTokenId = IPCSkeleton::GetCallingTokenID();
-    if (runtime == nullptr || callingTokenId == 0 || callingTokenId != runtime->tokenId ||
-        runtime->key.GetUnifiedKey() != key || !VerifySavedTokenId(runtime) || runtime->deviceId.empty() ||
-        runtime->deviceId != PreProcessUtils::GetLocalDeviceId()) {
-        return E_NO_PERMISSION;
-    }
-    const auto records = data.GetRecords();
-    bool hasMarker = std::any_of(records.begin(), records.end(),
-        [this](const auto &record) { return record != nullptr && IsVirtualEntryRecord(record); });
-    if (!hasMarker) {
-        return E_INVALID_PARAMETERS;
-    }
-    int32_t userId = -1;
-    if (PreProcessUtils::GetHapUidByToken(callingTokenId, userId) != E_OK ||
-        userId != IPCSkeleton::GetCallingUid() / UID_TRANSFORM_DIVISOR) {
-        return E_NO_PERMISSION;
-    }
-    status = store->Delete(unifiedKey.GetKeyCommonPrefix());
-    if (status != E_OK) {
-        ZLOGE("Rollback virtual entry data failed, status:%{public}d", status);
-        return status;
-    }
-    UdmfFuseSessionManager::GetInstance().Remove(key);
-    DelayDataPrepareContainer::GetInstance().Remove(key);
-    LifeCycleManager::GetInstance().EraseUdkey(key, callingTokenId);
-    return E_OK;
-}
-
 int32_t UdmfServiceImpl::RegisterVirtualEntry(
     const std::string &key, uint32_t recordIndex, const VirtualEntry &entry, sptr<IRemoteObject> provider)
 {

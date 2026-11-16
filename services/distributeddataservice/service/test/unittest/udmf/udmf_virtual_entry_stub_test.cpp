@@ -20,7 +20,6 @@
 #include "ipc_object_stub.h"
 #include "udmf_service_stub.h"
 #include "udmf_types_util.h"
-#include "virtual_entry_parcel.h"
 
 using namespace testing;
 using namespace testing::ext;
@@ -29,6 +28,7 @@ namespace OHOS::UDMF {
 namespace {
 constexpr uint32_t REGISTER_CODE = static_cast<uint32_t>(UdmfServiceInterfaceCode::REGISTER_VIRTUAL_ENTRY);
 constexpr uint32_t NODE_LIMIT = 4096;
+constexpr uint32_t TREE_BYTES_LIMIT = 8 * 1024 * 1024;
 constexpr uint32_t DEPTH_LIMIT = 64;
 constexpr uint32_t RECORD_INDEX = 3;
 constexpr int64_t MODIFY_TIME = 123456;
@@ -54,7 +54,6 @@ public:
     MOCK_METHOD(int32_t, PushDelayData, (const std::string &, UnifiedData &, Summary &), (override));
     MOCK_METHOD(int32_t, GetDataIfAvailable,
         (const std::string &, const DataLoadInfo &, sptr<IRemoteObject>, std::shared_ptr<UnifiedData>), (override));
-    MOCK_METHOD(int32_t, RollbackVirtualEntry, (const std::string &), (override));
     MOCK_METHOD(int32_t, RegisterVirtualEntry,
         (const std::string &, uint32_t, const VirtualEntry &, sptr<IRemoteObject>), (override));
 };
@@ -137,7 +136,7 @@ bool WriteNodeTree(Parcel &parcel, const VirtualEntry &entry)
 bool WriteEntryTree(MessageParcel &parcel, const VirtualEntry &entry)
 {
     Parcel payload;
-    return payload.SetMaxCapacity(VirtualEntryParcel::MAX_BYTES) && WriteNodeTree(payload, entry) &&
+    return payload.SetMaxCapacity(TREE_BYTES_LIMIT) && WriteNodeTree(payload, entry) &&
         WritePayload(parcel, payload);
 }
 
@@ -480,7 +479,7 @@ HWTEST_F(UdmfVirtualEntryStubTest, RegisterVirtualEntry_InvalidFrame_RejectVersi
     TestSize.Level0)
 {
     EXPECT_CALL(service_, RegisterVirtualEntry(_, _, _, _)).Times(0);
-    for (uint32_t size : { 0u, VirtualEntryParcel::MAX_BYTES + 1 }) {
+    for (uint32_t size : { 0u, TREE_BYTES_LIMIT + 1 }) {
         MessageParcel request;
         MessageParcel reply;
         ASSERT_TRUE(WriteRegisterPrefix(request));
@@ -503,28 +502,6 @@ HWTEST_F(UdmfVirtualEntryStubTest, RegisterVirtualEntry_InvalidFrame_RejectVersi
     EXPECT_EQ(service_.OnRemoteRequest(REGISTER_CODE, request, reply), E_READ_PARCEL_ERROR);
 }
 
-/**
- * @tc.name: RollbackVirtualEntry_DispatchAndInvalidKey_PreserveBoundary
- * @tc.desc: Only a complete nonempty key reaches rollback and its result is returned.
- * @tc.type: FUNC
- * @tc.author: agent
- */
-HWTEST_F(UdmfVirtualEntryStubTest, RollbackVirtualEntry_DispatchAndInvalidKey_PreserveBoundary, TestSize.Level0)
-{
-    const auto code = static_cast<uint32_t>(UdmfServiceInterfaceCode::ROLLBACK_VIRTUAL_ENTRY);
-    MessageParcel request;
-    MessageParcel reply;
-    ASSERT_TRUE(request.WriteInterfaceToken(UdmfServiceStub::GetDescriptor()));
-    ASSERT_TRUE(request.WriteString(TEST_KEY));
-    EXPECT_CALL(service_, RollbackVirtualEntry(Eq(std::string(TEST_KEY)))).WillOnce(Return(E_NO_PERMISSION));
-    EXPECT_EQ(service_.OnRemoteRequest(code, request, reply), E_OK);
-    EXPECT_EQ(reply.ReadInt32(), E_NO_PERMISSION);
-    MessageParcel invalid;
-    MessageParcel invalidReply;
-    ASSERT_TRUE(invalid.WriteInterfaceToken(UdmfServiceStub::GetDescriptor()));
-    ASSERT_TRUE(invalid.WriteString(""));
-    EXPECT_EQ(service_.OnRemoteRequest(code, invalid, invalidReply), E_READ_PARCEL_ERROR);
-}
 
 /**
  * @tc.name: RegisterVirtualEntry_InvalidNodeFields_RejectOversizedStringsAndFileChildren

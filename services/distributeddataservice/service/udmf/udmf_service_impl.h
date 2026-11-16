@@ -64,7 +64,6 @@ public:
         sptr<IRemoteObject> iUdmfNotifier, std::shared_ptr<UnifiedData> unifiedData) override;
     int32_t RegisterVirtualEntry(const std::string &key, uint32_t recordIndex, const VirtualEntry &entry,
         sptr<IRemoteObject> provider) override;
-    int32_t RollbackVirtualEntry(const std::string &key) override;
     int32_t HandleRemoteDelayData(const std::string &key);
     static std::shared_ptr<UdmfServiceImpl> GetService();
 

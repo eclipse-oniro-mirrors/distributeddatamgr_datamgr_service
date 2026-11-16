@@ -654,7 +654,6 @@ ohos_unittest("UdmfVirtualEntryServiceTest") {
     "${data_service_path}/framework/test/mock/account_delegate_mock.cpp",
     "${data_service_path}/service/backup/src/backup_manager.cpp",
     "${data_service_path}/service/test/mock/access_token_mock.cpp",
-    "${data_service_path}/service/test/mock/device_manager_adapter_mock.cpp",
     "${data_service_path}/service/test/mock/meta_data_manager_mock.cpp",
     "${data_service_path}/service/test/mock/udmf_fuse_lowlevel_mock.cpp",
     "${data_service_path}/service/test/mock/udmf_fuse_mount_adapter_mock.cpp",

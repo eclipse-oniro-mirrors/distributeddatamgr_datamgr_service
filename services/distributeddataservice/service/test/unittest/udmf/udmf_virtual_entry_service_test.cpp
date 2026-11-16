@@ -21,7 +21,6 @@
 #include <map>
 
 #include "access_token_mock.h"
-#include "device_manager_adapter_mock.h"
 #include "account_delegate_mock.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
@@ -186,8 +185,6 @@ public:
         g_virtualEntryCallingUid = TEST_UID;
         savedAccount_ = DistributedData::AccountDelegate::GetInstance();
         DistributedData::AccountDelegate::instance_ = &account_;
-        savedDeviceManager_ = DistributedData::BDeviceManagerAdapter::deviceManagerAdapter;
-        DistributedData::BDeviceManagerAdapter::deviceManagerAdapter = device_;
         savedAccessToken_ = BAccessTokenKit::accessTokenkit;
         BAccessTokenKit::accessTokenkit = token_;
         savedCheckers_ = CheckerManager::GetInstance().checkers_;
@@ -230,7 +227,6 @@ public:
         }
         CheckerManager::GetInstance().checkers_ = savedCheckers_;
         BAccessTokenKit::accessTokenkit = savedAccessToken_;
-        DistributedData::BDeviceManagerAdapter::deviceManagerAdapter = savedDeviceManager_;
         DistributedData::AccountDelegate::instance_ = savedAccount_;
         g_virtualEntryCallingToken = savedCallingToken_;
         g_virtualEntryCallingUid = savedCallingUid_;
@@ -240,10 +236,6 @@ public:
 protected:
     void ConfigureMocks()
     {
-        DistributedData::DeviceInfo localDevice;
-        localDevice.uuid = "virtual-local-uuid";
-        ON_CALL(*device_, GetLocalDevice()).WillByDefault(Return(localDevice));
-        ON_CALL(*device_, CalcClientUuid(_, _)).WillByDefault(Return("virtual-local-device"));
         ON_CALL(account_, QueryForegroundUserId(_)).WillByDefault(DoAll(SetArgReferee<0>(TEST_USER), Return(true)));
         ON_CALL(account_, GetUserByToken(_)).WillByDefault(Return(TEST_USER));
         ON_CALL(*token_, GetTokenTypeFlag(_)).WillByDefault(Return(TOKEN_HAP));
@@ -328,9 +320,6 @@ protected:
     FuseLowlevelMock fuse_;
     NiceMock<DistributedData::AccountDelegateMock> account_;
     NiceMock<VirtualEntryPrivilegeMock> privilege_;
-    std::shared_ptr<NiceMock<DistributedData::DeviceManagerAdapterMock>> device_ =
-        std::make_shared<NiceMock<DistributedData::DeviceManagerAdapterMock>>();
-    std::shared_ptr<DistributedData::BDeviceManagerAdapter> savedDeviceManager_;
     std::shared_ptr<NiceMock<AccessTokenKitMock>> token_ = std::make_shared<NiceMock<AccessTokenKitMock>>();
     std::shared_ptr<NiceMock<VirtualEntryStoreMock>> store_ = std::make_shared<NiceMock<VirtualEntryStoreMock>>();
     sptr<ServiceEntryProvider> provider_ = new ServiceEntryProvider();
@@ -1251,72 +1240,7 @@ HWTEST_F(UdmfVirtualEntryServiceTest, GetData_ConsumeUnmarkedFile_LifecycleAccep
     EXPECT_EQ(UdmfFuseMountAdapterMock::mounts, 0u);
 }
 
-/**
- * @tc.name: RollbackVirtualEntry_Owner_RemovesStoredDataAndSession
- * @tc.desc: The source can roll back its own marked drag data and pending provider session.
- * @tc.type: FUNC
- * @tc.author: agent
- */
-HWTEST_F(UdmfVirtualEntryServiceTest, RollbackVirtualEntry_Owner_RemovesStoredDataAndSession, TestSize.Level0)
-{
-    ASSERT_EQ(RegisterSession(), 0);
-    UnifiedKey key(query_.key);
-    EXPECT_CALL(*store_, Delete(Eq(key.GetKeyCommonPrefix()))).WillOnce(Return(E_OK));
-    EXPECT_EQ(service_.RollbackVirtualEntry(query_.key), E_OK);
-    UdmfFuseSessionManager::SessionInfo session;
-    EXPECT_FALSE(manager_.Get(query_.key, session));
-}
 
-/**
- * @tc.name: RollbackVirtualEntry_OtherTokenOrUser_DoesNotDelete
- * @tc.desc: Knowing a drag key does not permit a different token or user to roll it back.
- * @tc.type: FUNC
- * @tc.author: agent
- */
-HWTEST_F(UdmfVirtualEntryServiceTest, RollbackVirtualEntry_OtherTokenOrUser_DoesNotDelete, TestSize.Level0)
-{
-    EXPECT_CALL(*store_, Delete(_)).Times(0);
-    g_virtualEntryCallingToken = TARGET_TOKEN;
-    EXPECT_EQ(service_.RollbackVirtualEntry(query_.key), E_NO_PERMISSION);
-    g_virtualEntryCallingToken = SOURCE_TOKEN;
-    g_virtualEntryCallingUid = TEST_UID + 200000;
-    EXPECT_EQ(service_.RollbackVirtualEntry(query_.key), E_NO_PERMISSION);
-    g_virtualEntryCallingUid = TEST_UID;
-    storedData_.GetRuntime()->deviceId = "remote-device";
-    EXPECT_EQ(service_.RollbackVirtualEntry(query_.key), E_NO_PERMISSION);
-    storedData_.GetRuntime()->deviceId.clear();
-    EXPECT_EQ(service_.RollbackVirtualEntry(query_.key), E_NO_PERMISSION);
-}
 
-/**
- * @tc.name: RollbackVirtualEntry_UnmarkedOrInvalidKey_DoesNotDelete
- * @tc.desc: Ordinary data and invalid/non-drag keys cannot use the virtual entry rollback operation.
- * @tc.type: FUNC
- * @tc.author: agent
- */
-HWTEST_F(UdmfVirtualEntryServiceTest, RollbackVirtualEntry_UnmarkedOrInvalidKey_DoesNotDelete, TestSize.Level0)
-{
-    EXPECT_CALL(*store_, Delete(_)).Times(0);
-    EXPECT_EQ(service_.RollbackVirtualEntry("invalid"), E_INVALID_PARAMETERS);
-    UnifiedKey other("DataHub", SOURCE_BUNDLE, "0123456789abcdef0123456789abcdef");
-    EXPECT_EQ(service_.RollbackVirtualEntry(other.GetUnifiedKey()), E_INVALID_PARAMETERS);
-    SetRecords({});
-    EXPECT_EQ(service_.RollbackVirtualEntry(query_.key), E_INVALID_PARAMETERS);
-}
 
-/**
- * @tc.name: RollbackVirtualEntry_DeleteFailure_PreservesSessionForLaterCleanup
- * @tc.desc: A store deletion failure must be observable and not discard the remaining session.
- * @tc.type: FUNC
- * @tc.author: agent
- */
-HWTEST_F(UdmfVirtualEntryServiceTest, RollbackVirtualEntry_DeleteFailure_PreservesSessionForLaterCleanup,
-    TestSize.Level0)
-{
-    ASSERT_EQ(RegisterSession(), 0);
-    EXPECT_CALL(*store_, Delete(_)).WillOnce(Return(E_DB_ERROR));
-    EXPECT_EQ(service_.RollbackVirtualEntry(query_.key), E_DB_ERROR);
-    UdmfFuseSessionManager::SessionInfo session;
-    EXPECT_TRUE(manager_.Get(query_.key, session));
-}
 } // namespace OHOS::UDMF

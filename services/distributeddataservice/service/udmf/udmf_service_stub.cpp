@@ -20,7 +20,6 @@
 #include "log_print.h"
 #include "qos_manager.h"
 #include "udmf_types_util.h"
-#include "virtual_entry_parcel.h"
 #include "unified_key.h"
 #include "unified_meta.h"
 
@@ -413,15 +412,6 @@ int32_t UdmfServiceStub::OnGetDataIfAvailable(MessageParcel &data, MessageParcel
     return E_OK;
 }
 
-int32_t UdmfServiceStub::OnRollbackVirtualEntry(MessageParcel &data, MessageParcel &reply)
-{
-    std::string key;
-    if (!data.ReadString(key) || key.empty()) {
-        return E_READ_PARCEL_ERROR;
-    }
-    return reply.WriteInt32(RollbackVirtualEntry(key)) ? E_OK : E_WRITE_PARCEL_ERROR;
-}
-
 int32_t UdmfServiceStub::OnRegisterVirtualEntry(MessageParcel &data, MessageParcel &reply)
 {
     std::string key;
@@ -429,7 +419,7 @@ int32_t UdmfServiceStub::OnRegisterVirtualEntry(MessageParcel &data, MessageParc
     VirtualEntry entry;
     sptr<IRemoteObject> provider;
     if (!data.ReadString(key) || key.empty() || !data.ReadUint32(recordIndex) ||
-        !VirtualEntryParcel::Read(data, entry) || (provider = data.ReadRemoteObject()) == nullptr) {
+        !ITypesUtil::Unmarshalling(entry, data) || (provider = data.ReadRemoteObject()) == nullptr) {
         return E_READ_PARCEL_ERROR;
     }
     return reply.WriteInt32(RegisterVirtualEntry(key, recordIndex, entry, provider)) ? E_OK : E_WRITE_PARCEL_ERROR;
