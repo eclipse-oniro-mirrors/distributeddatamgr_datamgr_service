@@ -33,6 +33,7 @@ constexpr size_t TEST_SIZE = 1;
 constexpr uint8_t TEST_DATA = 1;
 constexpr uint32_t CODE_MAX = IDataShareService::DATA_SHARE_SERVICE_CMD_MAX + 1;
 namespace OHOS::Test {
+using OHOS::DataShare::LogLabel;
 class DataShareServiceStubTest : public testing::Test {
 public:
     static void SetUpTestCase(void){};
