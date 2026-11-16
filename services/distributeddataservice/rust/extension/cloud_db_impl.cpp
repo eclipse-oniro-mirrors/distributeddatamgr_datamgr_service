@@ -199,7 +199,6 @@ int32_t CloudDbImpl::Unlock()
 
 int64_t CloudDbImpl::AliveTime()
 {
-    std::lock_guard<std::mutex> lock(mutex_);
     return interval_;
 }
 

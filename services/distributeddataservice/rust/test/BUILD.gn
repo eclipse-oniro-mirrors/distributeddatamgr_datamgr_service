@@ -55,6 +55,42 @@ ohos_unittest("ExtensionUtilTest") {
 
 ###############################################################################
 
+ohos_unittest("CloudDbImplTest") {
+  module_out_path = module_output_path
+  sources = [
+    "../extension/cloud_cursor_impl.cpp",
+    "../extension/cloud_db_impl.cpp",
+    "../extension/extension_util.cpp",
+    "unittest/cloud_db_impl_test.cpp",
+  ]
+
+  configs = [ ":module_private_config" ]
+
+  cflags = [
+    "-Wno-multichar",
+    "-Wno-c99-designator",
+    "-fno-access-control",
+  ]
+
+  deps = [
+    "${data_service_path}/rust/extension:opencloudextension",
+    "${data_service_path}/framework:distributeddatasvcfwk",
+    "${data_service_path}/rust/ylong_cloud_extension:ylong_cloud_extension",
+  ]
+  external_deps = [
+    "c_utils:utils",
+    "googletest:gmock_main",
+    "googletest:gtest_main",
+    "hilog:libhilog",
+    "json:nlohmann_json_static",
+    "kv_store:datamgr_common",
+  ]
+
+  part_name = "datamgr_service"
+}
+
+###############################################################################
+
 group("unittest") {
   testonly = true
   deps = []
@@ -62,6 +98,7 @@ group("unittest") {
   if (dm_part_is_enabled && datamgr_service_distributed) {
     deps += [
       ":ExtensionUtilTest",
+      ":CloudDbImplTest",
     ]
   }
 }
