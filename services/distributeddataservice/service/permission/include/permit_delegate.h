@@ -51,6 +51,7 @@ private:
     std::map<std::string, std::string> GetExtraCondition(const CondParam &param);
     Status LoadStoreMeta(const std::string &prefix, const CheckParam &param, StoreMetaData &data) const;
     DataFlowCheckRet IsTransferAllowed(const CheckParam &param, const DBProperty &property);
+    bool IsDragExportRestricted(const CheckParam &param) const;
     bool IsSrcTransferAllowed(const CheckParam &param, const AppIDMetaData &appIDMeta, uint64_t tokenId);
 
     ConcurrentMap<std::string, std::string> appId2BundleNameMap_;

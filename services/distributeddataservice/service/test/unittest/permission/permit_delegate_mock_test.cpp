@@ -15,13 +15,17 @@
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+
 #include "access_token_mock.h"
 #include "account_delegate_mock.h"
+#include "bootstrap.h"
 #include "device_manager_adapter_mock.h"
+#include "drag_export_runtime_mock.h"
 #include "meta_data_manager_mock.h"
-#include "permit_delegate.h"
-#include "metadata/store_meta_data.h"
 #include "metadata/appid_meta_data.h"
+#include "metadata/store_meta_data.h"
+#include "permit_delegate.h"
+#include "security_guard_delegate_mock.h"
 #include "utils/constant.h"
 
 namespace OHOS::DistributedData {
@@ -114,12 +118,15 @@ void PermitDelegateMockTest::TearDownTestCase(void)
 
 void PermitDelegateMockTest::SetUp(void)
 {
+    SecurityGuardTestRegistry::instance = nullptr;
     AccountDelegate::instance_ = nullptr;
     AccountDelegate::RegisterAccountInstance(accountDelegateMock);
 }
 
 void PermitDelegateMockTest::TearDown(void)
 {
+    SecurityGuardTestRegistry::instance = nullptr;
+    DragExportRuntimeMock::checkDataFlow = {};
     AccountDelegate::instance_ = nullptr;
     Mock::VerifyAndClearExpectations(accountDelegateMock);
     Mock::VerifyAndClearExpectations(dmAdapterMock.get());
@@ -475,5 +482,122 @@ HWTEST_F(PermitDelegateMockTest, IsTransferAllowed_TokenIdHandling_ReturnDeniedS
     property[Constant::TOKEN_ID] = std::string("invalid");
     EXPECT_EQ(PermitDelegate::GetInstance().IsTransferAllowed(param, property),
         DataFlowCheckRet::DENIED_SEND);
+}
+namespace {
+class DragExportGuardMock : public SecurityGuardDelegate {
+public:
+    Status Start() override
+    {
+        return Status::UNAVAILABLE;
+    }
+    bool IsReady() const override
+    {
+        return false;
+    }
+    DispatchStatus Request(const Event &, Completion) override
+    {
+        return DispatchStatus::UNAVAILABLE;
+    }
+    ClientSnapshot GetClientSnapshot() const override
+    {
+        return {};
+    }
+    void Stop() override
+    {
+    }
+    MOCK_METHOD(bool, IsExportAllowed, (int64_t), (const, override));
+};
+} // namespace
+
+/**
+ * @tc.name: CheckDataFlow_DragSubscription_ReturnsSendOnlyRestriction
+ * @tc.desc: The registered database callback blocks UDMF drag export before existing data-flow checks.
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(
+    PermitDelegateMockTest, CheckDataFlow_DragSubscription_ReturnsSendOnlyRestriction, testing::ext::TestSize.Level1)
+{
+    StrictMock<DragExportGuardMock> guard;
+    SecurityGuardTestRegistry::instance = &guard;
+    auto param = BuildCheckParam("drag");
+    param.appId = Bootstrap::GetInstance().GetProcessLabel();
+    PermitDelegate::GetInstance().Init();
+    ASSERT_TRUE(DragExportRuntimeMock::checkDataFlow);
+    EXPECT_CALL(guard, IsExportAllowed(SecurityGuardDelegate::DRAG_AUTH_EVENT_ID)).WillOnce(Return(false));
+    EXPECT_CALL(*metaDataMgrMock, LoadMeta(_, _, _)).Times(0);
+    EXPECT_CALL(*accountDelegateMock, IsOsAccountConstraintEnabled()).Times(0);
+    EXPECT_EQ(DragExportRuntimeMock::checkDataFlow(param, {}), DataFlowCheckRet::DENIED_SEND);
+}
+
+/**
+ * @tc.name: CheckDataFlow_NoSubscription_PreservesExistingRestrictions
+ * @tc.desc: No subscription allows the original data-flow policy to decide, including token validation.
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(
+    PermitDelegateMockTest, CheckDataFlow_NoSubscription_PreservesExistingRestrictions, testing::ext::TestSize.Level1)
+{
+    StrictMock<DragExportGuardMock> guard;
+    SecurityGuardTestRegistry::instance = &guard;
+    auto param = BuildCheckParam("drag");
+    param.appId = Bootstrap::GetInstance().GetProcessLabel();
+    PermitDelegate::GetInstance().Init();
+    ASSERT_TRUE(DragExportRuntimeMock::checkDataFlow);
+    constexpr auto eventId = SecurityGuardDelegate::DRAG_AUTH_EVENT_ID;
+    EXPECT_CALL(guard, IsExportAllowed(eventId)).Times(2).WillRepeatedly(Return(true));
+    EXPECT_CALL(*metaDataMgrMock, LoadMeta(_, _, true)).Times(2).WillRepeatedly(Return(false));
+    EXPECT_CALL(*dmAdapterMock, GetAuthType(_)).WillOnce(Return(AUTH_FORM_OTHER));
+    EXPECT_CALL(*accountDelegateMock, IsOsAccountConstraintEnabled()).WillOnce(Return(false));
+    EXPECT_EQ(DragExportRuntimeMock::checkDataFlow(param, {}), DataFlowCheckRet::DEFAULT);
+    DBProperty invalid{ { Constant::TOKEN_ID, std::string("invalid") } };
+    EXPECT_EQ(DragExportRuntimeMock::checkDataFlow(param, invalid), DataFlowCheckRet::DENIED_SEND);
+}
+
+/**
+ * @tc.name: CheckDataFlow_OtherStoreOrApplication_DoesNotConsultDragPolicy
+ * @tc.desc: Another application named drag, non-drag UDMF stores and metadata keep their existing behavior.
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(PermitDelegateMockTest, CheckDataFlow_OtherStoreOrApplication_DoesNotConsultDragPolicy,
+    testing::ext::TestSize.Level1)
+{
+    StrictMock<DragExportGuardMock> guard;
+    SecurityGuardTestRegistry::instance = &guard;
+    auto drag = BuildCheckParam("drag");
+    auto dataHub = BuildCheckParam("dataHub");
+    dataHub.appId = Bootstrap::GetInstance().GetProcessLabel();
+    auto meta = BuildCheckParam(META_STORE_ID);
+    meta.appId = dataHub.appId;
+    PermitDelegate::GetInstance().Init();
+    ASSERT_TRUE(DragExportRuntimeMock::checkDataFlow);
+    EXPECT_CALL(guard, IsExportAllowed(_)).Times(0);
+    EXPECT_CALL(*metaDataMgrMock, LoadMeta(_, _, true)).Times(3).WillRepeatedly(Return(false));
+    EXPECT_CALL(*dmAdapterMock, GetAuthType(_)).Times(2).WillRepeatedly(Return(AUTH_FORM_OTHER));
+    EXPECT_CALL(*accountDelegateMock, IsOsAccountConstraintEnabled()).Times(3).WillRepeatedly(Return(false));
+    for (const auto &param : { drag, dataHub, meta }) {
+        EXPECT_EQ(DragExportRuntimeMock::checkDataFlow(param, {}), DataFlowCheckRet::DEFAULT);
+    }
+}
+
+/**
+ * @tc.name: CheckDataFlow_MissingBackend_PreservesOriginalDragTransfer
+ * @tc.desc: No registered backend introduces no additional outbound restriction.
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(
+    PermitDelegateMockTest, CheckDataFlow_MissingBackend_PreservesOriginalDragTransfer, testing::ext::TestSize.Level1)
+{
+    auto param = BuildCheckParam("drag");
+    param.appId = Bootstrap::GetInstance().GetProcessLabel();
+    PermitDelegate::GetInstance().Init();
+    ASSERT_TRUE(DragExportRuntimeMock::checkDataFlow);
+    EXPECT_CALL(*metaDataMgrMock, LoadMeta(_, _, true)).WillOnce(Return(false));
+    EXPECT_CALL(*dmAdapterMock, GetAuthType(_)).WillOnce(Return(AUTH_FORM_OTHER));
+    EXPECT_CALL(*accountDelegateMock, IsOsAccountConstraintEnabled()).WillOnce(Return(false));
+    EXPECT_EQ(DragExportRuntimeMock::checkDataFlow(param, {}), DataFlowCheckRet::DEFAULT);
 }
 }

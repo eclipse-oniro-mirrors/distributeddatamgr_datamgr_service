@@ -29,6 +29,7 @@ namespace OHOS {
 namespace DistributedData {
 class SecurityGuardDelegate {
 public:
+    static constexpr int64_t DRAG_AUTH_EVENT_ID = 0x0F810000;
     enum class Strategy { ALLOW, DENY, TIMEOUT, ERROR };
     enum class Status { READY, UNAVAILABLE };
     enum class DispatchStatus { DISPATCHED, UNAVAILABLE, REJECTED, BUSY };
@@ -80,6 +81,12 @@ public:
     API_EXPORT virtual DispatchStatus Request(const Event &event, Completion completion) = 0;
     API_EXPORT virtual ClientSnapshot GetClientSnapshot() const = 0;
     API_EXPORT virtual void Stop() = 0;
+    // Backends without authorization support do not restrict cross-device export.
+    // An authorization backend requires a current, explicitly empty event subscription to allow export.
+    API_EXPORT virtual bool IsExportAllowed(int64_t) const
+    {
+        return true;
+    }
     API_EXPORT static SecurityGuardDelegate *GetInstance();
     // Register the selected adapter during process initialization, before service binding.
     API_EXPORT static bool RegisterSecurityGuardInstance(SecurityGuardDelegate *instance);

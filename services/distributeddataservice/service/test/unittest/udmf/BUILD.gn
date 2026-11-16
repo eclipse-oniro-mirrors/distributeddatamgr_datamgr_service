@@ -417,8 +417,6 @@ ohos_unittest("UdmfServiceStubTest") {
 }
 
 ohos_unittest("UdmfServiceStubMockTest") {
-  # These integration tests exercise the SG path through the mock adapter.
-  defines = [ "UDMF_SECURITY_GUARD_ENABLED" ]
   module_out_path = module_output_path
   sources = [
     "${data_service_path}/framework/account/account_delegate.cpp",
@@ -458,11 +456,6 @@ ohos_unittest("UdmfServiceStubMockTest") {
     "${data_service_path}/service/udmf/preprocess/data_handler.cpp",
     "${data_service_path}/service/udmf/preprocess/preprocess_utils.cpp",
     "${data_service_path}/service/udmf/preprocess/udmf_notifier_proxy.cpp",
-    "${data_service_path}/service/udmf/security_guard/auth_degradation_policy.cpp",
-    "${data_service_path}/service/udmf/security_guard/auth_event_builder.cpp",
-    "${data_service_path}/service/udmf/security_guard/auth_timeout_policy.cpp",
-    "${data_service_path}/service/udmf/security_guard/drag_auth_coordinator.cpp",
-    "${data_service_path}/service/udmf/security_guard/drag_auth_event_encoder.cpp",
     "${data_service_path}/service/udmf/store/drag_observer.cpp",
     "${data_service_path}/service/udmf/store/observer_factory.cpp",
     "${data_service_path}/service/udmf/store/runtime_store.cpp",
@@ -472,6 +465,16 @@ ohos_unittest("UdmfServiceStubMockTest") {
     "${data_service_path}/service/udmf/udmf_service_stub.cpp",
     "udmf_service_stub_mock_test.cpp",
   ]
+  if (udmf_security_guard_enabled) {
+    defines = [ "UDMF_SECURITY_GUARD_ENABLED" ]
+    sources += [
+      "${data_service_path}/service/udmf/security_guard/auth_degradation_policy.cpp",
+      "${data_service_path}/service/udmf/security_guard/auth_event_builder.cpp",
+      "${data_service_path}/service/udmf/security_guard/auth_timeout_policy.cpp",
+      "${data_service_path}/service/udmf/security_guard/drag_auth_coordinator.cpp",
+      "${data_service_path}/service/udmf/security_guard/drag_auth_event_encoder.cpp",
+    ]
+  }
 
   include_dirs = [
     "${data_service_path}/service/matrix/include",
@@ -637,8 +640,6 @@ ohos_unittest("UdmfPreProcessUtilsMockTest") {
 
 # Keep static API replacements isolated from the existing service test suites.
 ohos_unittest("UdmfVirtualEntryServiceTest") {
-  # These integration tests exercise the SG path through the mock adapter.
-  defines = [ "UDMF_SECURITY_GUARD_ENABLED" ]
   module_out_path = module_output_path
   sources = [
     "${data_service_path}/framework/checker/checker_manager.cpp",
@@ -664,11 +665,6 @@ ohos_unittest("UdmfVirtualEntryServiceTest") {
     "${data_service_path}/service/udmf/preprocess/data_handler.cpp",
     "${data_service_path}/service/udmf/preprocess/preprocess_utils.cpp",
     "${data_service_path}/service/udmf/preprocess/udmf_notifier_proxy.cpp",
-    "${data_service_path}/service/udmf/security_guard/auth_degradation_policy.cpp",
-    "${data_service_path}/service/udmf/security_guard/auth_event_builder.cpp",
-    "${data_service_path}/service/udmf/security_guard/auth_timeout_policy.cpp",
-    "${data_service_path}/service/udmf/security_guard/drag_auth_coordinator.cpp",
-    "${data_service_path}/service/udmf/security_guard/drag_auth_event_encoder.cpp",
     "${data_service_path}/service/udmf/store/drag_observer.cpp",
     "${data_service_path}/service/udmf/store/observer_factory.cpp",
     "${data_service_path}/service/udmf/store/runtime_store.cpp",
@@ -679,6 +675,16 @@ ohos_unittest("UdmfVirtualEntryServiceTest") {
     "udmf_virtual_entry_service_test.cpp",
     "udmf_virtual_entry_stub_test.cpp",
   ]
+  if (udmf_security_guard_enabled) {
+    defines = [ "UDMF_SECURITY_GUARD_ENABLED" ]
+    sources += [
+      "${data_service_path}/service/udmf/security_guard/auth_degradation_policy.cpp",
+      "${data_service_path}/service/udmf/security_guard/auth_event_builder.cpp",
+      "${data_service_path}/service/udmf/security_guard/auth_timeout_policy.cpp",
+      "${data_service_path}/service/udmf/security_guard/drag_auth_coordinator.cpp",
+      "${data_service_path}/service/udmf/security_guard/drag_auth_event_encoder.cpp",
+    ]
+  }
 
   include_dirs = [
     "${data_service_path}/adapter/include/communicator",
@@ -806,8 +812,6 @@ ohos_unittest("UdmfCheckerManagerTest") {
 }
 
 ohos_unittest("UdmfServiceImplDbCorruptionMockTest") {
-  # These integration tests exercise the SG path through the mock adapter.
-  defines = [ "UDMF_SECURITY_GUARD_ENABLED" ]
   module_out_path = module_output_path
   sanitize = {
     cfi = true
@@ -833,11 +837,6 @@ ohos_unittest("UdmfServiceImplDbCorruptionMockTest") {
     "${data_service_path}/service/udmf/permission/uri_permission_manager.cpp",
     "${data_service_path}/service/udmf/preprocess/data_handler.cpp",
     "${data_service_path}/service/udmf/preprocess/udmf_notifier_proxy.cpp",
-    "${data_service_path}/service/udmf/security_guard/auth_degradation_policy.cpp",
-    "${data_service_path}/service/udmf/security_guard/auth_event_builder.cpp",
-    "${data_service_path}/service/udmf/security_guard/auth_timeout_policy.cpp",
-    "${data_service_path}/service/udmf/security_guard/drag_auth_coordinator.cpp",
-    "${data_service_path}/service/udmf/security_guard/drag_auth_event_encoder.cpp",
     "${data_service_path}/service/udmf/store/drag_observer.cpp",
     "${data_service_path}/service/udmf/store/observer_factory.cpp",
     "${data_service_path}/service/udmf/store/runtime_store.cpp",
@@ -849,6 +848,16 @@ ohos_unittest("UdmfServiceImplDbCorruptionMockTest") {
     "../../mock/preprocess_utils_mock.cpp",
     "udmf_db_corruption_mock_test.cpp",
   ]
+  if (udmf_security_guard_enabled) {
+    defines = [ "UDMF_SECURITY_GUARD_ENABLED" ]
+    sources += [
+      "${data_service_path}/service/udmf/security_guard/auth_degradation_policy.cpp",
+      "${data_service_path}/service/udmf/security_guard/auth_event_builder.cpp",
+      "${data_service_path}/service/udmf/security_guard/auth_timeout_policy.cpp",
+      "${data_service_path}/service/udmf/security_guard/drag_auth_coordinator.cpp",
+      "${data_service_path}/service/udmf/security_guard/drag_auth_event_encoder.cpp",
+    ]
+  }
 
   include_dirs = [
     "${data_service_path}/adapter/include/account",
@@ -919,8 +928,6 @@ ohos_unittest("UdmfServiceImplDbCorruptionMockTest") {
 }
 
 ohos_unittest("UdmfDelayDataContainerTest") {
-  # These integration tests exercise the SG path through the mock adapter.
-  defines = [ "UDMF_SECURITY_GUARD_ENABLED" ]
   module_out_path = module_output_path
   sanitize = {
     cfi = true
@@ -948,11 +955,6 @@ ohos_unittest("UdmfDelayDataContainerTest") {
     "${data_service_path}/service/udmf/preprocess/data_handler.cpp",
     "${data_service_path}/service/udmf/preprocess/preprocess_utils.cpp",
     "${data_service_path}/service/udmf/preprocess/udmf_notifier_proxy.cpp",
-    "${data_service_path}/service/udmf/security_guard/auth_degradation_policy.cpp",
-    "${data_service_path}/service/udmf/security_guard/auth_event_builder.cpp",
-    "${data_service_path}/service/udmf/security_guard/auth_timeout_policy.cpp",
-    "${data_service_path}/service/udmf/security_guard/drag_auth_coordinator.cpp",
-    "${data_service_path}/service/udmf/security_guard/drag_auth_event_encoder.cpp",
     "${data_service_path}/service/udmf/store/drag_observer.cpp",
     "${data_service_path}/service/udmf/store/observer_factory.cpp",
     "${data_service_path}/service/udmf/store/runtime_store.cpp",
@@ -962,6 +964,16 @@ ohos_unittest("UdmfDelayDataContainerTest") {
     "${data_service_path}/service/udmf/udmf_service_stub.cpp",
     "udmf_delay_data_container_test.cpp",
   ]
+  if (udmf_security_guard_enabled) {
+    defines = [ "UDMF_SECURITY_GUARD_ENABLED" ]
+    sources += [
+      "${data_service_path}/service/udmf/security_guard/auth_degradation_policy.cpp",
+      "${data_service_path}/service/udmf/security_guard/auth_event_builder.cpp",
+      "${data_service_path}/service/udmf/security_guard/auth_timeout_policy.cpp",
+      "${data_service_path}/service/udmf/security_guard/drag_auth_coordinator.cpp",
+      "${data_service_path}/service/udmf/security_guard/drag_auth_event_encoder.cpp",
+    ]
+  }
 
   include_dirs = [
     "${data_service_path}/adapter/include/account",
@@ -1034,8 +1046,6 @@ ohos_unittest("UdmfDelayDataContainerTest") {
 }
 
 ohos_unittest("UdmfObserverTest") {
-  # These integration tests exercise the SG path through the mock adapter.
-  defines = [ "UDMF_SECURITY_GUARD_ENABLED" ]
   module_out_path = module_output_path
   sanitize = {
     cfi = true
@@ -1063,11 +1073,6 @@ ohos_unittest("UdmfObserverTest") {
     "${data_service_path}/service/udmf/preprocess/data_handler.cpp",
     "${data_service_path}/service/udmf/preprocess/preprocess_utils.cpp",
     "${data_service_path}/service/udmf/preprocess/udmf_notifier_proxy.cpp",
-    "${data_service_path}/service/udmf/security_guard/auth_degradation_policy.cpp",
-    "${data_service_path}/service/udmf/security_guard/auth_event_builder.cpp",
-    "${data_service_path}/service/udmf/security_guard/auth_timeout_policy.cpp",
-    "${data_service_path}/service/udmf/security_guard/drag_auth_coordinator.cpp",
-    "${data_service_path}/service/udmf/security_guard/drag_auth_event_encoder.cpp",
     "${data_service_path}/service/udmf/store/drag_observer.cpp",
     "${data_service_path}/service/udmf/store/observer_factory.cpp",
     "${data_service_path}/service/udmf/store/runtime_store.cpp",
@@ -1077,6 +1082,16 @@ ohos_unittest("UdmfObserverTest") {
     "${data_service_path}/service/udmf/udmf_service_stub.cpp",
     "udmf_observer_test.cpp",
   ]
+  if (udmf_security_guard_enabled) {
+    defines = [ "UDMF_SECURITY_GUARD_ENABLED" ]
+    sources += [
+      "${data_service_path}/service/udmf/security_guard/auth_degradation_policy.cpp",
+      "${data_service_path}/service/udmf/security_guard/auth_event_builder.cpp",
+      "${data_service_path}/service/udmf/security_guard/auth_timeout_policy.cpp",
+      "${data_service_path}/service/udmf/security_guard/drag_auth_coordinator.cpp",
+      "${data_service_path}/service/udmf/security_guard/drag_auth_event_encoder.cpp",
+    ]
+  }
 
   include_dirs = [
     "${data_service_path}/adapter/include/account",
@@ -1317,14 +1332,8 @@ group("unittests") {
   testonly = true
   deps = [
     ":AuditHelperTest",
-    ":UdmfAuthDegradationPolicyTest",
-    ":UdmfAuthEventBuilderTest",
-    ":UdmfAuthTimeoutPolicyTest",
-    ":UdmfAuthTimeoutTest",
     ":UdmfCheckerManagerTest",
     ":UdmfDelayDataContainerTest",
-    ":UdmfDragAuthCoordinatorTest",
-    ":UdmfDragAuthEncoderTest",
     ":UdmfDragProxyAuthorizationTest",
     ":UdmfObserverTest",
     ":UdmfPermissionPolicyUtilsTest",
@@ -1332,11 +1341,22 @@ group("unittests") {
     ":UdmfPreProcessUtilsTest",
     ":UdmfRunTimeStoreTest",
     ":UdmfServiceImplDbCorruptionMockTest",
-    ":UdmfServiceImplMockTest",
     ":UdmfSecurityGuardDisabledTest",
     ":UdmfServiceImplTest",
     ":UdmfServiceStubMockTest",
     ":UdmfServiceStubTest",
     ":UdmfVirtualEntryServiceTest",
   ]
+  # Match the service's SG switch so unsupported products run only the disabled path.
+  if (udmf_security_guard_enabled) {
+    deps += [
+      ":UdmfAuthDegradationPolicyTest",
+      ":UdmfAuthEventBuilderTest",
+      ":UdmfAuthTimeoutPolicyTest",
+      ":UdmfAuthTimeoutTest",
+      ":UdmfDragAuthCoordinatorTest",
+      ":UdmfDragAuthEncoderTest",
+      ":UdmfServiceImplMockTest",
+    ]
+  }
 }

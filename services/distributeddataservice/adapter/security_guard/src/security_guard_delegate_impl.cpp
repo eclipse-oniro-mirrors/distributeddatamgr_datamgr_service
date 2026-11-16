@@ -306,6 +306,18 @@ SecurityGuardDelegate::ClientSnapshot SecurityGuardDelegateImpl::GetClientSnapsh
     return store->snapshot;
 }
 
+bool SecurityGuardDelegateImpl::IsExportAllowed(int64_t eventId) const
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (state_ != State::READY) {
+        ZLOGW("drag export denied: SG not ready, state=%{public}d event=%{public}lld", static_cast<int>(state_),
+            static_cast<long long>(eventId));
+        return false;
+    }
+    std::lock_guard<std::mutex> statusLock(policyStore_->mutex);
+    return !policyStore_->snapshot.HasSubscribers(eventId);
+}
+
 void SecurityGuardDelegateImpl::Stop()
 {
     std::shared_ptr<Provider> provider;

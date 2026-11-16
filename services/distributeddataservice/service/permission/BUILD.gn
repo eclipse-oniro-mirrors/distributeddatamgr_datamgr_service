@@ -40,6 +40,7 @@ ohos_source_set("distributeddata_permit") {
   ]
 
   include_dirs = [
+    "${data_service_path}/service/bootstrap/include",
     "${data_service_path}/service/crypto/include",
     "${data_service_path}/service/kvdb",
     "${data_service_path}/adapter/include/communicator",
@@ -56,6 +57,7 @@ ohos_source_set("distributeddata_permit") {
 
   deps = [
     "${data_service_path}/framework:distributeddatasvcfwk",
+    "${data_service_path}/service/bootstrap:distributeddata_bootstrap",
   ]
   external_deps = [
     "access_token:libaccesstoken_sdk",

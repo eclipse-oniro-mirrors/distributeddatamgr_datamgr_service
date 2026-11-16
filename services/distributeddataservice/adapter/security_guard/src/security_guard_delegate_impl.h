@@ -51,6 +51,7 @@ public:
     bool IsReady() const override;
     DispatchStatus Request(const Event &event, Completion completion) override;
     ClientSnapshot GetClientSnapshot() const override;
+    bool IsExportAllowed(int64_t eventId) const override;
     void Stop() override;
 
 private:
