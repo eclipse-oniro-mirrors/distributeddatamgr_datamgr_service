@@ -88,9 +88,9 @@ private:
     bool UnPackData(const uint8_t *data, uint32_t totalLen, uint32_t &unpackedSize);
     bool UnPackDataHead(const uint8_t *data, uint32_t totalLen, RouteHead &routeHead);
     bool UnPackDataBody(const uint8_t *data, uint32_t totalLen);
-    bool UnPackAppId(uint8_t **data, uint32_t leftSize);
-    bool UnPackStoreId(uint8_t **data, uint32_t leftSize);
-    bool UnPackAccountId(uint8_t **data, uint32_t leftSize);
+    bool UnPackAppId(uint8_t **data, uint32_t &leftSize);
+    bool UnPackStoreId(uint8_t **data, uint32_t &leftSize);
+    bool UnPackAccountId(uint8_t **data, uint32_t &leftSize);
     std::string ParseStoreId(const std::string &deviceId, const std::string &label);
     std::string userId_;
     std::string appId_;
