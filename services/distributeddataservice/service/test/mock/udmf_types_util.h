@@ -19,8 +19,21 @@
 #include <map>
 #include <memory>
 
+#include "message_parcel.h"
+#include "virtual_entry.h"
+#include "visibility.h"
+
 namespace OHOS {
 namespace ITypesUtil {
+    // Keep virtual-tree decoding real while other IPC paths use this test mock.
+    template<typename T>
+    bool Marshalling(const T &input, MessageParcel &parcel);
+    template<typename T>
+    bool Unmarshalling(T &output, MessageParcel &parcel);
+    template<>
+    bool API_EXPORT Marshalling(const UDMF::VirtualEntry &input, MessageParcel &parcel);
+    template<>
+    bool API_EXPORT Unmarshalling(UDMF::VirtualEntry &output, MessageParcel &parcel);
     template<typename T, typename... Types>
     static bool Marshal(MessageParcel &parcel, const T &first, const Types &...others);
     template<typename T, typename... Types>
