@@ -955,10 +955,12 @@ std::pair<int32_t, QueryLastResults> CloudServiceImpl::QueryLastSyncInfo(const s
     }
     std::vector<QueryKey> queryKeys;
     std::vector<Database> databases;
-    auto buildRet = BuildQueryKeysForLastSync(user, id, bundleName, storeId, cloudInfo, queryKeys, databases);
+    auto [buildRet, outKeys, outDbs] = BuildQueryKeysForLastSync(id, bundleName, storeId, cloudInfo);
     if (buildRet != SUCCESS) {
         return { buildRet, results };
     }
+    queryKeys = std::move(outKeys);
+    databases = std::move(outDbs);
 
     auto [ret, lastSyncInfos] = syncManager_.QueryLastSyncInfo(queryKeys);
     ZLOGI("code:%{public}d, id:%{public}s, bundleName:%{public}s, storeId:%{public}s, size:%{public}d", ret,
@@ -970,14 +972,16 @@ std::pair<int32_t, QueryLastResults> CloudServiceImpl::QueryLastSyncInfo(const s
     return { ret, AssembleLastResults(databases, lastSyncInfos) };
 }
 
-int32_t CloudServiceImpl::BuildQueryKeysForLastSync(int32_t user, const std::string &id,
-    const std::string &bundleName, const std::string &storeId, const CloudInfo &cloudInfo,
-    std::vector<QueryKey> &queryKeys, std::vector<Database> &databases)
+std::tuple<int32_t, std::vector<QueryKey>, std::vector<Database>> CloudServiceImpl::BuildQueryKeysForLastSync(
+    const std::string &id, const std::string &bundleName, const std::string &storeId,
+    const CloudInfo &cloudInfo)
 {
+    std::vector<QueryKey> queryKeys;
+    std::vector<Database> databases;
     std::vector<SchemaMeta> schemas;
     auto key = cloudInfo.GetSchemaPrefix(bundleName);
     if (!MetaDataManager::GetInstance().LoadMeta(key, schemas, true) || schemas.empty()) {
-        return ERROR;
+        return { ERROR, queryKeys, databases };
     }
     for (const auto &schema : schemas) {
         if (schema.bundleName != bundleName) {
@@ -986,15 +990,15 @@ int32_t CloudServiceImpl::BuildQueryKeysForLastSync(int32_t user, const std::str
         databases = schema.databases;
         for (const auto &database : schema.databases) {
             if (storeId.empty() || database.alias == storeId) {
-                queryKeys.push_back({ user, id, bundleName, database.name });
+                queryKeys.push_back({ cloudInfo.user, id, bundleName, database.name });
             }
         }
         if (queryKeys.empty()) {
             ZLOGE("Invalid storeId: %{public}s", Anonymous::Change(storeId).c_str());
-            return INVALID_ARGUMENT;
+            return { INVALID_ARGUMENT, queryKeys, databases };
         }
     }
-    return SUCCESS;
+    return { SUCCESS, std::move(queryKeys), std::move(databases) };
 }
 
 std::pair<int32_t, BatchQueryLastResults> CloudServiceImpl::QueryLastSyncInfoBatch(
