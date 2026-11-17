@@ -106,6 +106,29 @@ ohos_unittest("EventCenterTest") {
   deps = [ "${data_service_path}/framework:distributeddatasvcfwk" ]
 }
 
+# Compile EventCenter directly so --wrap affects only this isolated test binary.
+ohos_unittest("EventCenterLegacyTest") {
+  module_out_path = module_output_path
+  sources = [
+    "${data_service_path}/framework/eventcenter/event.cpp",
+    "${data_service_path}/framework/eventcenter/event_center.cpp",
+    "event_center_legacy_test.cpp",
+    "mock/event_center_runtime_mock.cpp",
+  ]
+  configs = [ ":module_private_config" ]
+  external_deps = [
+    "ffrt:libffrt",
+    "googletest:gtest_main",
+    "kv_store:datamgr_common",
+  ]
+  ldflags = [ "-Wl,--wrap=ffrt_this_task_set_legacy_mode" ]
+  if (current_cpu == "arm" || current_cpu == "x86") {
+    ldflags += [ "-Wl,--wrap=_ZnwjRKSt9nothrow_t" ]
+  } else {
+    ldflags += [ "-Wl,--wrap=_ZnwmRKSt9nothrow_t" ]
+  }
+}
+
 ohos_unittest("FlowControlManagerTest") {
   module_out_path = module_output_path
 
@@ -654,6 +677,7 @@ group("unittest") {
     ":ConnectManagerTest",
     ":ConstantTest",
     ":CryptoTest",
+    ":EventCenterLegacyTest",
     ":EventCenterTest",
     ":EventTest",
     ":FeatureTest",

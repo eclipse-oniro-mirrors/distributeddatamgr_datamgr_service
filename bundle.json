@@ -74,6 +74,7 @@
                 "dfs_service",
                 "dlp_permission_service",
                 "dsoftbus",
+                "ffrt",
                 "hicollie",
                 "hilog",
                 "hisysevent",

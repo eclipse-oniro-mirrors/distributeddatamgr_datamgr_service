@@ -182,6 +182,7 @@ ohos_unittest("RdbServiceTest") {
     "access_token:libnativetoken",
     "bounds_checking_function:libsec_shared",
     "c_utils:utils",
+    "ffrt:libffrt",
     "googletest:gmock_main",
     "googletest:gtest_main",
     "hilog:libhilog",

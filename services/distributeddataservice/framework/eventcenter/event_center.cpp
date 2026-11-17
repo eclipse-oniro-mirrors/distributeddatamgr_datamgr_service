@@ -14,6 +14,8 @@
  */
 
 #include "eventcenter/event_center.h"
+
+#include "c/ffrt_ipc.h"
 namespace OHOS {
 namespace DistributedData {
 thread_local EventCenter::AsyncQueue *EventCenter::asyncQueue_ = nullptr;
@@ -65,6 +67,8 @@ void EventCenter::Dispatch(const Event &evt) const
 
 EventCenter::Defer::Defer(std::function<void(const Event &)> handler, int32_t evtId)
 {
+    // Keep the thread-local queue on this worker through callbacks and queue cleanup.
+    ffrt_this_task_set_legacy_mode(true);
     if (asyncQueue_ == nullptr) {
         asyncQueue_ = new (std::nothrow) AsyncQueue();
     }
@@ -79,14 +83,14 @@ EventCenter::Defer::Defer(std::function<void(const Event &)> handler, int32_t ev
 
 EventCenter::Defer::~Defer()
 {
-    if (asyncQueue_ == nullptr) {
-        return;
+    if (asyncQueue_ != nullptr) {
+        --(*asyncQueue_);
+        if ((*asyncQueue_) <= 0) {
+            delete asyncQueue_;
+            asyncQueue_ = nullptr;
+        }
     }
-    --(*asyncQueue_);
-    if ((*asyncQueue_) <= 0) {
-        delete asyncQueue_;
-        asyncQueue_ = nullptr;
-    }
+    ffrt_this_task_set_legacy_mode(false);
 }
 
 EventCenter::AsyncQueue &EventCenter::AsyncQueue::operator++()
