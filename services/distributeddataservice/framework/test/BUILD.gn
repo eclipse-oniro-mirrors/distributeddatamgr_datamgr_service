@@ -300,6 +300,7 @@ ohos_unittest("CloudInfoTest") {
 
   external_deps = [
     "c_utils:utils",
+    "hilog:libhilog",
     "json:nlohmann_json_static",
     "kv_store:datamgr_common",
     "kv_store:distributeddb",

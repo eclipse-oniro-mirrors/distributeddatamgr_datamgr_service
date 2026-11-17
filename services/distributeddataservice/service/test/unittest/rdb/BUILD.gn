@@ -27,6 +27,7 @@ ohos_unittest("RdbResultSetImplTest") {
     "${data_service_path}/service/common/value_proxy.cpp",
     "${data_service_path}/service/rdb/rdb_result_set_impl.cpp",
     "${data_service_path}/service/rdb/rdb_result_set_stub.cpp",
+    "${data_service_path}/service/rdb/rdb_types_utils.cpp",
     "../../mock/cursor_mock.cpp",
     "rdb_result_set_impl_test.cpp",
   ]
