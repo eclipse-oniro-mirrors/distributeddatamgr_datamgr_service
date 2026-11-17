@@ -3073,5 +3073,214 @@ HWTEST_F(CloudServiceImplTest, Offline_EmptyUsers, TestSize.Level1)
     EXPECT_CALL(*accountDelegateMock, IsVerified(_)).WillRepeatedly(Return(true));
     EXPECT_CALL(*accountDelegateMock, GetUserByToken(_)).WillRepeatedly(Return(MOCK_USER));
 }
+
+/**
+ * @tc.name: EnableCloud_AccountNullptr
+ * @tc.desc: Test EnableCloud when AccountDelegate GetInstance returns nullptr
+ * @tc.type: FUNC
+ * @tc.require:
+ */
+HWTEST_F(CloudServiceImplTest, EnableCloud_AccountNullptr, TestSize.Level1)
+{
+    ZLOGI("CloudServiceImplTest EnableCloud_AccountNullptr start");
+    auto *savedInstance = AccountDelegate::instance_;
+    AccountDelegate::instance_ = nullptr;
+    std::map<std::string, int32_t> switches;
+    switches.insert_or_assign(TEST_CLOUD_BUNDLE, CloudData::CloudService::SWITCH_ON);
+    auto status = cloudServiceImpl_->EnableCloud(TEST_CLOUD_APPID, switches);
+    EXPECT_EQ(status, CloudData::CloudService::ERROR);
+    AccountDelegate::instance_ = savedInstance;
+}
+
+/**
+ * @tc.name: DisableCloud_AccountNullptr
+ * @tc.desc: Test DisableCloud when AccountDelegate GetInstance returns nullptr
+ * @tc.type: FUNC
+ * @tc.require:
+ */
+HWTEST_F(CloudServiceImplTest, DisableCloud_AccountNullptr, TestSize.Level1)
+{
+    ZLOGI("CloudServiceImplTest DisableCloud_AccountNullptr start");
+    auto *savedInstance = AccountDelegate::instance_;
+    AccountDelegate::instance_ = nullptr;
+    auto status = cloudServiceImpl_->DisableCloud(TEST_CLOUD_APPID);
+    EXPECT_EQ(status, CloudData::CloudService::ERROR);
+    AccountDelegate::instance_ = savedInstance;
+}
+
+/**
+ * @tc.name: ChangeAppSwitch_AccountNullptr
+ * @tc.desc: Test ChangeAppSwitch when AccountDelegate GetInstance returns nullptr
+ * @tc.type: FUNC
+ * @tc.require:
+ */
+HWTEST_F(CloudServiceImplTest, ChangeAppSwitch_AccountNullptr, TestSize.Level1)
+{
+    ZLOGI("CloudServiceImplTest ChangeAppSwitch_AccountNullptr start");
+    auto *savedInstance = AccountDelegate::instance_;
+    AccountDelegate::instance_ = nullptr;
+    OHOS::CloudData::SwitchConfig config;
+    auto status = cloudServiceImpl_->ChangeAppSwitch(TEST_CLOUD_APPID, TEST_CLOUD_BUNDLE,
+        CloudData::CloudService::SWITCH_ON, config);
+    EXPECT_EQ(status, CloudData::CloudService::ERROR);
+    AccountDelegate::instance_ = savedInstance;
+}
+
+/**
+ * @tc.name: Clean_AccountNullptr
+ * @tc.desc: Test Clean when AccountDelegate GetInstance returns nullptr
+ * @tc.type: FUNC
+ * @tc.require:
+ */
+HWTEST_F(CloudServiceImplTest, Clean_AccountNullptr, TestSize.Level1)
+{
+    ZLOGI("CloudServiceImplTest Clean_AccountNullptr start");
+    auto *savedInstance = AccountDelegate::instance_;
+    AccountDelegate::instance_ = nullptr;
+    std::map<std::string, int32_t> actions;
+    actions.insert_or_assign(TEST_CLOUD_BUNDLE, CloudData::CloudService::SWITCH_ON);
+    std::map<std::string, OHOS::CloudData::ClearConfig> configs;
+    auto status = cloudServiceImpl_->Clean(TEST_CLOUD_APPID, actions, configs);
+    EXPECT_EQ(status, CloudData::CloudService::ERROR);
+    AccountDelegate::instance_ = savedInstance;
+}
+
+/**
+ * @tc.name: NotifyDataChange_AccountNullptr
+ * @tc.desc: Test NotifyDataChange when AccountDelegate GetInstance returns nullptr
+ * @tc.type: FUNC
+ * @tc.require:
+ */
+HWTEST_F(CloudServiceImplTest, NotifyDataChange_AccountNullptr, TestSize.Level1)
+{
+    ZLOGI("CloudServiceImplTest NotifyDataChange_AccountNullptr start");
+    auto *savedInstance = AccountDelegate::instance_;
+    AccountDelegate::instance_ = nullptr;
+    auto status = cloudServiceImpl_->NotifyDataChange(TEST_CLOUD_APPID, TEST_CLOUD_BUNDLE);
+    EXPECT_EQ(status, CloudData::CloudService::ERROR);
+    AccountDelegate::instance_ = savedInstance;
+}
+
+/**
+ * @tc.name: QueryStatistics_AccountNullptr
+ * @tc.desc: Test QueryStatistics when AccountDelegate GetInstance returns nullptr
+ * @tc.type: FUNC
+ * @tc.require:
+ */
+HWTEST_F(CloudServiceImplTest, QueryStatistics_AccountNullptr, TestSize.Level1)
+{
+    ZLOGI("CloudServiceImplTest QueryStatistics_AccountNullptr start");
+    auto *savedInstance = AccountDelegate::instance_;
+    AccountDelegate::instance_ = nullptr;
+    auto [status, result] = cloudServiceImpl_->QueryStatistics(TEST_CLOUD_APPID, TEST_CLOUD_BUNDLE, TEST_CLOUD_STORE);
+    EXPECT_EQ(status, CloudData::CloudService::ERROR);
+    EXPECT_TRUE(result.empty());
+    AccountDelegate::instance_ = savedInstance;
+}
+
+/**
+ * @tc.name: SetGlobalCloudStrategy_AccountNullptr
+ * @tc.desc: Test SetGlobalCloudStrategy when AccountDelegate GetInstance returns nullptr
+ * @tc.type: FUNC
+ * @tc.require:
+ */
+HWTEST_F(CloudServiceImplTest, SetGlobalCloudStrategy_AccountNullptr, TestSize.Level1)
+{
+    ZLOGI("CloudServiceImplTest SetGlobalCloudStrategy_AccountNullptr start");
+    auto *savedInstance = AccountDelegate::instance_;
+    AccountDelegate::instance_ = nullptr;
+    CloudData::Strategy strategy = CloudData::Strategy::STRATEGY_NETWORK;
+    std::vector<CommonType::Value> values;
+    values.push_back(CloudData::NetWorkStrategy::WIFI);
+    auto status = cloudServiceImpl_->SetGlobalCloudStrategy(strategy, values);
+    EXPECT_EQ(status, CloudData::CloudService::ERROR);
+    AccountDelegate::instance_ = savedInstance;
+}
+
+/**
+ * @tc.name: QueryLastSyncInfo_AccountNullptr
+ * @tc.desc: Test QueryLastSyncInfo when AccountDelegate GetInstance returns nullptr
+ * @tc.type: FUNC
+ * @tc.require:
+ */
+HWTEST_F(CloudServiceImplTest, QueryLastSyncInfo_AccountNullptr, TestSize.Level1)
+{
+    ZLOGI("CloudServiceImplTest QueryLastSyncInfo_AccountNullptr start");
+    auto *savedInstance = AccountDelegate::instance_;
+    AccountDelegate::instance_ = nullptr;
+    auto [status, result] = cloudServiceImpl_->QueryLastSyncInfo(TEST_CLOUD_APPID, TEST_CLOUD_BUNDLE, TEST_CLOUD_STORE);
+    EXPECT_EQ(status, CloudData::CloudService::ERROR);
+    EXPECT_TRUE(result.empty());
+    AccountDelegate::instance_ = savedInstance;
+}
+
+/**
+ * @tc.name: OnReady_AccountNullptr
+ * @tc.desc: Test OnReady when AccountDelegate GetInstance returns nullptr
+ * @tc.type: FUNC
+ * @tc.require:
+ */
+HWTEST_F(CloudServiceImplTest, OnReady_AccountNullptr, TestSize.Level1)
+{
+    ZLOGI("CloudServiceImplTest OnReady_AccountNullptr start");
+    auto *savedInstance = AccountDelegate::instance_;
+    AccountDelegate::instance_ = nullptr;
+    auto status = cloudServiceImpl_->OnReady(DmAdapter::CLOUD_DEVICE_UUID);
+    EXPECT_EQ(status, CloudData::CloudService::ERROR);
+    AccountDelegate::instance_ = savedInstance;
+}
+
+/**
+ * @tc.name: StopCloudSyncTask_AccountNullptr
+ * @tc.desc: Test StopCloudSyncTask when AccountDelegate GetInstance returns nullptr
+ * @tc.type: FUNC
+ * @tc.require:
+ */
+HWTEST_F(CloudServiceImplTest, StopCloudSyncTask_AccountNullptr, TestSize.Level1)
+{
+    ZLOGI("CloudServiceImplTest StopCloudSyncTask_AccountNullptr start");
+    auto *savedInstance = AccountDelegate::instance_;
+    AccountDelegate::instance_ = nullptr;
+    std::vector<BundleInfo> bundleInfos;
+    auto status = cloudServiceImpl_->StopCloudSyncTask(bundleInfos);
+    EXPECT_EQ(status, CloudData::CloudService::ERROR);
+    AccountDelegate::instance_ = savedInstance;
+}
+
+/**
+ * @tc.name: OnAppInstall_AccountNullptr
+ * @tc.desc: Test OnAppInstall when AccountDelegate GetInstance returns nullptr
+ * @tc.type: FUNC
+ * @tc.require:
+ */
+HWTEST_F(CloudServiceImplTest, OnAppInstall_AccountNullptr, TestSize.Level1)
+{
+    ZLOGI("CloudServiceImplTest OnAppInstall_AccountNullptr start");
+    ASSERT_NE(cloudServiceImpl_, nullptr);
+    ASSERT_NE(cloudServiceImpl_->factory_.staticActs_, nullptr);
+    auto *savedInstance = AccountDelegate::instance_;
+    AccountDelegate::instance_ = nullptr;
+    auto status = cloudServiceImpl_->factory_.staticActs_->OnAppInstall(TEST_CLOUD_BUNDLE, MOCK_USER, 0);
+    EXPECT_EQ(status, E_OK);
+    AccountDelegate::instance_ = savedInstance;
+}
+
+/**
+ * @tc.name: OnAppUpdate_AccountNullptr
+ * @tc.desc: Test OnAppUpdate when AccountDelegate GetInstance returns nullptr
+ * @tc.type: FUNC
+ * @tc.require:
+ */
+HWTEST_F(CloudServiceImplTest, OnAppUpdate_AccountNullptr, TestSize.Level1)
+{
+    ZLOGI("CloudServiceImplTest OnAppUpdate_AccountNullptr start");
+    ASSERT_NE(cloudServiceImpl_, nullptr);
+    ASSERT_NE(cloudServiceImpl_->factory_.staticActs_, nullptr);
+    auto *savedInstance = AccountDelegate::instance_;
+    AccountDelegate::instance_ = nullptr;
+    auto status = cloudServiceImpl_->factory_.staticActs_->OnAppUpdate(TEST_CLOUD_BUNDLE, MOCK_USER, 0);
+    EXPECT_EQ(status, E_OK);
+    AccountDelegate::instance_ = savedInstance;
+}
 } // namespace DistributedDataTest
 } // namespace OHOS::Test

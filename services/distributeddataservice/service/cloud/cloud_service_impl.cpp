@@ -137,7 +137,12 @@ int32_t CloudServiceImpl::EnableCloud(const std::string &id, const std::map<std:
     XCollie xcollie(
         __FUNCTION__, XCollie::XCOLLIE_LOG | XCollie::XCOLLIE_RECOVERY, RESTART_SERVICE_TIME_THRESHOLD);
     auto tokenId = IPCSkeleton::GetCallingTokenID();
-    auto user = Account::GetInstance()->GetUserByToken(tokenId);
+    auto account = Account::GetInstance();
+    if (account == nullptr) {
+        ZLOGE("Get Account instance failed");
+        return ERROR;
+    }
+    auto user = account->GetUserByToken(tokenId);
     auto [status, cloudInfo] = GetCloudInfo(user);
     if (status != SUCCESS) {
         Report(FT_ENABLE_CLOUD, Fault::CSF_CLOUD_INFO, "", "EnableCloud ret=" + std::to_string(status));
@@ -180,7 +185,12 @@ int32_t CloudServiceImpl::DisableCloud(const std::string &id)
 {
     XCollie xcollie(__FUNCTION__, XCollie::XCOLLIE_LOG | XCollie::XCOLLIE_RECOVERY);
     auto tokenId = IPCSkeleton::GetCallingTokenID();
-    auto user = Account::GetInstance()->GetUserByToken(tokenId);
+    auto account = Account::GetInstance();
+    if (account == nullptr) {
+        ZLOGE("Get Account instance failed");
+        return ERROR;
+    }
+    auto user = account->GetUserByToken(tokenId);
     ReleaseUserInfo(user, CloudSyncScene::DISABLE_CLOUD);
     std::lock_guard<decltype(rwMetaMutex_)> lock(rwMetaMutex_);
     auto [status, cloudInfo] = GetCloudInfo(user);
@@ -212,7 +222,12 @@ int32_t CloudServiceImpl::ChangeAppSwitch(const std::string &id, const std::stri
 {
     XCollie xcollie(__FUNCTION__, XCollie::XCOLLIE_LOG | XCollie::XCOLLIE_RECOVERY);
     auto tokenId = IPCSkeleton::GetCallingTokenID();
-    auto user = Account::GetInstance()->GetUserByToken(tokenId);
+    auto account = Account::GetInstance();
+    if (account == nullptr) {
+        ZLOGE("Get Account instance failed");
+        return ERROR;
+    }
+    auto user = account->GetUserByToken(tokenId);
     CloudSyncScene scene = (appSwitch == SWITCH_ON) ? CloudSyncScene::SWITCH_ON : CloudSyncScene::SWITCH_OFF;
     std::lock_guard<decltype(rwMetaMutex_)> lock(rwMetaMutex_);
     auto [status, cloudInfo] = GetCloudInfo(user);
@@ -228,16 +243,8 @@ int32_t CloudServiceImpl::ChangeAppSwitch(const std::string &id, const std::stri
             WORK_DO_CLOUD_SYNC }));
         return INVALID_ARGUMENT;
     }
-    if (!cloudInfo.Exist(bundleName)) {
-        std::tie(status, cloudInfo) = GetCloudInfoFromServer(user);
-        if (status != SUCCESS || !cloudInfo.enableCloud || cloudInfo.id != id || !cloudInfo.Exist(bundleName)) {
-            ZLOGE("invalid args, status:%{public}d, enableCloud:%{public}d, [input] id:%{public}s,"
-                  "[exist] id:%{public}s, bundleName:%{public}s", status, cloudInfo.enableCloud,
-                  Anonymous::Change(id).c_str(), Anonymous::Change(cloudInfo.id).c_str(), bundleName.c_str());
-            Report(appSwitch == SWITCH_ON ? FT_SWITCH_ON : FT_SWITCH_OFF, Fault::CSF_CLOUD_INFO, bundleName,
-                "ChangeAppSwitch ret=" + std::to_string(status));
-            return INVALID_ARGUMENT;
-        }
+    if (!RefreshCloudInfoIfMissing(user, id, bundleName, appSwitch, status, cloudInfo)) {
+        return INVALID_ARGUMENT;
     }
     cloudInfo.apps[bundleName].cloudSwitch = (appSwitch == SWITCH_ON);
     CloudInfo oldInfo;
@@ -257,6 +264,24 @@ int32_t CloudServiceImpl::ChangeAppSwitch(const std::string &id, const std::stri
     ZLOGI("ChangeAppSwitch success, id:%{public}s app:%{public}s, switch:%{public}d", Anonymous::Change(id).c_str(),
         bundleName.c_str(), appSwitch);
     return SUCCESS;
+}
+
+bool CloudServiceImpl::RefreshCloudInfoIfMissing(int32_t user, const std::string &id,
+    const std::string &bundleName, int32_t appSwitch, int32_t &status, CloudInfo &cloudInfo)
+{
+    if (cloudInfo.Exist(bundleName)) {
+        return true;
+    }
+    std::tie(status, cloudInfo) = GetCloudInfoFromServer(user);
+    if (status != SUCCESS || !cloudInfo.enableCloud || cloudInfo.id != id || !cloudInfo.Exist(bundleName)) {
+        ZLOGE("invalid args, status:%{public}d, enableCloud:%{public}d, [input] id:%{public}s,"
+              "[exist] id:%{public}s, bundleName:%{public}s", status, cloudInfo.enableCloud,
+              Anonymous::Change(id).c_str(), Anonymous::Change(cloudInfo.id).c_str(), bundleName.c_str());
+        Report(appSwitch == SWITCH_ON ? FT_SWITCH_ON : FT_SWITCH_OFF, Fault::CSF_CLOUD_INFO, bundleName,
+            "ChangeAppSwitch ret=" + std::to_string(status));
+        return false;
+    }
+    return true;
 }
 
 int32_t CloudServiceImpl::DoClean(const CloudInfo &cloudInfo, const std::map<std::string, int32_t> &actions,
@@ -427,7 +452,12 @@ int32_t CloudServiceImpl::Clean(const std::string &id, const std::map<std::strin
     std::map<std::string, ClearConfig> &configs)
 {
     auto tokenId = IPCSkeleton::GetCallingTokenID();
-    auto user = Account::GetInstance()->GetUserByToken(tokenId);
+    auto account = Account::GetInstance();
+    if (account == nullptr) {
+        ZLOGE("Get Account instance failed");
+        return ERROR;
+    }
+    auto user = account->GetUserByToken(tokenId);
     auto [status, cloudInfo] = GetCloudInfoFromMeta(user);
     if (status != SUCCESS) {
         ZLOGE("get cloud meta failed user:%{public}d", static_cast<int>(cloudInfo.user));
@@ -533,7 +563,12 @@ bool CloudServiceImpl::DoKvCloudSync(int32_t userId, const std::string &bundleNa
     if (userId != INVALID_USER_ID) {
         users.emplace_back(userId);
     } else {
-        Account::GetInstance()->QueryForegroundUsers(users);
+        auto account = Account::GetInstance();
+        if (account == nullptr) {
+            ZLOGE("Get Account instance failed");
+        } else {
+            account->QueryForegroundUsers(users);
+        }
     }
     for (auto user : users) {
         for (const auto &store : stores) {
@@ -703,7 +738,12 @@ int32_t CloudServiceImpl::ProcessUserNotifyDataChange(int32_t user, const ExtraD
 int32_t CloudServiceImpl::NotifyDataChange(const std::string &id, const std::string &bundleName)
 {
     auto tokenId = IPCSkeleton::GetCallingTokenID();
-    auto user = Account::GetInstance()->GetUserByToken(tokenId);
+    auto account = Account::GetInstance();
+    if (account == nullptr) {
+        ZLOGE("Get Account instance failed");
+        return ERROR;
+    }
+    auto user = account->GetUserByToken(tokenId);
     auto [status, cloudInfo] = GetCloudInfoFromMeta(user);
     if (CheckNotifyConditions(id, bundleName, cloudInfo) != E_OK) {
         return INVALID_ARGUMENT;
@@ -725,7 +765,12 @@ int32_t CloudServiceImpl::NotifyDataChange(const std::string &eventId, const std
     if (userId != INVALID_USER_ID) {
         users.emplace_back(userId);
     } else {
-        Account::GetInstance()->QueryForegroundUsers(users);
+        auto account = Account::GetInstance();
+        if (account == nullptr) {
+            ZLOGE("Get Account instance failed");
+        } else {
+            account->QueryForegroundUsers(users);
+        }
     }
     for (auto user : users) {
         if (user == DEFAULT_USER) {
@@ -838,7 +883,12 @@ std::pair<int32_t, std::map<std::string, StatisticInfos>> CloudServiceImpl::Quer
 {
     std::map<std::string, StatisticInfos> result;
     auto tokenId = IPCSkeleton::GetCallingTokenID();
-    auto user = Account::GetInstance()->GetUserByToken(tokenId);
+    auto account = Account::GetInstance();
+    if (account == nullptr) {
+        ZLOGE("Get Account instance failed");
+        return { ERROR, result };
+    }
+    auto user = account->GetUserByToken(tokenId);
     auto [status, cloudInfo] = GetCloudInfoFromMeta(user);
     if (status != SUCCESS) {
         ZLOGE("get cloud meta failed user:%{public}d", static_cast<int>(cloudInfo.user));
@@ -867,7 +917,12 @@ int32_t CloudServiceImpl::SetGlobalCloudStrategy(Strategy strategy, const std::v
     }
     auto tokenId = IPCSkeleton::GetCallingTokenID();
     HapInfo hapInfo;
-    hapInfo.user = Account::GetInstance()->GetUserByToken(tokenId);
+    auto account = Account::GetInstance();
+    if (account == nullptr) {
+        ZLOGE("Get Account instance failed");
+        return ERROR;
+    }
+    hapInfo.user = account->GetUserByToken(tokenId);
     if (hapInfo.user == INVALID_USER_ID || hapInfo.user == 0) {
         ZLOGE("invalid user:%{public}d, strategy:%{public}d, size:%{public}zu", hapInfo.user, strategy,
             values.size());
@@ -881,7 +936,12 @@ std::pair<int32_t, QueryLastResults> CloudServiceImpl::QueryLastSyncInfo(const s
     const std::string &bundleName, const std::string &storeId)
 {
     QueryLastResults results;
-    auto user = Account::GetInstance()->GetUserByToken(IPCSkeleton::GetCallingTokenID());
+    auto account = Account::GetInstance();
+    if (account == nullptr) {
+        ZLOGE("Get Account instance failed");
+        return { ERROR, results };
+    }
+    auto user = account->GetUserByToken(IPCSkeleton::GetCallingTokenID());
     auto [status, cloudInfo] = GetCloudInfo(user);
     if (status != SUCCESS) {
         Report(FT_QUERY_INFO, Fault::CSF_CLOUD_INFO, bundleName,
@@ -892,14 +952,32 @@ std::pair<int32_t, QueryLastResults> CloudServiceImpl::QueryLastSyncInfo(const s
         ZLOGE("Invalid bundleName: %{public}s", bundleName.c_str());
         return { INVALID_ARGUMENT, results };
     }
+    std::vector<QueryKey> queryKeys;
+    std::vector<Database> databases;
+    auto buildRet = BuildQueryKeysForLastSync(user, id, bundleName, storeId, cloudInfo, queryKeys, databases);
+    if (buildRet != SUCCESS) {
+        return { buildRet, results };
+    }
+
+    auto [ret, lastSyncInfos] = syncManager_.QueryLastSyncInfo(queryKeys);
+    ZLOGI("code:%{public}d, id:%{public}s, bundleName:%{public}s, storeId:%{public}s, size:%{public}d", ret,
+        Anonymous::Change(id).c_str(), bundleName.c_str(), Anonymous::Change(storeId).c_str(),
+        static_cast<int32_t>(lastSyncInfos.size()));
+    if (lastSyncInfos.empty()) {
+        return { ret, results };
+    }
+    return { ret, AssembleLastResults(databases, lastSyncInfos) };
+}
+
+int32_t CloudServiceImpl::BuildQueryKeysForLastSync(int32_t user, const std::string &id,
+    const std::string &bundleName, const std::string &storeId, const CloudInfo &cloudInfo,
+    std::vector<QueryKey> &queryKeys, std::vector<Database> &databases)
+{
     std::vector<SchemaMeta> schemas;
     auto key = cloudInfo.GetSchemaPrefix(bundleName);
     if (!MetaDataManager::GetInstance().LoadMeta(key, schemas, true) || schemas.empty()) {
-        return { ERROR, results };
+        return ERROR;
     }
-
-    std::vector<QueryKey> queryKeys;
-    std::vector<Database> databases;
     for (const auto &schema : schemas) {
         if (schema.bundleName != bundleName) {
             continue;
@@ -912,18 +990,10 @@ std::pair<int32_t, QueryLastResults> CloudServiceImpl::QueryLastSyncInfo(const s
         }
         if (queryKeys.empty()) {
             ZLOGE("Invalid storeId: %{public}s", Anonymous::Change(storeId).c_str());
-            return { INVALID_ARGUMENT, results };
+            return INVALID_ARGUMENT;
         }
     }
-
-    auto [ret, lastSyncInfos] = syncManager_.QueryLastSyncInfo(queryKeys);
-    ZLOGI("code:%{public}d, id:%{public}s, bundleName:%{public}s, storeId:%{public}s, size:%{public}d", ret,
-        Anonymous::Change(id).c_str(), bundleName.c_str(), Anonymous::Change(storeId).c_str(),
-        static_cast<int32_t>(lastSyncInfos.size()));
-    if (lastSyncInfos.empty()) {
-        return { ret, results };
-    }
-    return { ret, AssembleLastResults(databases, lastSyncInfos) };
+    return SUCCESS;
 }
 
 std::pair<int32_t, BatchQueryLastResults> CloudServiceImpl::QueryLastSyncInfoBatch(
@@ -978,7 +1048,12 @@ int32_t CloudServiceImpl::OnInitialize()
     XCollie xcollie(__FUNCTION__, XCollie::XCOLLIE_LOG | XCollie::XCOLLIE_RECOVERY);
     DistributedDB::RuntimeConfig::SetCloudTranslate(std::make_shared<RdbCloudDataTranslate>());
     std::vector<int> users;
-    Account::GetInstance()->QueryUsers(users);
+    auto account = Account::GetInstance();
+    if (account == nullptr) {
+        ZLOGE("Get Account instance failed");
+    } else {
+        account->QueryUsers(users);
+    }
     for (auto user : users) {
         if (user == DEFAULT_USER) {
             continue;
@@ -1078,12 +1153,17 @@ int32_t CloudServiceImpl::OnReady(const std::string &device)
     if (device != DeviceManagerAdapter::CLOUD_DEVICE_UUID) {
         return SUCCESS;
     }
-    if (!Account::GetInstance()->IsLoginAccount()) {
+    auto account = Account::GetInstance();
+    if (account == nullptr) {
+        ZLOGE("Get Account instance failed");
+        return ERROR;
+    }
+    if (!account->IsLoginAccount()) {
         ZLOGW("current user is not logged in.");
         return E_NOT_LOGIN;
     }
     std::vector<int32_t> users;
-    Account::GetInstance()->QueryForegroundUsers(users);
+    account->QueryForegroundUsers(users);
     if (users.empty()) {
         ZLOGW("current user is not foreground.");
         return SUCCESS;
@@ -1364,8 +1444,14 @@ ExecutorPool::Task CloudServiceImpl::GenTask(int32_t retry, int32_t user, CloudS
         }
 
         auto handle = works.front();
+        auto verifyAccount = Account::GetInstance();
+        if (verifyAccount == nullptr) {
+            ZLOGE("Get Account instance failed");
+            executor->Schedule(std::chrono::seconds(RETRY_INTERVAL), GenTask(retry + 1, user, scene, std::move(works)));
+            return;
+        }
         for (auto user : users) {
-            if (user == 0 || !Account::GetInstance()->IsVerified(user)) {
+            if (user == 0 || !verifyAccount->IsVerified(user)) {
                 continue;
             }
             finished = (this->*handle)(user, scene) && finished;
@@ -1406,7 +1492,12 @@ std::pair<int32_t, SchemaMeta> CloudServiceImpl::GetSchemaMeta(int32_t userId, c
         MetaDataManager::GetInstance().SaveMeta(schemaKey, schemaMeta, true);
         return { status, schemaMeta };
     }
-    if (!Account::GetInstance()->IsVerified(userId)) {
+    auto schemaAccount = Account::GetInstance();
+    if (schemaAccount == nullptr) {
+        ZLOGE("Get Account instance failed");
+        return { ERROR, schemaMeta };
+    }
+    if (!schemaAccount->IsVerified(userId)) {
         ZLOGE("user:%{public}d is locked!", userId);
         return { ERROR, schemaMeta };
     }
@@ -1429,7 +1520,12 @@ std::pair<int32_t, CloudInfo> CloudServiceImpl::GetCloudInfo(int32_t userId)
     if (status == SUCCESS) {
         return { status, cloudInfo };
     }
-    if (!Account::GetInstance()->IsVerified(userId)) {
+    auto cloudAccount = Account::GetInstance();
+    if (cloudAccount == nullptr) {
+        ZLOGE("Get Account instance failed");
+        return { ERROR, cloudInfo };
+    }
+    if (!cloudAccount->IsVerified(userId)) {
         ZLOGW("user:%{public}d is locked!", userId);
         return { ERROR, cloudInfo };
     }
@@ -1476,7 +1572,12 @@ int32_t CloudServiceImpl::CloudStatic::OnAppUninstall(const std::string &bundleN
 int32_t CloudServiceImpl::CloudStatic::OnAppInstall(const std::string &bundleName, int32_t user, int32_t index)
 {
     ZLOGI("bundleName:%{public}s,user:%{public}d,instanceId:%{public}d", bundleName.c_str(), user, index);
-    if (!Account::GetInstance()->IsVerified(user)) {
+    auto account = Account::GetInstance();
+    if (account == nullptr) {
+        ZLOGE("Get Account instance failed");
+        return E_OK;
+    }
+    if (!account->IsVerified(user)) {
         ZLOGW("user:%{public}d is not verified, bundleName:%{public}s", user, bundleName.c_str());
         return E_OK;
     }
@@ -1494,7 +1595,12 @@ int32_t CloudServiceImpl::CloudStatic::OnAppInstall(const std::string &bundleNam
 int32_t CloudServiceImpl::CloudStatic::OnAppUpdate(const std::string &bundleName, int32_t user, int32_t index)
 {
     ZLOGI("bundleName:%{public}s,user:%{public}d,instanceId:%{public}d", bundleName.c_str(), user, index);
-    if (!Account::GetInstance()->IsVerified(user)) {
+    auto account = Account::GetInstance();
+    if (account == nullptr) {
+        ZLOGE("Get Account instance failed");
+        return E_OK;
+    }
+    if (!account->IsVerified(user)) {
         ZLOGW("user:%{public}d is not verified, bundleName:%{public}s", user, bundleName.c_str());
         return E_OK;
     }
@@ -1605,7 +1711,12 @@ void CloudServiceImpl::GetSchema(const Event &event)
         storeInfo.bundleName.c_str(), Anonymous::Change(storeInfo.storeName).c_str(), storeInfo.instanceId);
     if (storeInfo.user == 0) {
         std::vector<int32_t> users;
-        auto ret = AccountDelegate::GetInstance()->QueryUsers(users);
+        auto instance = AccountDelegate::GetInstance();
+        if (instance == nullptr) {
+            ZLOGE("Get AccountDelegate instance failed");
+            return;
+        }
+        auto ret = instance->QueryUsers(users);
         if (!ret || users.empty()) {
             ZLOGE("failed to query os accounts, ret:%{public}d", ret);
             return;
@@ -1777,7 +1888,12 @@ int32_t CloudServiceImpl::CloudSync(const std::string &bundleName, const std::st
 
     auto tokenId = IPCSkeleton::GetCallingTokenID();
     pid_t pid = IPCSkeleton::GetCallingPid();
-    auto user = AccountDelegate::GetInstance()->GetUserByToken(tokenId);
+    auto instance = AccountDelegate::GetInstance();
+    if (instance == nullptr) {
+        ZLOGE("Get AccountDelegate instance failed");
+        return ERROR;
+    }
+    auto user = instance->GetUserByToken(tokenId);
     std::vector<std::string> storeNames;
     auto ret = ParseStoreIdsIfNeed(user, bundleName, storeId, storeNames);
     if (ret != SUCCESS) {
@@ -1866,7 +1982,12 @@ bool CloudServiceImpl::DoCloudSync(int32_t user, CloudSyncScene scene)
 int32_t CloudServiceImpl::StopCloudSyncTask(const std::vector<BundleInfo> &bundleInfos)
 {
     auto tokenId = IPCSkeleton::GetCallingTokenID();
-    auto user = AccountDelegate::GetInstance()->GetUserByToken(tokenId);
+    auto instance = AccountDelegate::GetInstance();
+    if (instance == nullptr) {
+        ZLOGE("Get AccountDelegate instance failed");
+        return ERROR;
+    }
+    auto user = instance->GetUserByToken(tokenId);
     for (auto &bundleInfo : bundleInfos) {
         if (bundleInfo.bundleName.empty()) {
             continue;
@@ -2450,7 +2571,12 @@ int32_t CloudServiceImpl::GetTriggerKey(std::string &key)
         ZLOGE("token:0x%{public}x, result:%{public}d", tokenId, result);
         return E_ERROR;
     }
-    auto user = Account::GetInstance()->GetUserByToken(tokenId);
+    auto account = Account::GetInstance();
+    if (account == nullptr) {
+        ZLOGE("Get Account instance failed");
+        return E_ERROR;
+    }
+    auto user = account->GetUserByToken(tokenId);
     key = hapTokenInfo.bundleName + std::to_string(user);
     return E_OK;
 }
