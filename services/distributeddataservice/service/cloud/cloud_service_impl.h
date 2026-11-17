@@ -226,7 +226,7 @@ private:
         const StoreInfo &storeInfo, DistributedData::GenQuery &query);
     std::vector<NativeRdb::ValuesBucket> ConvertCursor(std::shared_ptr<DistributedData::Cursor> cursor) const;
     bool RefreshCloudInfoIfMissing(int32_t user, const std::string &id, const std::string &bundleName,
-        int32_t appSwitch, int32_t &status, CloudInfo &cloudInfo);
+        int32_t appSwitch, CloudInfo &cloudInfo);
     int32_t BuildQueryKeysForLastSync(int32_t user, const std::string &id, const std::string &bundleName,
         const std::string &storeId, const CloudInfo &cloudInfo,
         std::vector<QueryKey> &queryKeys, std::vector<Database> &databases);

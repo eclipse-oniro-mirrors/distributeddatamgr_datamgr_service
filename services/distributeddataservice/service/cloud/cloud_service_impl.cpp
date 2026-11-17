@@ -243,7 +243,7 @@ int32_t CloudServiceImpl::ChangeAppSwitch(const std::string &id, const std::stri
             WORK_DO_CLOUD_SYNC }));
         return INVALID_ARGUMENT;
     }
-    if (!RefreshCloudInfoIfMissing(user, id, bundleName, appSwitch, status, cloudInfo)) {
+    if (!RefreshCloudInfoIfMissing(user, id, bundleName, appSwitch, cloudInfo)) {
         return INVALID_ARGUMENT;
     }
     cloudInfo.apps[bundleName].cloudSwitch = (appSwitch == SWITCH_ON);
@@ -267,20 +267,21 @@ int32_t CloudServiceImpl::ChangeAppSwitch(const std::string &id, const std::stri
 }
 
 bool CloudServiceImpl::RefreshCloudInfoIfMissing(int32_t user, const std::string &id,
-    const std::string &bundleName, int32_t appSwitch, int32_t &status, CloudInfo &cloudInfo)
+    const std::string &bundleName, int32_t appSwitch, CloudInfo &cloudInfo)
 {
     if (cloudInfo.Exist(bundleName)) {
         return true;
     }
-    std::tie(status, cloudInfo) = GetCloudInfoFromServer(user);
-    if (status != SUCCESS || !cloudInfo.enableCloud || cloudInfo.id != id || !cloudInfo.Exist(bundleName)) {
+    auto [status, newCloudInfo] = GetCloudInfoFromServer(user);
+    if (status != SUCCESS || !newCloudInfo.enableCloud || newCloudInfo.id != id || !newCloudInfo.Exist(bundleName)) {
         ZLOGE("invalid args, status:%{public}d, enableCloud:%{public}d, [input] id:%{public}s,"
-              "[exist] id:%{public}s, bundleName:%{public}s", status, cloudInfo.enableCloud,
-              Anonymous::Change(id).c_str(), Anonymous::Change(cloudInfo.id).c_str(), bundleName.c_str());
+              "[exist] id:%{public}s, bundleName:%{public}s", status, newCloudInfo.enableCloud,
+              Anonymous::Change(id).c_str(), Anonymous::Change(newCloudInfo.id).c_str(), bundleName.c_str());
         Report(appSwitch == SWITCH_ON ? FT_SWITCH_ON : FT_SWITCH_OFF, Fault::CSF_CLOUD_INFO, bundleName,
             "ChangeAppSwitch ret=" + std::to_string(status));
         return false;
     }
+    cloudInfo = std::move(newCloudInfo);
     return true;
 }
 
