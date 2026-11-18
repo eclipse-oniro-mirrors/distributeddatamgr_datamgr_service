@@ -1632,4 +1632,67 @@ HWTEST_F(DataShareServiceImplTest, VerifyPredicates006, TestSize.Level1)
     EXPECT_FALSE(dataShareServiceImpl.VerifyPredicates(dp4, tokenId, providerConfig.providerInfo_, func));
     ZLOGI("DataShareServiceImplTest VerifyPredicates006 end");
 }
+
+/**
+ * @tc.name: VerifyBucketKeys001
+ * @tc.desc: VerifyBucketKeys with legal, illegal, and empty bucket keys
+ * @tc.type: FUNC
+ * @tc.require: None
+ * @tc.author: agent
+ * @tc.precon: DataShareServiceImpl and related configurations initialized
+ * @tc.step:
+ *     1. Create a ValuesBucket with legal identifier keys and call VerifyBucketKeys
+ *     2. Create ValuesBuckets with illegal keys and call VerifyBucketKeys
+ *     3. Create an empty ValuesBucket and call VerifyBucketKeys
+ * @tc.expect:
+ *     1. Return true for legal identifier keys
+ *     2. Return false for subquery-shaped, separator, special-character, or empty keys
+ *     3. Return true for empty bucket
+ */
+HWTEST_F(DataShareServiceImplTest, VerifyBucketKeys001, TestSize.Level1)
+{
+    ZLOGI("DataShareServiceImplTest VerifyBucketKeys001 start");
+    DataShareServiceImpl dataShareServiceImpl;
+    uint32_t tokenId = 0;
+    std::string uri = "test";
+    DataProviderConfig providerConfig(uri, tokenId);
+    std::string func = "func";
+
+    // legal identifier keys pass
+    DataShareValuesBucket bucket1;
+    bucket1.Put("value", "1");
+    bucket1.Put("update_time", "2");
+    bool result = dataShareServiceImpl.VerifyBucketKeys(bucket1, tokenId, providerConfig.providerInfo_, func);
+    EXPECT_TRUE(result);
+
+    // subquery-shaped key is blocked
+    DataShareValuesBucket bucket2;
+    bucket2.Put("value=(SELECT group_concat(name) FROM sqlite_master),name", "1");
+    result = dataShareServiceImpl.VerifyBucketKeys(bucket2, tokenId, providerConfig.providerInfo_, func);
+    EXPECT_FALSE(result);
+
+    // statement separator in key is blocked
+    DataShareValuesBucket bucket3;
+    bucket3.Put("name;DROP TABLE SettingsEntity", "1");
+    result = dataShareServiceImpl.VerifyBucketKeys(bucket3, tokenId, providerConfig.providerInfo_, func);
+    EXPECT_FALSE(result);
+
+    // space and parentheses in key are blocked
+    DataShareValuesBucket bucket4;
+    bucket4.Put("merged_assets(name, ?)", "1");
+    result = dataShareServiceImpl.VerifyBucketKeys(bucket4, tokenId, providerConfig.providerInfo_, func);
+    EXPECT_FALSE(result);
+
+    // empty key is blocked
+    DataShareValuesBucket bucket5;
+    bucket5.Put("", "1");
+    result = dataShareServiceImpl.VerifyBucketKeys(bucket5, tokenId, providerConfig.providerInfo_, func);
+    EXPECT_FALSE(result);
+
+    // empty bucket has no key to validate
+    DataShareValuesBucket bucket6;
+    result = dataShareServiceImpl.VerifyBucketKeys(bucket6, tokenId, providerConfig.providerInfo_, func);
+    EXPECT_TRUE(result);
+    ZLOGI("DataShareServiceImplTest VerifyBucketKeys001 end");
+}
 } // namespace OHOS::Test

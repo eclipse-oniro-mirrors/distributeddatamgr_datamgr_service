@@ -45,6 +45,7 @@ public:
     static constexpr const char* unapprovedProvider = "UNAPPROVED_PROVIDER";
     static constexpr const char* invalidPredicates = "INVALID_PREDICATES";
     static constexpr const char* invalidColumns = "INVALID_COLUMNS";
+    static constexpr const char* invalidBucketKey= "INVALID_BUCKETKEY";
     static void ReportDataFault(const DataShareFaultInfo &faultInfo);
     static std::pair<std::string, int> GetCallingName(uint32_t callingTokenid);
 };
