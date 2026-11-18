@@ -39,6 +39,17 @@ std::vector<std::string> RdbCommonUtils::GetP2PTables(const RdbChangedData &chan
     }
     return tables;
 }
+
+std::vector<std::string> RdbCommonUtils::GetCloudTables(const RdbChangedData &changedData)
+{
+    std::vector<std::string> tables;
+    for (auto &[key, value] : changedData.tableData) {
+        if (value.isCloudSyncDataChange) {
+            tables.push_back(key);
+        }
+    }
+    return tables;
+}
 std::vector<DistributedData::Reference> RdbCommonUtils::Convert(const std::vector<Reference> &references)
 {
     std::vector<DistributedData::Reference> relationships;

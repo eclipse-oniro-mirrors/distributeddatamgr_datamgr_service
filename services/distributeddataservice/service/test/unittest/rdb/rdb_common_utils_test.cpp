@@ -249,4 +249,77 @@ HWTEST_F(RdbCommonUtilsTest, GetCallbackErrorString_001, TestSize.Level1)
     EXPECT_EQ(unknownErrorInfo.syncResultCode, SyncResultCode::FAIL);
     EXPECT_EQ(unknownErrorInfo.message, "Sync is failed in Callback");
 }
+
+/**
+* @tc.name: GetCloudTables_001
+* @tc.desc: get cloud sync tables from RdbChangedData when isCloudSyncDataChange is true.
+* @tc.type: FUNC
+* @tc.require:
+* @tc.author:
+*/
+HWTEST_F(RdbCommonUtilsTest, GetCloudTables_001, TestSize.Level0)
+{
+    RdbChangedData changedData;
+    changedData.tableData = {
+        { "table1", { .isCloudSyncDataChange = true } },
+        { "table2", { .isCloudSyncDataChange = true } },
+        { "table3", { .isTrackedDataChange = true } },
+    };
+    auto cloudTables = RdbCommonUtils::GetCloudTables(changedData);
+    std::vector<std::string> tagTables = { "table1", "table2" };
+    EXPECT_EQ(cloudTables, tagTables);
+}
+
+/**
+* @tc.name: GetCloudTables_002
+* @tc.desc: get cloud sync tables from RdbChangedData when no table has isCloudSyncDataChange.
+* @tc.type: FUNC
+* @tc.require:
+* @tc.author:
+*/
+HWTEST_F(RdbCommonUtilsTest, GetCloudTables_002, TestSize.Level0)
+{
+    RdbChangedData changedData;
+    changedData.tableData = {
+        { "table1", { .isTrackedDataChange = true } },
+        { "table2", { .isP2pSyncDataChange = true } },
+    };
+    auto cloudTables = RdbCommonUtils::GetCloudTables(changedData);
+    EXPECT_TRUE(cloudTables.empty());
+}
+
+/**
+* @tc.name: GetCloudTables_003
+* @tc.desc: get cloud sync tables from empty RdbChangedData.
+* @tc.type: FUNC
+* @tc.require:
+* @tc.author:
+*/
+HWTEST_F(RdbCommonUtilsTest, GetCloudTables_003, TestSize.Level0)
+{
+    RdbChangedData changedData;
+    auto cloudTables = RdbCommonUtils::GetCloudTables(changedData);
+    EXPECT_TRUE(cloudTables.empty());
+}
+
+/**
+* @tc.name: GetCloudTables_004
+* @tc.desc: get cloud sync tables from RdbChangedData with mixed change types.
+* @tc.type: FUNC
+* @tc.require:
+* @tc.author:
+*/
+HWTEST_F(RdbCommonUtilsTest, GetCloudTables_004, TestSize.Level0)
+{
+    RdbChangedData changedData;
+    changedData.tableData = {
+        { "table1", { .isTrackedDataChange = true, .isCloudSyncDataChange = true } },
+        { "table2", { .isP2pSyncDataChange = true } },
+        { "table3", { .isCloudSyncDataChange = true, .isP2pSyncDataChange = true } },
+        { "table4", { .isKnowledgeDataChange = true } },
+    };
+    auto cloudTables = RdbCommonUtils::GetCloudTables(changedData);
+    std::vector<std::string> tagTables = { "table1", "table3" };
+    EXPECT_EQ(cloudTables, tagTables);
+}
 }
