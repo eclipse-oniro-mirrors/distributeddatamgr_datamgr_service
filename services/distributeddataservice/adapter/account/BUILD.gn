@@ -57,6 +57,7 @@ ohos_source_set("distributeddata_account") {
     cflags_cc += [ "-DOS_ACCOUNT_PART_IS_ENABLED" ]
     external_deps += [
       "access_token:libaccesstoken_sdk",
+      "bounds_checking_function:libsec_shared",
       "os_account:libaccountkits",
       "os_account:os_account_innerkits",
     ]
