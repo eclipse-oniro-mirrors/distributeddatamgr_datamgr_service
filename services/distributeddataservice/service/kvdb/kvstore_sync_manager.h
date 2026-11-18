@@ -34,8 +34,8 @@ public:
     static constexpr uint32_t SYNC_RETRY_MAX_COUNT = 3;
     static KvStoreSyncManager *GetInstance()
     {
-        static KvStoreSyncManager syncManager;
-        return &syncManager;
+        static KvStoreSyncManager *syncManager = new KvStoreSyncManager();
+        return syncManager;
     }
     using TimePoint = std::chrono::steady_clock::time_point;
     using SyncEnd = std::function<void(const std::map<std::string, DistributedDB::DBStatus> &)>;
