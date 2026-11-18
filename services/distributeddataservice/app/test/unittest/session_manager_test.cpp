@@ -932,4 +932,150 @@ HWTEST_F(SessionManagerTest, CheckSession, TestSize.Level1)
     result = SessionManager::GetInstance().CheckSession(localNormal, localSys, true);
     EXPECT_TRUE(result);
 }
+
+constexpr size_t CRAFTED_BUFFER_SIZE = 1024;
+constexpr uint32_t CRAFTED_SRC_USER_ID = 100;
+constexpr uint32_t CRAFTED_TARGET_USER_ID = 200;
+
+errno_t PackDevicePair(uint8_t *ptr)
+{
+    SessionDevicePair *devicePair = reinterpret_cast<SessionDevicePair *>(ptr);
+    errno_t err = strcpy_s(devicePair->sourceId, SessionDevicePair::MAX_DEVICE_ID, PEER_DEVICE_ID);
+    if (err != EOK) {
+        return err;
+    }
+    return strcpy_s(devicePair->targetId, SessionDevicePair::MAX_DEVICE_ID, PEER_DEVICE_ID);
+}
+
+errno_t PackUserPair(uint8_t *ptr)
+{
+    SessionUserPair *userPair = reinterpret_cast<SessionUserPair *>(ptr);
+    userPair->sourceUserId = HostToNet(CRAFTED_SRC_USER_ID);
+    userPair->targetUserCount = 1;
+    *userPair->targetUserIds = HostToNet(CRAFTED_TARGET_USER_ID);
+    return EOK;
+}
+
+errno_t PackAppId(uint8_t *ptr, uint32_t appIdLen)
+{
+    SessionAppId *appId = reinterpret_cast<SessionAppId *>(ptr);
+    appId->len = HostToNet(appIdLen);
+    return memset_s(appId->appId, appIdLen, 'A', appIdLen);
+}
+
+errno_t PackStoreId(uint8_t *ptr, uint32_t storeIdLen, uint32_t storeIdRoom)
+{
+    SessionStoreId *storeId = reinterpret_cast<SessionStoreId *>(ptr);
+    storeId->len = HostToNet(storeIdLen);
+    return memset_s(storeId->storeId, storeIdRoom, 'S', storeIdRoom);
+}
+
+errno_t PackAccountId(uint8_t *ptr, uint32_t accountIdLen, uint32_t accountIdRoom)
+{
+    SessionAccountId *accountId = reinterpret_cast<SessionAccountId *>(ptr);
+    accountId->len = HostToNet(accountIdLen);
+    return memset_s(accountId->accountId, accountIdRoom, 'C', accountIdRoom);
+}
+
+bool BuildCraftedRouteHeadMessage(uint8_t *buffer, size_t bufferLen, uint32_t appIdLen, uint32_t storeIdLen,
+    uint32_t storeIdRoom, uint32_t accountIdLen, uint32_t accountIdRoom, uint32_t &totalLen)
+{
+    uint32_t bodyLen = sizeof(SessionDevicePair) + sizeof(SessionUserPair) + sizeof(uint32_t)
+        + sizeof(SessionAppId) + appIdLen + sizeof(SessionStoreId) + storeIdRoom;
+    if (accountIdLen > 0 || accountIdRoom > 0) {
+        bodyLen += sizeof(SessionAccountId) + accountIdRoom;
+    }
+    totalLen = sizeof(RouteHead) + bodyLen;
+    if (buffer == nullptr || totalLen > bufferLen) {
+        return false;
+    }
+    RouteHead *head = reinterpret_cast<RouteHead *>(buffer);
+    head->magic = HostToNet(RouteHead::MAGIC_NUMBER);
+    head->version = HostToNet(RouteHead::VERSION);
+    head->checkSum = 0;
+    head->dataLen = HostToNet(bodyLen);
+
+    uint8_t *ptr = buffer + sizeof(RouteHead);
+    if (PackDevicePair(ptr) != EOK) {
+        return false;
+    }
+    ptr += sizeof(SessionDevicePair);
+    if (PackUserPair(ptr) != EOK) {
+        return false;
+    }
+    ptr += sizeof(SessionUserPair) + sizeof(uint32_t);
+    if (PackAppId(ptr, appIdLen) != EOK) {
+        return false;
+    }
+    ptr += sizeof(SessionAppId) + appIdLen;
+    if (PackStoreId(ptr, storeIdLen, storeIdRoom) != EOK) {
+        return false;
+    }
+    if (accountIdLen == 0 && accountIdRoom == 0) {
+        return true;
+    }
+    ptr += sizeof(SessionStoreId) + storeIdRoom;
+    return PackAccountId(ptr, accountIdLen, accountIdRoom) == EOK;
+}
+
+/**
+  * @tc.name: ParseHeadDataUser_StoreIdOverLen_Reject
+  * @tc.desc: reject the message whose storeIdLen exceeds the bytes left after appId consumed its part.
+  * @tc.type: FUNC
+  * @tc.author: agent
+  */
+HWTEST_F(SessionManagerTest, ParseHeadDataUser_StoreIdOverLen_Reject, TestSize.Level1)
+{
+    EXPECT_CALL(*deviceManagerAdapterMock, IsOHOSType(_)).WillRepeatedly(Return(true));
+    uint8_t buffer[CRAFTED_BUFFER_SIZE] = { 0 };
+    uint32_t totalLen = 0;
+    // appIdLen 200 consumes all bytes after the user pair, only 8 bytes are left for the storeId
+    // content, but the peer claims storeIdLen 202 to read out of the message.
+    ASSERT_TRUE(BuildCraftedRouteHeadMessage(buffer, sizeof(buffer), 200, 202, 8, 0, 0, totalLen));
+
+    ExtendInfo info;
+    RouteHeadHandlerImpl handler(info);
+    std::vector<UserInfo> userInfos;
+    EXPECT_FALSE(handler.ParseHeadDataUser(buffer, totalLen, "", userInfos));
+}
+
+/**
+  * @tc.name: ParseHeadDataUser_AccountIdOverLen_Reject
+  * @tc.desc: reject the message whose accountIdLen exceeds the bytes left after appId and storeId.
+  * @tc.type: FUNC
+  * @tc.author: agent
+  */
+HWTEST_F(SessionManagerTest, ParseHeadDataUser_AccountIdOverLen_Reject, TestSize.Level1)
+{
+    EXPECT_CALL(*deviceManagerAdapterMock, IsOHOSType(_)).WillRepeatedly(Return(true));
+    uint8_t buffer[CRAFTED_BUFFER_SIZE] = { 0 };
+    uint32_t totalLen = 0;
+    // appId and storeId are well-formed, only 4 bytes are left for the accountId content,
+    // but the peer claims accountIdLen 30 to read out of the message.
+    ASSERT_TRUE(BuildCraftedRouteHeadMessage(buffer, sizeof(buffer), 10, 10, 10, 30, 4, totalLen));
+
+    ExtendInfo info;
+    RouteHeadHandlerImpl handler(info);
+    std::vector<UserInfo> userInfos;
+    EXPECT_FALSE(handler.ParseHeadDataUser(buffer, totalLen, "", userInfos));
+}
+
+/**
+  * @tc.name: ParseHeadDataUser_FullValidBody_Accept
+  * @tc.desc: accept a well-formed message whose appId, storeId and accountId all match their lengths.
+  * @tc.type: FUNC
+  * @tc.author: agent
+  */
+HWTEST_F(SessionManagerTest, ParseHeadDataUser_FullValidBody_Accept, TestSize.Level1)
+{
+    EXPECT_CALL(*deviceManagerAdapterMock, IsOHOSType(_)).WillRepeatedly(Return(true));
+    uint8_t buffer[CRAFTED_BUFFER_SIZE] = { 0 };
+    uint32_t totalLen = 0;
+    ASSERT_TRUE(BuildCraftedRouteHeadMessage(buffer, sizeof(buffer), 10, 10, 10, 10, 10, totalLen));
+
+    ExtendInfo info;
+    RouteHeadHandlerImpl handler(info);
+    std::vector<UserInfo> userInfos;
+    EXPECT_TRUE(handler.ParseHeadDataUser(buffer, totalLen, "", userInfos));
+}
 } // namespace

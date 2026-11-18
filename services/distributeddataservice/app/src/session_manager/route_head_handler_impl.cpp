@@ -475,7 +475,7 @@ bool RouteHeadHandlerImpl::UnPackDataBody(const uint8_t *data, uint32_t totalLen
     return true;
 }
 
-bool RouteHeadHandlerImpl::UnPackAppId(uint8_t **data, uint32_t leftSize)
+bool RouteHeadHandlerImpl::UnPackAppId(uint8_t **data, uint32_t &leftSize)
 {
     if (leftSize < sizeof(SessionAppId)) {
         ZLOGE("failed to parse app id, leftSize:%{public}d.", leftSize);
@@ -493,7 +493,7 @@ bool RouteHeadHandlerImpl::UnPackAppId(uint8_t **data, uint32_t leftSize)
     return true;
 }
 
-bool RouteHeadHandlerImpl::UnPackStoreId(uint8_t **data, uint32_t leftSize)
+bool RouteHeadHandlerImpl::UnPackStoreId(uint8_t **data, uint32_t &leftSize)
 {
     if (leftSize < sizeof(SessionStoreId)) {
         ZLOGE("failed to parse store id, leftSize:%{public}d.", leftSize);
@@ -511,7 +511,7 @@ bool RouteHeadHandlerImpl::UnPackStoreId(uint8_t **data, uint32_t leftSize)
     return true;
 }
 
-bool RouteHeadHandlerImpl::UnPackAccountId(uint8_t **data, uint32_t leftSize)
+bool RouteHeadHandlerImpl::UnPackAccountId(uint8_t **data, uint32_t &leftSize)
 {
     if (leftSize < sizeof(SessionAccountId)) {
         ZLOGE("failed to parse account id, leftSize:%{public}d.", leftSize);
