@@ -19,6 +19,8 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
+#include <unistd.h>
 
 #include "bootstrap.h"
 #include "ipc_skeleton.h"
@@ -68,6 +70,7 @@ extern "C" int LLVMFuzzerInitialize(int *argc, char ***argv)
     Bootstrap::GetInstance().LoadDirectory();
     Bootstrap::GetInstance().LoadCheckers();
     Bootstrap::GetInstance().LoadNetworks();
+    atexit([]() { _exit(0);});
     return 0;
 }
 
