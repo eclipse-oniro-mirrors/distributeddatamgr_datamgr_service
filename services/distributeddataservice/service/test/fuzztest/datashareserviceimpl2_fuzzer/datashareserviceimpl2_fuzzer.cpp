@@ -62,6 +62,37 @@ constexpr const char *SQL_TEXT_POOL[] = {
 };
 constexpr size_t SQL_TEXT_POOL_SIZE = sizeof(SQL_TEXT_POOL) / sizeof(SQL_TEXT_POOL[0]);
 
+// Upper bound of consumed random-length strings, keeps a single input cheap.
+constexpr size_t MAX_TEXT_LENGTH = 64;
+// Alternative count of the value types held by DataShareValuesBucket.
+constexpr uint8_t VARIANT_TYPE_COUNT = 4;
+// Max column count consumed by QueryFuzz.
+constexpr uint8_t MAX_COLUMN_COUNT = 4;
+// Max predicate node count of the Template consumed by AddTemplateFuzz.
+constexpr uint8_t MAX_PREDICATE_NODE_COUNT = 3;
+
+// Value kinds selected by the variant switch of BuildValuesBucket.
+enum ValueKind : uint8_t {
+    KIND_INT64 = 0,
+    KIND_DOUBLE,
+    KIND_STRING,
+    KIND_BOOL,
+};
+
+// Dispatch targets of the entry switch, indexed by the first consumed byte.
+enum FuzzTarget : uint8_t {
+    FUZZ_INSERT_EX = 0,
+    FUZZ_QUERY,
+    FUZZ_UPDATE_EX,
+    FUZZ_DELETE_EX,
+    FUZZ_ADD_TEMPLATE,
+    FUZZ_DEL_TEMPLATE,
+    FUZZ_NOTIFY_OBSERVER,
+    FUZZ_GET_DATA,
+    FUZZ_GET_SILENT_PROXY_STATUS,
+    FUZZ_ENABLE_SILENT_PROXY,
+};
+
 // Target interface count of this fuzzer, used by the entry switch.
 constexpr size_t TARGET_SIZE = 10;
 
@@ -85,21 +116,21 @@ DataSharePredicates BuildPredicates(FuzzedDataProvider &fdp)
     return predicates;
 }
 
-// Builds a values bucket with one entry, the variant type of the value is
-// selected by the input byte.
+// Builds a values bucket with one entry, the value kind is selected by the
+// input byte.
 DataShareValuesBucket BuildValuesBucket(FuzzedDataProvider &fdp)
 {
     DataShareValuesBucket valuesBucket;
-    std::string key = fdp.ConsumeRandomLengthString(64);
-    switch (fdp.ConsumeIntegral<uint8_t>() % 4) { // variant value types
-        case 0:
+    std::string key = fdp.ConsumeRandomLengthString(MAX_TEXT_LENGTH);
+    switch (fdp.ConsumeIntegral<uint8_t>() % VARIANT_TYPE_COUNT) {
+        case KIND_INT64:
             valuesBucket.valuesMap[key] = fdp.ConsumeIntegral<int64_t>();
             break;
-        case 1:
+        case KIND_DOUBLE:
             valuesBucket.valuesMap[key] = fdp.ConsumeFloatingPoint<double>();
             break;
-        case 2:
-            valuesBucket.valuesMap[key] = fdp.ConsumeRandomLengthString(64);
+        case KIND_STRING:
+            valuesBucket.valuesMap[key] = fdp.ConsumeRandomLengthString(MAX_TEXT_LENGTH);
             break;
         default:
             valuesBucket.valuesMap[key] = fdp.ConsumeBool();
@@ -124,7 +155,7 @@ void QueryFuzz(FuzzedDataProvider &fdp)
     std::string extUri = ConsumeUriFromPool(fdp);
     DataSharePredicates predicates = BuildPredicates(fdp);
     std::vector<std::string> columns;
-    uint8_t count = fdp.ConsumeIntegral<uint8_t>() % 4; // 0-3 columns
+    uint8_t count = fdp.ConsumeIntegral<uint8_t>() % MAX_COLUMN_COUNT;
     for (uint8_t i = 0; i < count; i++) {
         columns.push_back(ConsumeSqlTextFromPool(fdp));
     }
@@ -158,10 +189,10 @@ void AddTemplateFuzz(FuzzedDataProvider &fdp)
     int64_t subscriberId = fdp.ConsumeIntegral<int64_t>();
     Template tplt;
     tplt.update_ = ConsumeSqlTextFromPool(fdp);
-    tplt.scheduler_ = fdp.ConsumeRandomLengthString(64);
-    uint8_t count = fdp.ConsumeIntegral<uint8_t>() % 3; // 0-2 predicate nodes
+    tplt.scheduler_ = fdp.ConsumeRandomLengthString(MAX_TEXT_LENGTH);
+    uint8_t count = fdp.ConsumeIntegral<uint8_t>() % MAX_PREDICATE_NODE_COUNT;
     for (uint8_t i = 0; i < count; i++) {
-        std::string key = fdp.ConsumeRandomLengthString(64);
+        std::string key = fdp.ConsumeRandomLengthString(MAX_TEXT_LENGTH);
         tplt.predicates_.emplace_back(key, ConsumeSqlTextFromPool(fdp));
     }
     dataShareServiceImpl->AddTemplate(uri, subscriberId, tplt);
@@ -185,7 +216,7 @@ void NotifyObserverFuzz(FuzzedDataProvider &fdp)
 void GetDataFuzz(FuzzedDataProvider &fdp)
 {
     std::shared_ptr<DataShareServiceImpl> dataShareServiceImpl = std::make_shared<DataShareServiceImpl>();
-    std::string bundleNameOfProvider = fdp.ConsumeRandomLengthString(64);
+    std::string bundleNameOfProvider = fdp.ConsumeRandomLengthString(MAX_TEXT_LENGTH);
     int32_t errorCode = 0;
     dataShareServiceImpl->GetData(bundleNameOfProvider, errorCode);
 }
@@ -216,31 +247,31 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     FuzzedDataProvider fdp(data, size);
     uint8_t target = fdp.ConsumeIntegral<uint8_t>() % OHOS::TARGET_SIZE;
     switch (target) {
-        case 0:
+        case OHOS::FUZZ_INSERT_EX:
             OHOS::InsertExFuzz(fdp);
             break;
-        case 1:
+        case OHOS::FUZZ_QUERY:
             OHOS::QueryFuzz(fdp);
             break;
-        case 2:
+        case OHOS::FUZZ_UPDATE_EX:
             OHOS::UpdateExFuzz(fdp);
             break;
-        case 3:
+        case OHOS::FUZZ_DELETE_EX:
             OHOS::DeleteExFuzz(fdp);
             break;
-        case 4:
+        case OHOS::FUZZ_ADD_TEMPLATE:
             OHOS::AddTemplateFuzz(fdp);
             break;
-        case 5:
+        case OHOS::FUZZ_DEL_TEMPLATE:
             OHOS::DelTemplateFuzz(fdp);
             break;
-        case 6:
+        case OHOS::FUZZ_NOTIFY_OBSERVER:
             OHOS::NotifyObserverFuzz(fdp);
             break;
-        case 7:
+        case OHOS::FUZZ_GET_DATA:
             OHOS::GetDataFuzz(fdp);
             break;
-        case 8:
+        case OHOS::FUZZ_GET_SILENT_PROXY_STATUS:
             OHOS::GetSilentProxyStatusFuzz(fdp);
             break;
         default:

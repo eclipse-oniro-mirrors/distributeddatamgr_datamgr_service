@@ -41,6 +41,40 @@ constexpr size_t PROXY_URI_POOL_SIZE = sizeof(PROXY_URI_POOL) / sizeof(PROXY_URI
 // DataShareServiceImpl::GetProxyData.
 constexpr int32_t INVALID_MAX_VALUE_LENGTH = 500;
 
+// Upper bound of consumed random-length strings, keeps a single input cheap.
+constexpr size_t MAX_TEXT_LENGTH = 64;
+// Alternative count of the value types held by DataProxyValue.
+constexpr uint8_t VARIANT_TYPE_COUNT = 4;
+// Choice count of the maxValueLength_ selector of MakeProxyConfig.
+constexpr uint8_t MAX_VALUE_LENGTH_CHOICE_COUNT = 4;
+// Max proxy data count consumed by PublishProxyDataFuzz.
+constexpr uint8_t MAX_PROXY_DATA_COUNT = 3;
+// Max uri count consumed by the uri-list driven fuzz functions.
+constexpr uint8_t MAX_URI_COUNT = 3;
+// Max allow list item count of a single proxy data.
+constexpr uint8_t MAX_ALLOW_LIST_ITEM_COUNT = 3;
+
+// Value kinds selected by the variant switch of MakeProxyValue.
+enum ValueKind : uint8_t {
+    KIND_INT64 = 0,
+    KIND_DOUBLE,
+    KIND_STRING,
+    KIND_BOOL,
+};
+
+// Dispatch targets of the entry switch, indexed by the first consumed byte.
+enum FuzzTarget : uint8_t {
+    FUZZ_PUBLISH_PROXY_DATA = 0,
+    FUZZ_DELETE_PROXY_DATA,
+    FUZZ_DELETE_ALL_PROXY_DATA,
+    FUZZ_GET_PROXY_DATA,
+    FUZZ_SUBSCRIBE_PROXY_DATA,
+    FUZZ_UNSUBSCRIBE_PROXY_DATA,
+    FUZZ_PUT_VALUE,
+    FUZZ_REMOVE_VALUE,
+    FUZZ_GET_VALUES,
+};
+
 // Target interface count of this fuzzer, used by the entry switch.
 constexpr size_t TARGET_SIZE = 9;
 
@@ -49,13 +83,13 @@ std::string ConsumeProxyUriFromPool(FuzzedDataProvider &fdp)
     return PROXY_URI_POOL[fdp.ConsumeIntegral<uint8_t>() % PROXY_URI_POOL_SIZE];
 }
 
-// Enum-sized switch with uint8_t index: 0 -> MAX_LENGTH_4K, 1 -> MAX_LENGTH_100K,
-// others -> invalid value, so every branch of the maxValueLength_ check is hit.
+// Choice-sized switch with uint8_t index: KIND selection drives the
+// maxValueLength_ alternatives, so every branch of its check is hit.
 DataProxyConfig MakeProxyConfig(FuzzedDataProvider &fdp)
 {
     DataProxyConfig proxyConfig;
     proxyConfig.type_ = DataProxyType::SHARED_CONFIG;
-    switch (fdp.ConsumeIntegral<uint8_t>() % 4) {
+    switch (fdp.ConsumeIntegral<uint8_t>() % MAX_VALUE_LENGTH_CHOICE_COUNT) {
         case 0:
             proxyConfig.maxValueLength_ = DataProxyMaxValueLength::MAX_LENGTH_4K;
             break;
@@ -72,13 +106,13 @@ DataProxyConfig MakeProxyConfig(FuzzedDataProvider &fdp)
 // Builds all four variant alternatives of DataProxyValue.
 DataProxyValue MakeProxyValue(FuzzedDataProvider &fdp)
 {
-    switch (fdp.ConsumeIntegral<uint8_t>() % 4) {
-        case 0:
+    switch (fdp.ConsumeIntegral<uint8_t>() % VARIANT_TYPE_COUNT) {
+        case KIND_INT64:
             return fdp.ConsumeIntegral<int64_t>();
-        case 1:
+        case KIND_DOUBLE:
             return fdp.ConsumeFloatingPoint<double>();
-        case 2:
-            return fdp.ConsumeRandomLengthString(64);
+        case KIND_STRING:
+            return fdp.ConsumeRandomLengthString(MAX_TEXT_LENGTH);
         default:
             return fdp.ConsumeBool();
     }
@@ -88,14 +122,14 @@ void PublishProxyDataFuzz(FuzzedDataProvider &fdp)
 {
     std::shared_ptr<DataShareServiceImpl> dataShareServiceImpl = std::make_shared<DataShareServiceImpl>();
     std::vector<DataShareProxyData> proxyDatas;
-    uint8_t count = fdp.ConsumeIntegral<uint8_t>() % 3; // 0-2 proxy datas
+    uint8_t count = fdp.ConsumeIntegral<uint8_t>() % MAX_PROXY_DATA_COUNT;
     for (uint8_t i = 0; i < count; i++) {
         DataShareProxyData proxyData(ConsumeProxyUriFromPool(fdp), MakeProxyValue(fdp));
         // isMultiValues_ drives the PUBLISH_MULTIVALUES / NORMAL_PUBLISH branch.
         proxyData.isMultiValues_ = fdp.ConsumeBool();
-        uint8_t allowListSize = fdp.ConsumeIntegral<uint8_t>() % 3; // 0-2 allow list items
+        uint8_t allowListSize = fdp.ConsumeIntegral<uint8_t>() % MAX_ALLOW_LIST_ITEM_COUNT;
         for (uint8_t j = 0; j < allowListSize; j++) {
-            proxyData.allowList_.push_back(fdp.ConsumeRandomLengthString(64));
+            proxyData.allowList_.push_back(fdp.ConsumeRandomLengthString(MAX_TEXT_LENGTH));
         }
         proxyDatas.push_back(std::move(proxyData));
     }
@@ -107,7 +141,7 @@ void DeleteProxyDataFuzz(FuzzedDataProvider &fdp)
 {
     std::shared_ptr<DataShareServiceImpl> dataShareServiceImpl = std::make_shared<DataShareServiceImpl>();
     std::vector<std::string> uris;
-    uint8_t count = fdp.ConsumeIntegral<uint8_t>() % 3; // 0-2 uris
+    uint8_t count = fdp.ConsumeIntegral<uint8_t>() % MAX_URI_COUNT;
     for (uint8_t i = 0; i < count; i++) {
         uris.push_back(ConsumeProxyUriFromPool(fdp));
     }
@@ -126,7 +160,7 @@ void GetProxyDataFuzz(FuzzedDataProvider &fdp)
 {
     std::shared_ptr<DataShareServiceImpl> dataShareServiceImpl = std::make_shared<DataShareServiceImpl>();
     std::vector<std::string> uris;
-    uint8_t count = fdp.ConsumeIntegral<uint8_t>() % 3; // 0-2 uris
+    uint8_t count = fdp.ConsumeIntegral<uint8_t>() % MAX_URI_COUNT;
     for (uint8_t i = 0; i < count; i++) {
         uris.push_back(ConsumeProxyUriFromPool(fdp));
     }
@@ -138,7 +172,7 @@ void SubscribeProxyDataFuzz(FuzzedDataProvider &fdp)
 {
     std::shared_ptr<DataShareServiceImpl> dataShareServiceImpl = std::make_shared<DataShareServiceImpl>();
     std::vector<std::string> uris;
-    uint8_t count = fdp.ConsumeIntegral<uint8_t>() % 3; // 0-2 uris
+    uint8_t count = fdp.ConsumeIntegral<uint8_t>() % MAX_URI_COUNT;
     for (uint8_t i = 0; i < count; i++) {
         uris.push_back(ConsumeProxyUriFromPool(fdp));
     }
@@ -150,7 +184,7 @@ void UnsubscribeProxyDataFuzz(FuzzedDataProvider &fdp)
 {
     std::shared_ptr<DataShareServiceImpl> dataShareServiceImpl = std::make_shared<DataShareServiceImpl>();
     std::vector<std::string> uris;
-    uint8_t count = fdp.ConsumeIntegral<uint8_t>() % 3; // 0-2 uris
+    uint8_t count = fdp.ConsumeIntegral<uint8_t>() % MAX_URI_COUNT;
     for (uint8_t i = 0; i < count; i++) {
         uris.push_back(ConsumeProxyUriFromPool(fdp));
     }
@@ -161,7 +195,7 @@ void PutValueFuzz(FuzzedDataProvider &fdp)
 {
     std::shared_ptr<DataShareServiceImpl> dataShareServiceImpl = std::make_shared<DataShareServiceImpl>();
     std::string uri = ConsumeProxyUriFromPool(fdp);
-    std::string key = fdp.ConsumeRandomLengthString(64);
+    std::string key = fdp.ConsumeRandomLengthString(MAX_TEXT_LENGTH);
     DataProxyValue value = MakeProxyValue(fdp);
     DataProxyConfig proxyConfig = MakeProxyConfig(fdp);
     dataShareServiceImpl->PutValue(uri, key, value, proxyConfig);
@@ -171,7 +205,7 @@ void RemoveValueFuzz(FuzzedDataProvider &fdp)
 {
     std::shared_ptr<DataShareServiceImpl> dataShareServiceImpl = std::make_shared<DataShareServiceImpl>();
     std::string uri = ConsumeProxyUriFromPool(fdp);
-    std::string key = fdp.ConsumeRandomLengthString(64);
+    std::string key = fdp.ConsumeRandomLengthString(MAX_TEXT_LENGTH);
     DataProxyConfig proxyConfig = MakeProxyConfig(fdp);
     dataShareServiceImpl->RemoveValue(uri, key, proxyConfig);
 }
@@ -194,28 +228,28 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     FuzzedDataProvider fdp(data, size);
     uint8_t target = fdp.ConsumeIntegral<uint8_t>() % OHOS::TARGET_SIZE;
     switch (target) {
-        case 0:
+        case OHOS::FUZZ_PUBLISH_PROXY_DATA:
             OHOS::PublishProxyDataFuzz(fdp);
             break;
-        case 1:
+        case OHOS::FUZZ_DELETE_PROXY_DATA:
             OHOS::DeleteProxyDataFuzz(fdp);
             break;
-        case 2:
+        case OHOS::FUZZ_DELETE_ALL_PROXY_DATA:
             OHOS::DeleteAllProxyDataFuzz(fdp);
             break;
-        case 3:
+        case OHOS::FUZZ_GET_PROXY_DATA:
             OHOS::GetProxyDataFuzz(fdp);
             break;
-        case 4:
+        case OHOS::FUZZ_SUBSCRIBE_PROXY_DATA:
             OHOS::SubscribeProxyDataFuzz(fdp);
             break;
-        case 5:
+        case OHOS::FUZZ_UNSUBSCRIBE_PROXY_DATA:
             OHOS::UnsubscribeProxyDataFuzz(fdp);
             break;
-        case 6:
+        case OHOS::FUZZ_PUT_VALUE:
             OHOS::PutValueFuzz(fdp);
             break;
-        case 7:
+        case OHOS::FUZZ_REMOVE_VALUE:
             OHOS::RemoveValueFuzz(fdp);
             break;
         default:

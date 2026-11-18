@@ -40,13 +40,33 @@ constexpr size_t SUB_URI_POOL_SIZE = sizeof(SUB_URI_POOL) / sizeof(SUB_URI_POOL[
 // branch of SubscribeRdbData.
 constexpr const char *MISSED_STATUS_URI = "datashare://com.example.missed/dataKey";
 
+// Upper bound of consumed random-length strings, keeps a single input cheap.
+constexpr size_t MAX_TEXT_LENGTH = 64;
+// Max uri count consumed by the uri-list driven fuzz functions.
+constexpr uint8_t MAX_URI_COUNT = 3;
+// Max published data item count consumed by PublishFuzz.
+constexpr uint8_t MAX_PUBLISHED_ITEM_COUNT = 3;
+
+// Dispatch targets of the entry switch, indexed by the first consumed byte.
+enum FuzzTarget : uint8_t {
+    FUZZ_PUBLISH = 0,
+    FUZZ_SUBSCRIBE_RDB_DATA,
+    FUZZ_UNSUBSCRIBE_RDB_DATA,
+    FUZZ_ENABLE_RDB_SUBS,
+    FUZZ_DISABLE_RDB_SUBS,
+    FUZZ_SUBSCRIBE_PUBLISHED_DATA,
+    FUZZ_UNSUBSCRIBE_PUBLISHED_DATA,
+    FUZZ_ENABLE_PUB_SUBS,
+    FUZZ_DISABLE_PUB_SUBS,
+};
+
 // Target interface count of this fuzzer, used by the entry switch.
 constexpr size_t TARGET_SIZE = 9;
 
 std::vector<std::string> ConsumeSubUris(FuzzedDataProvider &fdp)
 {
     std::vector<std::string> uris;
-    uint8_t count = fdp.ConsumeIntegral<uint8_t>() % 3; // 0-2 uris
+    uint8_t count = fdp.ConsumeIntegral<uint8_t>() % MAX_URI_COUNT;
     for (uint8_t i = 0; i < count; i++) {
         uris.push_back(SUB_URI_POOL[fdp.ConsumeIntegral<uint8_t>() % SUB_URI_POOL_SIZE]);
     }
@@ -57,7 +77,7 @@ TemplateId MakeTemplateId(FuzzedDataProvider &fdp)
 {
     TemplateId id;
     id.subscriberId_ = fdp.ConsumeIntegral<int64_t>();
-    id.bundleName_ = fdp.ConsumeRandomLengthString(64);
+    id.bundleName_ = fdp.ConsumeRandomLengthString(MAX_TEXT_LENGTH);
     return id;
 }
 
@@ -79,14 +99,14 @@ void PublishFuzz(FuzzedDataProvider &fdp)
     std::shared_ptr<DataShareServiceImpl> dataShareServiceImpl = std::make_shared<DataShareServiceImpl>();
     Data data;
     data.version_ = fdp.ConsumeIntegral<int32_t>();
-    uint8_t count = fdp.ConsumeIntegral<uint8_t>() % 3; // 0-2 published items
+    uint8_t count = fdp.ConsumeIntegral<uint8_t>() % MAX_PUBLISHED_ITEM_COUNT;
     for (uint8_t i = 0; i < count; i++) {
-        std::string key = fdp.ConsumeRandomLengthString(64);
+        std::string key = fdp.ConsumeRandomLengthString(MAX_TEXT_LENGTH);
         int64_t subscriberId = fdp.ConsumeIntegral<int64_t>();
-        std::string value = fdp.ConsumeRandomLengthString(64);
+        std::string value = fdp.ConsumeRandomLengthString(MAX_TEXT_LENGTH);
         data.datas_.emplace_back(key, subscriberId, value);
     }
-    std::string bundleNameOfProvider = fdp.ConsumeRandomLengthString(64);
+    std::string bundleNameOfProvider = fdp.ConsumeRandomLengthString(MAX_TEXT_LENGTH);
     dataShareServiceImpl->Publish(data, bundleNameOfProvider);
 }
 
@@ -167,28 +187,28 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     FuzzedDataProvider fdp(data, size);
     uint8_t target = fdp.ConsumeIntegral<uint8_t>() % OHOS::TARGET_SIZE;
     switch (target) {
-        case 0:
+        case OHOS::FUZZ_PUBLISH:
             OHOS::PublishFuzz(fdp);
             break;
-        case 1:
+        case OHOS::FUZZ_SUBSCRIBE_RDB_DATA:
             OHOS::SubscribeRdbDataFuzz(fdp);
             break;
-        case 2:
+        case OHOS::FUZZ_UNSUBSCRIBE_RDB_DATA:
             OHOS::UnsubscribeRdbDataFuzz(fdp);
             break;
-        case 3:
+        case OHOS::FUZZ_ENABLE_RDB_SUBS:
             OHOS::EnableRdbSubsFuzz(fdp);
             break;
-        case 4:
+        case OHOS::FUZZ_DISABLE_RDB_SUBS:
             OHOS::DisableRdbSubsFuzz(fdp);
             break;
-        case 5:
+        case OHOS::FUZZ_SUBSCRIBE_PUBLISHED_DATA:
             OHOS::SubscribePublishedDataFuzz(fdp);
             break;
-        case 6:
+        case OHOS::FUZZ_UNSUBSCRIBE_PUBLISHED_DATA:
             OHOS::UnsubscribePublishedDataFuzz(fdp);
             break;
-        case 7:
+        case OHOS::FUZZ_ENABLE_PUB_SUBS:
             OHOS::EnablePubSubsFuzz(fdp);
             break;
         default:

@@ -32,6 +32,18 @@ namespace OHOS {
 constexpr size_t EXECUTOR_NUM_MAX = 12;
 constexpr size_t EXECUTOR_NUM_MIN = 5;
 
+// Upper bound of consumed random-length strings, keeps a single input cheap.
+constexpr size_t MAX_TEXT_LENGTH = 64;
+// AccountStatus enum value count, spans all OnUserChange switch cases.
+constexpr uint8_t ACCOUNT_STATUS_COUNT = 8;
+
+// Dispatch targets of the entry switch, indexed by the first consumed byte.
+enum FuzzTarget : uint8_t {
+    FUZZ_ON_USER_CHANGE = 0,
+    FUZZ_ON_BIND,
+    FUZZ_ON_INITIALIZE,
+};
+
 // Target interface count of this fuzzer, used by the entry switch.
 constexpr size_t TARGET_SIZE = 3;
 
@@ -41,9 +53,9 @@ constexpr size_t TARGET_SIZE = 3;
 void OnUserChangeFuzz(FuzzedDataProvider &fdp)
 {
     std::shared_ptr<DataShareServiceImpl> dataShareServiceImpl = std::make_shared<DataShareServiceImpl>();
-    uint32_t code = fdp.ConsumeIntegral<uint8_t>() % 8; // AccountStatus has 8 values
-    std::string user = fdp.ConsumeRandomLengthString(64);
-    std::string account = fdp.ConsumeRandomLengthString(64);
+    uint32_t code = fdp.ConsumeIntegral<uint8_t>() % ACCOUNT_STATUS_COUNT;
+    std::string user = fdp.ConsumeRandomLengthString(MAX_TEXT_LENGTH);
+    std::string account = fdp.ConsumeRandomLengthString(MAX_TEXT_LENGTH);
     dataShareServiceImpl->OnUserChange(code, user, account);
 }
 
@@ -85,10 +97,10 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     FuzzedDataProvider fdp(data, size);
     uint8_t target = fdp.ConsumeIntegral<uint8_t>() % OHOS::TARGET_SIZE;
     switch (target) {
-        case 0:
+        case OHOS::FUZZ_ON_USER_CHANGE:
             OHOS::OnUserChangeFuzz(fdp);
             break;
-        case 1:
+        case OHOS::FUZZ_ON_BIND:
             OHOS::OnBindFuzz(fdp);
             break;
         default:
