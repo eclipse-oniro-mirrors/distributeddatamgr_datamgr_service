@@ -2173,23 +2173,6 @@ void RdbServiceImpl::OnCollaborationChange(const StoreMetaData &metaData, const 
     DoAutoSync(devices, metaData, tables);
 }
 
-void RdbServiceImpl::OnCloudDataChange(const StoreMetaData &metaData, const RdbChangedData &changedData)
-{
-    auto tables = RdbCommonUtils::GetCloudTables(changedData);
-    if (tables.empty()) {
-        return;
-    }
-
-    RdbService::Option option;
-    option.mode = DistributedData::GeneralStore::CLOUD_TIME_FIRST;
-    option.isAsync = true;
-    option.isAutoSync = true;
-
-    PredicatesMemo predicates;
-    predicates.tables_ = std::move(tables);
-    DoCloudSync(metaData, option, predicates, nullptr);
-}
-
 void RdbServiceImpl::OnSearchableChange(const StoreMetaData &metaData, const RdbNotifyConfig &config,
     const RdbChangedData &changedData)
 {
@@ -2239,7 +2222,6 @@ int32_t RdbServiceImpl::NotifyDataChange(const RdbSyncerParam &param, const RdbC
     if (SyncManager::GetInstance().IsAutoSyncApp(meta.bundleName, meta.appId)) {
         OnCollaborationChange(meta, rdbChangedData);
     }
-    OnCloudDataChange(meta, rdbChangedData);
     return RDB_OK;
 }
 

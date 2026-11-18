@@ -74,12 +74,6 @@ public:
             if (lIt->second.isP2pSyncDataChange != rIt->second.isP2pSyncDataChange) {
                 return false;
             }
-            if (lIt->second.isKnowledgeDataChange != rIt->second.isKnowledgeDataChange) {
-                return false;
-            }
-            if (lIt->second.isCloudSyncDataChange != rIt->second.isCloudSyncDataChange) {
-                return false;
-            }
         }
         return true;
     }
@@ -139,13 +133,11 @@ static RdbChangedData CreateTestChangedData(
     return data;
 }
 
-static RdbProperties CreateTestProperties(bool isTracked = true, bool isP2p = false,
-    bool isCloudSync = false)
+static RdbProperties CreateTestProperties(bool isTracked = true, bool isP2p = false)
 {
     RdbProperties props;
     props.isTrackedDataChange = isTracked;
     props.isP2pSyncDataChange = isP2p;
-    props.isCloudSyncDataChange = isCloudSync;
     return props;
 }
 
@@ -813,65 +805,6 @@ HWTEST_F(RdbTypesUtilsTest, RdbTypesUtil_MarshalUnmarshal_Asset_ExtensionEmpty, 
     RdbAsset unmarshalled;
     EXPECT_TRUE(ITypesUtil::Unmarshal(parcel, unmarshalled));
     EXPECT_TRUE(unmarshalled.extension.empty());
-}
-
-/**
- * @tc.name: RdbTypesUtil_MarshalUnmarshal_RdbProperties_CloudSync
- * @tc.desc: Test Marshal/Unmarshal for RdbProperties with isCloudSyncDataChange = true
- * @tc.type: FUNC
- */
-HWTEST_F(RdbTypesUtilsTest, RdbTypesUtil_MarshalUnmarshal_RdbProperties_CloudSync, TestSize.Level1)
-{
-    auto original = CreateTestProperties(false, false, true);
-
-    MessageParcel parcel;
-    ASSERT_TRUE(ITypesUtil::Marshal(parcel, original));
-
-    RdbProperties unmarshalled;
-    EXPECT_TRUE(ITypesUtil::Unmarshal(parcel, unmarshalled));
-    EXPECT_EQ(unmarshalled.isCloudSyncDataChange, true);
-    EXPECT_EQ(unmarshalled.isTrackedDataChange, false);
-    EXPECT_EQ(unmarshalled.isP2pSyncDataChange, false);
-}
-
-/**
- * @tc.name: RdbTypesUtil_MarshalUnmarshal_RdbProperties_CloudSyncFalse
- * @tc.desc: Test Marshal/Unmarshal for RdbProperties with isCloudSyncDataChange = false
- * @tc.type: FUNC
- */
-HWTEST_F(RdbTypesUtilsTest, RdbTypesUtil_MarshalUnmarshal_RdbProperties_CloudSyncFalse, TestSize.Level1)
-{
-    auto original = CreateTestProperties(true, true, false);
-
-    MessageParcel parcel;
-    ASSERT_TRUE(ITypesUtil::Marshal(parcel, original));
-
-    RdbProperties unmarshalled;
-    EXPECT_TRUE(ITypesUtil::Unmarshal(parcel, unmarshalled));
-    EXPECT_EQ(unmarshalled.isCloudSyncDataChange, false);
-    EXPECT_EQ(unmarshalled.isTrackedDataChange, true);
-    EXPECT_EQ(unmarshalled.isP2pSyncDataChange, true);
-}
-
-/**
- * @tc.name: RdbTypesUtil_MarshalUnmarshal_RdbChangedData_CloudSync
- * @tc.desc: Test Marshal/Unmarshal for RdbChangedData with isCloudSyncDataChange
- * @tc.type: FUNC
- */
-HWTEST_F(RdbTypesUtilsTest, RdbTypesUtil_MarshalUnmarshal_RdbChangedData_CloudSync, TestSize.Level1)
-{
-    RdbChangedData original;
-    auto props = CreateTestProperties(true, false, true);
-    original.tableData["cloud_table"] = props;
-
-    MessageParcel parcel;
-    ASSERT_TRUE(ITypesUtil::Marshal(parcel, original));
-
-    RdbChangedData unmarshalled;
-    EXPECT_TRUE(ITypesUtil::Unmarshal(parcel, unmarshalled));
-    ASSERT_EQ(unmarshalled.tableData.size(), 1u);
-    EXPECT_EQ(unmarshalled.tableData["cloud_table"].isCloudSyncDataChange, true);
-    EXPECT_EQ(unmarshalled.tableData["cloud_table"].isTrackedDataChange, true);
 }
 
 } // namespace Test

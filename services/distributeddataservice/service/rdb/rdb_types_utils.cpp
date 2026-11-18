@@ -130,7 +130,7 @@ bool Marshalling(const RdbSyncerParam &input, MessageParcel &data)
         input.asyncDownloadAsset_, input.enableCloud_, input.subUser_, input.dfxInfo_, input.distributedTableMode_,
         input.isAutoCleanDevice_, input.customSwitch_, input.autoSyncSwitch_, input.assetConflictPolicy_,
         input.assetTempPath_, input.assetDownloadOnDemand_, input.dbPath_, input.replicaPath_,
-        input.autoSync_, input.dumpStackOnFileDeletion_);
+        input.dumpStackOnFileDeletion_);
 }
 
 template<>
@@ -142,7 +142,7 @@ bool Unmarshalling(RdbSyncerParam &output, MessageParcel &data)
         output.permissionNames_, output.asyncDownloadAsset_, output.enableCloud_, output.subUser_, output.dfxInfo_,
         output.distributedTableMode_, output.isAutoCleanDevice_, output.customSwitch_, output.autoSyncSwitch_,
         output.assetConflictPolicy_, output.assetTempPath_, output.assetDownloadOnDemand_, output.dbPath_,
-        output.replicaPath_,         output.autoSync_, output.dumpStackOnFileDeletion_);
+        output.replicaPath_, output.dumpStackOnFileDeletion_);
 }
 
 template<>
@@ -178,15 +178,13 @@ bool Unmarshalling(BigInt &output, MessageParcel &data)
 template<>
 bool Marshalling(const RdbProperties &input, MessageParcel &data)
 {
-    return Marshal(data, input.isTrackedDataChange, input.isP2pSyncDataChange, input.isKnowledgeDataChange,
-        input.isCloudSyncDataChange);
+    return Marshal(data, input.isTrackedDataChange, input.isP2pSyncDataChange, input.isKnowledgeDataChange);
 }
 
 template<>
 bool Unmarshalling(RdbProperties &output, MessageParcel &data)
 {
-    return Unmarshal(data, output.isTrackedDataChange, output.isP2pSyncDataChange, output.isKnowledgeDataChange,
-        output.isCloudSyncDataChange);
+    return Unmarshal(data, output.isTrackedDataChange, output.isP2pSyncDataChange, output.isKnowledgeDataChange);
 }
 
 template<>

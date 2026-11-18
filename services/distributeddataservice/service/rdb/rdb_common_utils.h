@@ -34,7 +34,6 @@ class RdbCommonUtils final {
 public:
     static std::vector<std::string> GetSearchableTables(const RdbChangedData &changedData);
     static std::vector<std::string> GetP2PTables(const RdbChangedData &changedData);
-    static std::vector<std::string> GetCloudTables(const RdbChangedData &changedData);
     static std::vector<DistributedData::Reference> Convert(const std::vector<Reference> &references);
     static int32_t ConvertNativeRdbStatus(int32_t status);
     static int32_t ConvertGeneralRdbStatus(int32_t status);

@@ -258,7 +258,6 @@ private:
     std::vector<std::string> GetReuseDevice(const std::vector<std::string> &devices, const StoreMetaData &metaData);
 
     void OnCollaborationChange(const StoreMetaData &metaData, const RdbChangedData &changedData);
-    void OnCloudDataChange(const StoreMetaData &metaData, const RdbChangedData &changedData);
 
     void OnSearchableChange(const StoreMetaData &metaData, const RdbNotifyConfig &config,
         const RdbChangedData &changedData);
