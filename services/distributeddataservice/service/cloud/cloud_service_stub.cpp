@@ -168,8 +168,7 @@ int32_t CloudServiceStub::OnQueryLastSyncInfo(MessageParcel &data, MessageParcel
     std::string bundleName;
     std::string storeId;
     if (!ITypesUtil::Unmarshal(data, id, bundleName, storeId)) {
-        ZLOGE("Unmarshal id:%{public}s, bundleName:%{public}s, storeId:%{public}s", Anonymous::Change(id).c_str(),
-            bundleName.c_str(), Anonymous::Change(storeId).c_str());
+        ZLOGE("Unmarshal id:%{public}s", Anonymous::Change(id).c_str());
         return IPC_STUB_INVALID_DATA_ERR;
     }
     auto [status, results] = QueryLastSyncInfo(id, bundleName, storeId);
@@ -363,8 +362,8 @@ int32_t CloudServiceStub::OnCloudSync(MessageParcel &data, MessageParcel &reply)
     std::string storeId;
     Option option;
     if (!ITypesUtil::Unmarshal(data, bundleName, storeId, option)) {
-        ZLOGE("Unmarshal failed, bundleName:%{public}s, storeId:%{public}s, syncMode:%{public}d, seqNum:%{public}u",
-            bundleName.c_str(), Anonymous::Change(storeId).c_str(), option.syncMode, option.seqNum);
+        ZLOGE("Unmarshal failed, bundleName:%{public}s, storeId:%{public}s",
+            bundleName.c_str(), Anonymous::Change(storeId).c_str());
         return IPC_STUB_INVALID_DATA_ERR;
     }
     auto status = CloudSync(bundleName, storeId, option, nullptr);
