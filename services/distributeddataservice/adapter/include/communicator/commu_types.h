@@ -28,7 +28,7 @@ struct API_EXPORT AccessCaller {
     std::string bundleName;
     std::string networkId;
     int32_t userId;
-    int64_t tokenId;
+    uint64_t tokenId = 0;
 };
 
 struct API_EXPORT AccessCallee {
