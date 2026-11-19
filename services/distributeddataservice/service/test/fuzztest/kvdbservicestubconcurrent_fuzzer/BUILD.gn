@@ -124,7 +124,7 @@ ohos_fuzztest("KvdbServiceStubConcurrentFuzzTest") {
 }
 
 config("fuzztest_no_lto") {
-  cflag = [ "-fno-lto" ]
+  cflags = [ "-fno-lto" ]
   ldflags = [ "-fno-lto" ]
 }
 
