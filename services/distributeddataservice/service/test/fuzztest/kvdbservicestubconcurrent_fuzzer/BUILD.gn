@@ -39,6 +39,9 @@ ohos_fuzztest("KvdbServiceStubConcurrentFuzzTest") {
 
   fuzz_config_file = "${data_service_path}/service/test/fuzztest/kvdbservicestubconcurrent_fuzzer"
 
+  configs = [ ":fuzztest_no_lto" ]
+  ldflags = [ "-Wl,--allow-multiple-definition" ]
+
   cflags = [
     "-g",
     "-O0",
@@ -47,6 +50,7 @@ ohos_fuzztest("KvdbServiceStubConcurrentFuzzTest") {
   ]
 
   sources = [
+    "${data_service_path}/service/test/cfi_check_override.cpp",
     "${data_service_path}/app/src/checker/bundle_checker.cpp",
     "${data_service_path}/app/src/checker/system_checker.cpp",
     "${data_service_path}/service/backup/src/backup_manager.cpp",
@@ -117,6 +121,11 @@ ohos_fuzztest("KvdbServiceStubConcurrentFuzzTest") {
     "safwk:system_ability_fwk",
     "samgr:samgr_proxy",
   ]
+}
+
+config("fuzztest_no_lto") {
+  cflag = [ "-fno-lto" ]
+  ldflags = [ "-fno-lto" ]
 }
 
 ###############################################################################
