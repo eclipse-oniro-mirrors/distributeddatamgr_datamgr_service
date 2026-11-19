@@ -56,6 +56,7 @@ public:
         const DataSharePredicates &predicates, const std::vector<std::string> &columns, int &errCode) override;
     int32_t AddTemplate(const std::string &uri, const int64_t subscriberId, const Template &tplt) override;
     int32_t DelTemplate(const std::string &uri, const int64_t subscriberId) override;
+    int32_t CleanInvalidData(const std::vector<std::string> &validSubscribers) override;
     std::vector<OperationResult> Publish(const Data &data, const std::string &bundleNameOfProvider) override;
     Data GetData(const std::string &bundleNameOfProvider, int &errorCode) override;
     std::vector<OperationResult> SubscribeRdbData(const std::vector<std::string> &uris,

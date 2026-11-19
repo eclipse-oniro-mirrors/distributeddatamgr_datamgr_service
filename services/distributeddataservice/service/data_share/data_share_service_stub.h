@@ -34,6 +34,7 @@ private:
     int32_t OnQuery(MessageParcel& data, MessageParcel& reply);
     int32_t OnAddTemplate(MessageParcel& data, MessageParcel& reply);
     int32_t OnDelTemplate(MessageParcel& data, MessageParcel& reply);
+    int32_t OnCleanInvalidData(MessageParcel& data, MessageParcel& reply);
     int32_t OnPublish(MessageParcel& data, MessageParcel& reply);
     int32_t OnGetData(MessageParcel& data, MessageParcel& reply);
     int32_t OnSubscribeRdbData(MessageParcel& data, MessageParcel& reply);
@@ -96,7 +97,8 @@ private:
         &DataShareServiceStub::OnDeleteAllProxyData,
         &DataShareServiceStub::OnPutValue,
         &DataShareServiceStub::OnRemoveValue,
-        &DataShareServiceStub::OnGetValues};
+        &DataShareServiceStub::OnGetValues,
+        &DataShareServiceStub::OnCleanInvalidData};
     static constexpr int SLEEP_TIME = 300;
     static constexpr int TRY_TIMES = 5;
     std::atomic<bool> isReady_ = false;

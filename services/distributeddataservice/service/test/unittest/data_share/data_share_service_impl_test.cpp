@@ -37,6 +37,9 @@
 #include "log_print.h"
 #include "metadata/meta_data_manager.h"
 #include "system_ability_definition.h"
+#include "account/account_delegate.h"
+#include "bundle_constants.h"
+#include "template_data.h"
 #include "token_setproc.h"
 
 using namespace testing::ext;
@@ -1632,4 +1635,186 @@ HWTEST_F(DataShareServiceImplTest, VerifyPredicates006, TestSize.Level1)
     EXPECT_FALSE(dataShareServiceImpl.VerifyPredicates(dp4, tokenId, providerConfig.providerInfo_, func));
     ZLOGI("DataShareServiceImplTest VerifyPredicates006 end");
 }
+
+namespace {
+// Test fixture constants for the cleanInvalidData real-data tests.
+constexpr int64_t KEEP_SUBSCRIBER_ID = 1;
+constexpr int64_t REMOVE_SUBSCRIBER_ID = 2;
+constexpr int64_t GARBAGE_SUBSCRIBER_ID = 999;
+constexpr size_t SEEDED_TEMPLATE_COUNT = 2;
+constexpr size_t KEPT_TEMPLATE_COUNT = 1;
+constexpr int32_t MAX_POOL_THREAD_NUM = 2;
+constexpr int32_t MIN_POOL_THREAD_NUM = 1;
+const std::string CLEAN_TEST_URI = "datashareproxy://clean.invalid.test/tbl00";
+} // namespace
+
+// A kv entry whose value only carries the fields used by the QueryTemplates filter.
+class GarbageTemplateData final : public KvData {
+public:
+    GarbageTemplateData(const std::string &id, int32_t userId, const std::string &value)
+        : KvData(Id(id, userId)), value_(value)
+    {
+    }
+    ~GarbageTemplateData() = default;
+
+    bool HasVersion() const override
+    {
+        return false;
+    }
+
+    int GetVersion() const override
+    {
+        return 0;
+    }
+
+    std::string GetValue() const override
+    {
+        return value_;
+    }
+
+private:
+    std::string value_;
+};
+
+static int32_t GetCleanInvalidTestUserId()
+{
+    auto callingUid = IPCSkeleton::GetCallingUid();
+    if (callingUid == 0) {
+        return AccountDelegate::GetInstance()->GetUserByToken(IPCSkeleton::GetCallingTokenID());
+    }
+    return callingUid / AppExecFwk::Constants::BASE_USER_RANGE;
+}
+
+static void SeedTemplate(int64_t subscriberId, int32_t userId)
+{
+    std::vector<PredicateTemplateNode> nodes;
+    nodes.emplace_back("p1", "select name0 as name from TBL00");
+    Template tpl(nodes, "select name0 as name from TBL00");
+    EXPECT_TRUE(TemplateData::Add(CLEAN_TEST_URI, userId, BUNDLE_NAME, subscriberId, tpl));
+}
+
+static void RemoveSeededTemplate(int64_t subscriberId, int32_t userId)
+{
+    TemplateData::Delete(CLEAN_TEST_URI, userId, BUNDLE_NAME, subscriberId);
+}
+
+/**
+* @tc.name: CleanInvalidData001
+* @tc.desc: test CleanInvalidData function and abnormal scene
+* @tc.type: FUNC
+* @tc.require: issueIC8OCN
+*/
+HWTEST_F(DataShareServiceImplTest, CleanInvalidData001, TestSize.Level1)
+{
+    DataShareServiceImpl dataShareServiceImpl;
+    std::vector<std::string> validSubscribers = { "1", "2" };
+    auto result = dataShareServiceImpl.CleanInvalidData(validSubscribers);
+    EXPECT_EQ((result == 0 || result == DataShare::E_ERROR || result == DataShareServiceImpl::ERROR), true);
+
+    auto tokenId = AccessTokenKit::GetHapTokenID(USER_TEST, "ohos.datasharetest.demo", 0);
+    AccessTokenKit::DeleteToken(tokenId);
+    result = dataShareServiceImpl.CleanInvalidData(validSubscribers);
+    EXPECT_EQ(result, DataShareServiceImpl::ERROR);
+}
+
+/**
+* @tc.name: TemplateRootNodeAccessors001
+* @tc.desc: test the read accessors of TemplateRootNode for constructed and default nodes
+* @tc.type: FUNC
+* @tc.require: issueIC8OCN
+*/
+HWTEST_F(DataShareServiceImplTest, TemplateRootNodeAccessors001, TestSize.Level1)
+{
+    constexpr int64_t TEST_SUBSCRIBER_ID = 5;
+    constexpr int32_t TEST_USER_ID = 0;
+    std::vector<PredicateTemplateNode> nodes;
+    nodes.emplace_back("p1", "select name0 as name from TBL00");
+    Template tpl(nodes, "select name0 as name from TBL00");
+    TemplateRootNode node(CLEAN_TEST_URI, BUNDLE_NAME, TEST_SUBSCRIBER_ID, TEST_USER_ID, tpl);
+    EXPECT_EQ(node.GetUri(), CLEAN_TEST_URI);
+    EXPECT_EQ(node.GetBundleName(), BUNDLE_NAME);
+    EXPECT_EQ(node.GetSubscriberId(), std::to_string(TEST_SUBSCRIBER_ID));
+
+    TemplateRootNode defaultNode;
+    EXPECT_TRUE(defaultNode.GetUri().empty());
+    EXPECT_TRUE(defaultNode.GetBundleName().empty());
+    EXPECT_TRUE(defaultNode.GetSubscriberId().empty());
+}
+
+/**
+* @tc.name: QueryTemplatesNoDelegate001
+* @tc.desc: test QueryTemplates returns the inner error when the kv delegate singleton
+*           is not initialized
+* @tc.type: FUNC
+* @tc.require: issueIC8OCN
+*/
+HWTEST_F(DataShareServiceImplTest, QueryTemplatesNoDelegate001, TestSize.Level1)
+{
+    ASSERT_EQ(KvDBDelegate::GetInstance(), nullptr);
+    std::vector<TemplateRootNode> results;
+    auto status = TemplateData::QueryTemplates(BUNDLE_NAME, 0, results);
+    EXPECT_EQ(status, DataShare::E_ERROR);
+    EXPECT_EQ(results.size(), 0);
+}
+
+/**
+* @tc.name: CleanInvalidDataWhitelist001
+* @tc.desc: test CleanInvalidData against the real kv storage: entries outside the
+*           whitelist are removed, entries inside are kept, a second call is idempotent
+* @tc.type: FUNC
+* @tc.require: issueIC8OCN
+*/
+HWTEST_F(DataShareServiceImplTest, CleanInvalidDataWhitelist001, TestSize.Level1)
+{
+    auto executors = std::make_shared<ExecutorPool>(MAX_POOL_THREAD_NUM, MIN_POOL_THREAD_NUM);
+    ASSERT_NE(KvDBDelegate::GetInstance("/data/test", executors), nullptr);
+    auto userId = GetCleanInvalidTestUserId();
+    RemoveSeededTemplate(KEEP_SUBSCRIBER_ID, userId);
+    RemoveSeededTemplate(REMOVE_SUBSCRIBER_ID, userId);
+    RemoveSeededTemplate(GARBAGE_SUBSCRIBER_ID, userId);
+    SeedTemplate(KEEP_SUBSCRIBER_ID, userId);
+    SeedTemplate(REMOVE_SUBSCRIBER_ID, userId);
+    std::vector<TemplateRootNode> before;
+    EXPECT_EQ(TemplateData::QueryTemplates(BUNDLE_NAME, userId, before), DataShare::E_OK);
+    ASSERT_EQ(before.size(), SEEDED_TEMPLATE_COUNT);
+
+    DataShareServiceImpl dataShareServiceImpl;
+    std::vector<std::string> validSubscribers = { std::to_string(KEEP_SUBSCRIBER_ID) };
+    EXPECT_EQ(dataShareServiceImpl.CleanInvalidData(validSubscribers), DataShare::E_OK);
+
+    std::vector<TemplateRootNode> after;
+    EXPECT_EQ(TemplateData::QueryTemplates(BUNDLE_NAME, userId, after), DataShare::E_OK);
+    ASSERT_EQ(after.size(), KEPT_TEMPLATE_COUNT);
+    EXPECT_EQ(after[0].GetSubscriberId(), std::to_string(KEEP_SUBSCRIBER_ID));
+
+    EXPECT_EQ(dataShareServiceImpl.CleanInvalidData(validSubscribers), DataShare::E_OK);
+    RemoveSeededTemplate(KEEP_SUBSCRIBER_ID, userId);
+}
+
+/**
+* @tc.name: QueryTemplatesGarbageEntry001
+* @tc.desc: test QueryTemplates returns the inner error when the enumeration contains an
+*           entry that matches the filter but fails to unmarshal
+* @tc.type: FUNC
+* @tc.require: issueIC8OCN
+*/
+HWTEST_F(DataShareServiceImplTest, QueryTemplatesGarbageEntry001, TestSize.Level1)
+{
+    auto executors = std::make_shared<ExecutorPool>(MAX_POOL_THREAD_NUM, MIN_POOL_THREAD_NUM);
+    auto delegate = KvDBDelegate::GetInstance("/data/test", executors);
+    ASSERT_NE(delegate, nullptr);
+    auto userId = GetCleanInvalidTestUserId();
+    RemoveSeededTemplate(GARBAGE_SUBSCRIBER_ID, userId);
+    std::string garbageValue = "{\"bundleName\":\"" + BUNDLE_NAME + "\", \"userId\": " +
+        std::to_string(userId) + "}";
+    GarbageTemplateData garbage(TemplateData::GenId(CLEAN_TEST_URI, BUNDLE_NAME,
+        GARBAGE_SUBSCRIBER_ID), userId, garbageValue);
+    auto upsertStatus = delegate->Upsert(KvDBDelegate::TEMPLATE_TABLE, garbage);
+    EXPECT_EQ(upsertStatus.first, DataShare::E_OK);
+
+    std::vector<TemplateRootNode> results;
+    EXPECT_EQ(TemplateData::QueryTemplates(BUNDLE_NAME, userId, results), DataShare::E_ERROR);
+    RemoveSeededTemplate(GARBAGE_SUBSCRIBER_ID, userId);
+}
+
 } // namespace OHOS::Test

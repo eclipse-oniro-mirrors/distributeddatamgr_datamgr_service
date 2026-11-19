@@ -166,6 +166,21 @@ int32_t DataShareServiceStub::OnDelTemplate(MessageParcel &data, MessageParcel &
     return 0;
 }
 
+int32_t DataShareServiceStub::OnCleanInvalidData(MessageParcel &data, MessageParcel &reply)
+{
+    std::vector<std::string> validSubscribers;
+    if (!ITypesUtil::Unmarshal(data, validSubscribers)) {
+        ZLOGW("read valid form ids failed.");
+        return IPC_STUB_INVALID_DATA_ERR;
+    }
+    int32_t status = CleanInvalidData(validSubscribers);
+    if (!ITypesUtil::Marshal(reply, status)) {
+        ZLOGE("Marshal status:0x%{public}x", status);
+        return IPC_STUB_WRITE_PARCEL_ERR;
+    }
+    return 0;
+}
+
 int32_t DataShareServiceStub::OnPublish(MessageParcel &data, MessageParcel &reply)
 {
     Data publishData;
@@ -395,7 +410,12 @@ int DataShareServiceStub::OnRemoteRequest(uint32_t code, MessageParcel &data, Me
     auto fullTokenId = IPCSkeleton::GetCallingFullTokenID();
     bool isSystemApp = CheckSystemCallingPermission(IPCSkeleton::GetCallingTokenID(), fullTokenId);
     DataShareThreadLocal::SetFromSystemApp(isSystemApp);
-    if (code >= DATA_SHARE_CMD_SYSTEM_CODE || IsTemplateRequest(code)) {
+    // Codes from DATA_SHARE_SERVICE_CMD_CLEAN_INVALID_DATA up to DATA_SHARE_CMD_SYSTEM_CODE
+    // are newly added system-only commands. Unlike legacy commands they have no inner-layer
+    // callers to keep compatible, so they always require the system app check, no matter
+    // whether they are called from the data share client or directly at the inner layer.
+    if (code >= DATA_SHARE_CMD_SYSTEM_CODE || IsTemplateRequest(code) ||
+        (code >= DATA_SHARE_SERVICE_CMD_CLEAN_INVALID_DATA && code < DATA_SHARE_CMD_SYSTEM_CODE)) {
         if (!isSystemApp) {
             ZLOGE("CheckSystemCallingPermission fail, token:%{public}" PRIx64
                 ", callingPid:%{public}d, code:%{public}u", fullTokenId, callingPid, code);

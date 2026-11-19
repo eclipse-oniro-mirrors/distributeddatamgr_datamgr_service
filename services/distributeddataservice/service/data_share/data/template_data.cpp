@@ -130,6 +130,47 @@ int32_t TemplateData::Query(const std::string &filter, Template &aTemplate)
     return E_OK;
 }
 
+int32_t TemplateData::QueryTemplates(const std::string &bundleName, const int32_t userId,
+    std::vector<TemplateRootNode> &templates)
+{
+    auto delegate = KvDBDelegate::GetInstance();
+    if (delegate == nullptr) {
+        ZLOGE("db open failed");
+        return E_ERROR;
+    }
+    std::vector<std::string> queryResults;
+    std::string filter = "{\"bundleName\":\"" + bundleName + "\", \"userId\": " + std::to_string(userId) + "}";
+    int32_t status = delegate->GetBatch(KvDBDelegate::TEMPLATE_TABLE, filter, "{}", queryResults);
+    if (status != E_OK) {
+        ZLOGE("db GetBatch failed, %{public}d", status);
+        return status;
+    }
+    for (const auto &queryResult : queryResults) {
+        TemplateRootNode data;
+        if (!DistributedData::Serializable::Unmarshall(queryResult, data)) {
+            ZLOGE("Unmarshall failed, %{public}s", StringUtils::GeneralAnonymous(queryResult).c_str());
+            return E_ERROR;
+        }
+        templates.push_back(std::move(data));
+    }
+    return E_OK;
+}
+
+const std::string &TemplateRootNode::GetUri() const
+{
+    return uri;
+}
+
+const std::string &TemplateRootNode::GetSubscriberId() const
+{
+    return subscriberId;
+}
+
+const std::string &TemplateRootNode::GetBundleName() const
+{
+    return bundleName;
+}
+
 bool TemplateData::Delete(const std::string &bundleName, const int32_t userId)
 {
     auto delegate = KvDBDelegate::GetInstance();

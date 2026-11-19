@@ -17,6 +17,7 @@
 
 #include "data_share_service_impl.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <regex>
@@ -395,6 +396,42 @@ int32_t DataShareServiceImpl::DelTemplate(const std::string &uri, const int64_t 
         return TemplateManager::GetInstance().Delete(
             Key(uri, tpltId.subscriberId_, tpltId.bundleName_), context->visitedUserId);
     });
+}
+
+int32_t DataShareServiceImpl::CleanInvalidData(const std::vector<std::string> &validSubscribers)
+{
+    std::string bundleName;
+    if (!GetCallerBundleName(bundleName)) {
+        ZLOGE("get bundleName error");
+        return ERROR;
+    }
+    auto callingUid = IPCSkeleton::GetCallingUid();
+    int32_t userId = (callingUid == 0)
+        ? AccountDelegate::GetInstance()->GetUserByToken(IPCSkeleton::GetCallingTokenID())
+        : callingUid / AppExecFwk::Constants::BASE_USER_RANGE;
+    std::vector<TemplateRootNode> templates;
+    auto status = TemplateData::QueryTemplates(bundleName, userId, templates);
+    if (status != E_OK) {
+        ZLOGE("QueryTemplates failed, status:%{public}d, bundleName:%{public}s", status, bundleName.c_str());
+        return status;
+    }
+    int32_t result = E_OK;
+    for (const auto &templateNode : templates) {
+        if (std::find(validSubscribers.begin(), validSubscribers.end(), templateNode.GetSubscriberId())
+            != validSubscribers.end()) {
+            continue;
+        }
+        auto deleteStatus = TemplateManager::GetInstance().Delete(
+            Key(templateNode.GetUri(), atoll(templateNode.GetSubscriberId().c_str()), bundleName), userId);
+        if (deleteStatus != E_OK) {
+            ZLOGE("Delete invalid template failed, uri:%{public}s, subscriberId:%{public}s",
+                URIUtils::Anonymous(templateNode.GetUri()).c_str(), templateNode.GetSubscriberId().c_str());
+            result = E_ERROR;
+        }
+    }
+    ZLOGI("Clean invalid templates, bundleName:%{public}s, total:%{public}zu, keep:%{public}zu, "
+          "result:%{public}d", bundleName.c_str(), templates.size(), validSubscribers.size(), result);
+    return result;
 }
 
 bool DataShareServiceImpl::GetCallerBundleName(std::string &bundleName)
