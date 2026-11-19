@@ -1104,6 +1104,53 @@ HWTEST_F(RdbServiceImplTest, AfterOpen004, TestSize.Level0)
 }
 
 /**
+ * @tc.name: AfterOpen005
+ * @tc.desc: Test AfterOpen closes store when binlogFileSize changes in dual-write mode
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(RdbServiceImplTest, AfterOpen005, TestSize.Level1)
+{
+    metaData_.haMode = 1; // MAIN_REPLICA
+    metaData_.binlogFileSize = 0;
+    EXPECT_EQ(MetaDataManager::GetInstance().SaveMeta(metaData_.GetKey(), metaData_, true), true);
+    RdbServiceImpl service;
+    RdbSyncerParam param;
+    param.bundleName_ = metaData_.bundleName;
+    param.storeName_ = metaData_.storeId;
+    param.haMode_ = 1; // MAIN_REPLICA
+    param.binlogFileSize_ = 1024 * 1024;
+    int32_t result = service.AfterOpen(param);
+    EXPECT_EQ(result, RDB_OK);
+    StoreMetaData saved;
+    MetaDataManager::GetInstance().LoadMeta(metaData_.GetKey(), saved, true);
+    EXPECT_EQ(saved.binlogFileSize, 1024u * 1024u);
+    EXPECT_EQ(MetaDataManager::GetInstance().DelMeta(metaData_.GetKey(), true), true);
+}
+
+/**
+ * @tc.name: AfterOpen006
+ * @tc.desc: Test AfterOpen does not close store for binlogFileSize change in SINGLE mode
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(RdbServiceImplTest, AfterOpen006, TestSize.Level1)
+{
+    metaData_.haMode = 0; // SINGLE
+    metaData_.binlogFileSize = 64 * 1024;
+    EXPECT_EQ(MetaDataManager::GetInstance().SaveMeta(metaData_.GetKey(), metaData_, true), true);
+    RdbServiceImpl service;
+    RdbSyncerParam param;
+    param.bundleName_ = metaData_.bundleName;
+    param.storeName_ = metaData_.storeId;
+    param.haMode_ = 0; // SINGLE
+    param.binlogFileSize_ = 1024 * 1024;
+    int32_t result = service.AfterOpen(param);
+    EXPECT_EQ(result, RDB_OK);
+    EXPECT_EQ(MetaDataManager::GetInstance().DelMeta(metaData_.GetKey(), true), true);
+}
+
+/**
  * @tc.name: NotifyDataChange001
  * @tc.desc: Test NotifyDataChange when CheckParam not pass.
  * @tc.type: FUNC

@@ -242,6 +242,51 @@ HWTEST_F(RdbGeneralStoreTest2, GetRdbConfig_CustomReplicaPath_Preserved, TestSiz
 }
 
 /**
+ * @tc.name: GetRdbConfig_SingleMode_SkipsBinlogFileSize
+ * @tc.desc: Test that SetBinlogFileSize is not applied when haMode is SINGLE
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(RdbGeneralStoreTest2, GetRdbConfig_SingleMode_SkipsBinlogFileSize, TestSize.Level1)
+{
+    auto meta = GetStoreMeta("GetRdbConfig_SingleMode_SkipsBinlogFileSize.db");
+    meta.haMode = NativeRdb::HAMode::SINGLE;
+    meta.binlogFileSize = 64 * 1024;
+    auto config = RdbGeneralStore::GetRdbConfig(meta, false);
+    EXPECT_EQ(config.GetBinlogFileSize(), NativeRdb::RdbStoreConfig::BINLOG_FILE_SIZE_DEFAULT);
+}
+
+/**
+ * @tc.name: GetRdbConfig_DualWriteMode_SetsBinlogFileSize
+ * @tc.desc: Test that SetBinlogFileSize is applied when haMode is MAIN_REPLICA
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(RdbGeneralStoreTest2, GetRdbConfig_DualWriteMode_SetsBinlogFileSize, TestSize.Level1)
+{
+    auto meta = GetStoreMeta("GetRdbConfig_DualWriteMode_SetsBinlogFileSize.db");
+    meta.haMode = NativeRdb::HAMode::MAIN_REPLICA;
+    meta.binlogFileSize = 64 * 1024;
+    auto config = RdbGeneralStore::GetRdbConfig(meta, false);
+    EXPECT_EQ(config.GetBinlogFileSize(), meta.binlogFileSize);
+}
+
+/**
+ * @tc.name: GetRdbConfig_DualWriteMode_UnsetBinlogSizeUsesDefault
+ * @tc.desc: Test that default binlog size is used when binlogFileSize is 0 in dual-write mode
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(RdbGeneralStoreTest2, GetRdbConfig_DualWriteMode_UnsetBinlogSizeUsesDefault, TestSize.Level1)
+{
+    auto meta = GetStoreMeta("GetRdbConfig_DualWriteMode_UnsetBinlogSizeUsesDefault.db");
+    meta.haMode = NativeRdb::HAMode::MAIN_REPLICA;
+    meta.binlogFileSize = 0;
+    auto config = RdbGeneralStore::GetRdbConfig(meta, false);
+    EXPECT_EQ(config.GetBinlogFileSize(), NativeRdb::RdbStoreConfig::BINLOG_FILE_SIZE_DEFAULT);
+}
+
+/**
  * @tc.name: SetBinlogEnabled_Failed
  * @tc.desc: Test SetBinlogEnabled returns E_ERROR when delegate returns error
  * @tc.type: FUNC

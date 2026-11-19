@@ -58,6 +58,7 @@ struct API_EXPORT StoreMetaData : public Serializable {
     std::string customDir = "";
     // Parent directory shared by the replica database and binlog; empty selects the legacy location.
     std::string replicaPath;
+    uint32_t binlogFileSize = 0;
     std::string deviceId = "";
     std::string schema = "";
     std::string storeId = "";
