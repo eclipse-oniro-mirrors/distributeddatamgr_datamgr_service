@@ -198,6 +198,14 @@ HWTEST_F(DataShareServiceStubTest, IsTemplateRequest001, TestSize.Level1)
 HWTEST_F(DataShareServiceStubTest, OnRemoteRequest005, TestSize.Level1)
 {
     ZLOGI("DataShareServiceStubTest::OnRemoteRequest005 start");
+    // the ambient self token is a native (system) token, so allocate a non-system hap
+    // token to reach the system app check rejection
+    Security::AccessToken::HapInfoParams info{};
+    info.userID = 100;
+    info.bundleName = "ohos.datashare.stub.test";
+    auto token = Security::AccessToken::MockAccessTokenState::Allocate(info, {});
+    ASSERT_NE(token.tokenIDEx, 0);
+    Security::AccessToken::ScopedMockToken caller(token.tokenIDEx);
     uint32_t code = DataShare::DataShareServiceImpl::DATA_SHARE_SERVICE_CMD_CLEAN_INVALID_DATA;
     MessageParcel request;
     MessageParcel reply;
@@ -215,8 +223,8 @@ HWTEST_F(DataShareServiceStubTest, OnRemoteRequest005, TestSize.Level1)
 
 /**
 * @tc.name: OnCleanInvalidData001
-* @tc.desc: test OnCleanInvalidData returns the invalid data error when the parcel does not
-*           contain a valid subscriber list
+* @tc.desc: test OnCleanInvalidData returns the invalid data error when the payload declares
+*           a negative subscriber list size
 * @tc.type: FUNC
 * @tc.require: issueIC8OCN
 */
@@ -224,6 +232,8 @@ HWTEST_F(DataShareServiceStubTest, OnCleanInvalidData001, TestSize.Level1)
 {
     ZLOGI("DataShareServiceStubTest::OnCleanInvalidData001 start");
     MessageParcel request;
+    int32_t negativeSize = -1; // -1 is the invalid subscriber list size that fails the unmarshal
+    request.WriteInt32(negativeSize);
     MessageParcel reply;
     auto result = dataShareServiceStub->OnCleanInvalidData(request, reply);
     EXPECT_EQ(result, IPC_STUB_INVALID_DATA_ERR);
@@ -254,7 +264,8 @@ HWTEST_F(DataShareServiceStubTest, OnCleanInvalidData002, TestSize.Level1)
 /**
 * @tc.name: OnRemoteRequest006
 * @tc.desc: test OnRemoteRequest dispatches the base command code to the cleanInvalidData
-*           handler for a system caller and the handler rejects the empty payload
+*           handler for a system caller and the handler rejects the payload with a
+*           negative subscriber list size
 * @tc.type: FUNC
 * @tc.require: issueIC8OCN
 */
@@ -266,6 +277,8 @@ HWTEST_F(DataShareServiceStubTest, OnRemoteRequest006, TestSize.Level1)
     uint32_t code = DataShare::DataShareServiceImpl::DATA_SHARE_SERVICE_CMD_CLEAN_INVALID_DATA;
     MessageParcel request;
     request.WriteInterfaceToken(INTERFACE_TOKEN);
+    int32_t negativeSize = -1; // -1 is the invalid subscriber list size that fails the unmarshal
+    request.WriteInt32(negativeSize);
     MessageParcel reply;
     auto result = dataShareServiceStub->OnRemoteRequest(code, request, reply);
     EXPECT_EQ(result, IPC_STUB_INVALID_DATA_ERR);
