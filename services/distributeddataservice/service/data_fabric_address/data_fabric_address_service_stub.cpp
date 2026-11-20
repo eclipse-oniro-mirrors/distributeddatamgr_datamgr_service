@@ -165,17 +165,17 @@ bool DataFabricAddressServiceStub::CheckPermission()
     Security::AccessToken::AccessTokenID tokenId = IPCSkeleton::GetCallingTokenID();
     int32_t ret = Security::AccessToken::AccessTokenKit::VerifyAccessToken(tokenId, APPROXIMATELY_LOCATION);
     if (ret != Security::AccessToken::PERMISSION_GRANTED) {
-        ZLOGE("Not granted %{public}s", APPROXIMATELY_LOCATION.c_str());
+        ZLOGE("Verify permission denied.");
         return false;
     }
     ret = Security::AccessToken::AccessTokenKit::VerifyAccessToken(tokenId, LOCATION);
     if (ret != Security::AccessToken::PERMISSION_GRANTED) {
-        ZLOGE("Not granted %{public}s", LOCATION.c_str());
+        ZLOGE("Verify permission denied.");
         return false;
     }
     ret = Security::AccessToken::AccessTokenKit::VerifyAccessToken(tokenId, LOCATION_IN_BACKGROUND);
     if (ret != Security::AccessToken::PERMISSION_GRANTED) {
-        ZLOGE("Not granted %{public}s", LOCATION_IN_BACKGROUND.c_str());
+        ZLOGE("Verify permission denied.");
         return false;
     }
     ZLOGI("Service CheckPermission exit.");

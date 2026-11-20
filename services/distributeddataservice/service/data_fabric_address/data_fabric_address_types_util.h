@@ -23,9 +23,15 @@ namespace OHOS::ITypesUtil {
 using DataFabricAddressParams = NativePreferences::DataFabricAddressParams;
 
 template<>
-bool Marshalling(const DataFabricAddressParams &value, MessageParcel &parcel);
+inline bool Marshalling(const DataFabricAddressParams &value, MessageParcel &parcel)
+{
+    return value.Marshal(parcel);
+}
 
 template<>
-bool Unmarshalling(DataFabricAddressParams &value, MessageParcel &parcel);
+inline Unmarshalling(DataFabricAddressParams &value, MessageParcel &parcel)
+{
+    return value.Unmarshal(parcel);
+}
 }
 #endif // DATA_FABRIC_ADDRESS_TYPES_UTIL_H

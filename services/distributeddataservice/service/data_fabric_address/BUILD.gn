@@ -35,7 +35,6 @@ ohos_source_set("data_fabric_address_service") {
     "data_fabric_address_callback_proxy.cpp",
     "data_fabric_address_service_impl.cpp",
     "data_fabric_address_service_stub.cpp",
-    "data_fabric_address_types_util.cpp",
     "navigation/src/data_collect/navigation_live_view_monitor.cpp",
     "navigation/src/data_collect/navigation_passive_location_handler.cpp",
     "navigation/src/navigation_common_utils.cpp",
