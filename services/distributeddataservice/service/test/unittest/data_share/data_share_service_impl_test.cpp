@@ -105,7 +105,9 @@ sptr<BundleMgrMock> DataShareServiceImplTest::MockBundleInfo()
             return false;
         }
         mockedBundles_.emplace_back(name, userId);
-        info = {};
+        // BundleInfo is a fresh default-constructed stack local in GetBundleInfoFromBMS;
+        // avoid whole-object assignment (info = {}) which triggers RefBase::operator= on
+        // members whose mRefs is not initialised in this CFI/LTO test binary (SEGV@0x48).
         info.name = name;
         info.applicationInfo.isSystemApp = true;
         return true;
@@ -562,7 +564,8 @@ HWTEST_F(DataShareServiceImplTest, Publish002, TestSize.Level1)
 {
     auto bms = MockBundleInfo();
     ASSERT_NE(bms, nullptr);
-    EXPECT_CALL(*bms, GetBundleInfo("com.acts.ohos.error",
+    // Instantiate the matcher here to retain CFI metadata for its callbacks.
+    EXPECT_CALL(*bms, GetBundleInfo(testing::Eq(std::string("com.acts.ohos.error")),
         testing::TypedEq<AppExecFwk::BundleFlag>(AppExecFwk::BundleFlag::GET_BUNDLE_WITH_EXTENSION_INFO),
         testing::_, testing::_)).Times(testing::AtLeast(1));
     DataShareServiceImpl dataShareServiceImpl;
@@ -983,7 +986,8 @@ HWTEST_F(DataShareServiceImplTest, GetSilentProxyStatus001, TestSize.Level1)
 {
     auto bms = MockBundleInfo();
     ASSERT_NE(bms, nullptr);
-    EXPECT_CALL(*bms, GetBundleInfo("com.acts.ohos.data.datasharetest",
+    // Instantiate the matcher here to retain CFI metadata for its callbacks.
+    EXPECT_CALL(*bms, GetBundleInfo(testing::Eq(std::string("com.acts.ohos.data.datasharetest")),
         testing::TypedEq<AppExecFwk::BundleFlag>(AppExecFwk::BundleFlag::GET_BUNDLE_WITH_EXTENSION_INFO),
         testing::_, testing::_)).Times(testing::AtLeast(1));
     ZLOGI("DataShareServiceImplTest GetSilentProxyStatus001 start");
@@ -1013,6 +1017,8 @@ HWTEST_F(DataShareServiceImplTest, GetSilentProxyStatus001, TestSize.Level1)
 HWTEST_F(DataShareServiceImplTest, GetSilentProxyStatus_SettingsDataUri_ExpectOk, TestSize.Level1)
 {
     ZLOGI("DataShareServiceImplTest GetSilentProxyStatus_SettingsDataUri_ExpectOk start");
+    auto bms = MockBundleInfo();
+    ASSERT_NE(bms, nullptr);
     SetSelfTokenInfo(NATIVE_USER_ID);
     DataShareServiceImpl dataShareServiceImpl;
     std::string uri = "datashare:///com.ohos.settingsdata/entry/settingsdata/SETTINGSDATA?Proxy=true";
@@ -1038,6 +1044,8 @@ HWTEST_F(DataShareServiceImplTest, GetSilentProxyStatus_SettingsDataUri_ExpectOk
 HWTEST_F(DataShareServiceImplTest, GetSilentProxyStatus_SettingsDataUriWithAppIndex_ExpectOk, TestSize.Level1)
 {
     ZLOGI("DataShareServiceImplTest GetSilentProxyStatus_SettingsDataUriWithAppIndex_ExpectOk start");
+    auto bms = MockBundleInfo();
+    ASSERT_NE(bms, nullptr);
     SetSelfTokenInfo(NATIVE_USER_ID);
     DataShareServiceImpl dataShareServiceImpl;
     std::string uri = "datashare:///com.ohos.settingsdata/entry/settingsdata/SETTINGSDATA?appIndex=0";
@@ -1060,6 +1068,8 @@ HWTEST_F(DataShareServiceImplTest, GetSilentProxyStatus_SettingsDataUriWithAppIn
 HWTEST_F(DataShareServiceImplTest, GetSilentProxyStatus_InvalidAppIndex_ExpectAppIndexInvalid, TestSize.Level1)
 {
     ZLOGI("DataShareServiceImplTest GetSilentProxyStatus_InvalidAppIndex_ExpectAppIndexInvalid start");
+    auto bms = MockBundleInfo();
+    ASSERT_NE(bms, nullptr);
     SetSelfTokenInfo(NATIVE_USER_ID);
     DataShareServiceImpl dataShareServiceImpl;
     std::string uri = "datashare:///com.ohos.settingsdata/entry/settingsdata/SETTINGSDATA?appIndex=abc";
@@ -1083,6 +1093,8 @@ HWTEST_F(DataShareServiceImplTest, GetSilentProxyStatus_InvalidAppIndex_ExpectAp
 HWTEST_F(DataShareServiceImplTest, GetSilentProxyStatus_NotInstalledBundleUri_ExpectOk, TestSize.Level1)
 {
     ZLOGI("DataShareServiceImplTest GetSilentProxyStatus_NotInstalledBundleUri_ExpectOk start");
+    auto bms = MockBundleInfo();
+    ASSERT_NE(bms, nullptr);
     SetSelfTokenInfo(NATIVE_USER_ID);
     DataShareServiceImpl dataShareServiceImpl;
     std::string uri = "datashare:///com.datasharetest.notinstalled/module/store/table";
@@ -1214,6 +1226,8 @@ HWTEST_F(DataShareServiceImplTest, BundleMgrProxyTest_ErrorCases, TestSize.Level
 HWTEST_F(DataShareServiceImplTest, BundleMgrProxyTest_BMSNull, TestSize.Level1)
 {
     ZLOGI("DataShareServiceImplTest BundleMgrProxyTest_BMSNull start");
+    auto bms = MockBundleInfo();
+    ASSERT_NE(bms, nullptr);
 
     auto bundleMgr = BundleMgrProxy::GetInstance();
     ASSERT_NE(bundleMgr, nullptr);
