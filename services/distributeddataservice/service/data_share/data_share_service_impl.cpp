@@ -86,11 +86,15 @@ static constexpr int DECIMAL_BASE = 10;
 static constexpr std::chrono::milliseconds SET_CRITICAL_WAIT_TIME(10000); // 10s
 // SQL keywords indicating cross-table operations (subquery/join/union) or DDL/DML.
 // \b word boundary keeps legal column names like update_time from false positives.
+// remindTimer is the internal scheduler scalar function registered by RdbDelegate, it is only
+// allowed to be invoked by the template scheduler path, not by query callers.
 static const std::regex DANGEROUS_SQL_KEYWORDS(R"(\b(SELECT|FROM|JOIN|UNION|INTO|EXISTS|DROP|DELETE|INSERT|)"
-                                               R"(UPDATE|CREATE|ALTER|TRUNCATE|EXEC|EXECUTE)\b)",
+                                               R"(UPDATE|CREATE|ALTER|TRUNCATE|EXEC|EXECUTE|remindTimer)\b)",
     std::regex::icase | std::regex::optimize);
 // Statement separator and comment markers, blocks keyword-splitting like SEL/**/ECT
 static const std::regex DANGEROUS_SQL_PATTERNS(R"(;|--|/\*)", std::regex::optimize);
+// ValueBucket keys must be pure identifiers to block key-name SQL injection
+static const std::regex VALID_BUCKET_KEY(R"(^[A-Za-z0-9_]+$)", std::regex::optimize);
 DataShareServiceImpl::BindInfo DataShareServiceImpl::binderInfo_;
 class DataShareServiceImpl::SystemAbilityStatusChangeListener
     : public SystemAbilityStatusChangeStub {
@@ -141,6 +145,9 @@ std::pair<int32_t, int32_t> DataShareServiceImpl::InsertEx(const std::string &ur
         std::shared_ptr<DBDelegate> dbDelegate) -> std::pair<int32_t, int32_t> {
         TimeoutReport timeoutReport({providerInfo.bundleName, providerInfo.moduleName, providerInfo.storeName, func,
             callingTokenId}, true);
+        if (!VerifyBucketKeys(valuesBucket, callingTokenId, providerInfo, func)) {
+            return std::make_pair(E_ERROR, 0);
+        }
         auto [errCode, ret] = dbDelegate->InsertEx(providerInfo.tableName, valuesBucket);
         if (errCode == E_OK && ret > 0) {
             NotifyChange(uri, providerInfo.visitedUserId);
@@ -207,8 +214,10 @@ bool DataShareServiceImpl::VerifyColumns(const std::vector<std::string> &columns
     DataProviderConfig::ProviderInfo &providerInfo, std::string &func)
 {
     for (const auto &column : columns) {
-        if (column.empty() || (!std::regex_search(column, DANGEROUS_SQL_KEYWORDS) &&
-                                  !std::regex_search(column, DANGEROUS_SQL_PATTERNS))) {
+        // Empty column is rejected: the sql builder skips empty elements and joins the neighbors
+        // without separator, so keywords split by empty strings reassemble in the final sql.
+        if (!column.empty() && !std::regex_search(column, DANGEROUS_SQL_KEYWORDS) &&
+            !std::regex_search(column, DANGEROUS_SQL_PATTERNS)) {
             continue;
         }
         std::string callingName = HiViewFaultAdapter::GetCallingName(callingTokenId).first;
@@ -218,6 +227,26 @@ bool DataShareServiceImpl::VerifyColumns(const std::vector<std::string> &columns
         HiViewFaultAdapter::ReportDataFault(faultInfo);
         ZLOGW("callingName:%{public}s %{public}s columns:%{public}zu invalid, bundle:%{public}s", callingName.c_str(),
             func.c_str(), columns.size(), providerInfo.bundleName.c_str());
+        return false;
+    }
+    return true;
+}
+
+bool DataShareServiceImpl::VerifyBucketKeys(const DataShareValuesBucket &valuesBucket, uint32_t callingTokenId,
+    DataProviderConfig::ProviderInfo &providerInfo, std::string &func)
+{
+    for (const auto &item : valuesBucket.valuesMap) {
+        if (std::regex_search(item.first, VALID_BUCKET_KEY)) {
+            continue;
+        }
+        std::string callingName = HiViewFaultAdapter::GetCallingName(callingTokenId).first;
+        std::string anonymousKey = StringUtils::GeneralAnonymous(item.first);
+        std::string appendix = "callingName:" + callingName + " invalid key:" + anonymousKey;
+        DataShareFaultInfo faultInfo = { HiViewFaultAdapter::invalidBucketKey, providerInfo.bundleName,
+            providerInfo.moduleName, providerInfo.storeName, func, E_FIELD_ILLEGAL, appendix };
+        HiViewFaultAdapter::ReportDataFault(faultInfo);
+        ZLOGW("callingName:%{public}s %{public}s bucket key:%{public}s invalid, bundle:%{public}s",
+            callingName.c_str(), func.c_str(), anonymousKey.c_str(), providerInfo.bundleName.c_str());
         return false;
     }
     return true;
@@ -262,6 +291,9 @@ std::pair<int32_t, int32_t> DataShareServiceImpl::UpdateEx(const std::string &ur
         TimeoutReport timeoutReport({providerInfo.bundleName, providerInfo.moduleName, providerInfo.storeName, func,
             callingTokenId}, true);
         if (!VerifyPredicates(predicate, callingTokenId, providerInfo, func)) {
+            return std::make_pair(E_ERROR, 0);
+        }
+        if (!VerifyBucketKeys(valuesBucket, callingTokenId, providerInfo, func)) {
             return std::make_pair(E_ERROR, 0);
         }
         auto [errCode, ret] = dbDelegate->UpdateEx(providerInfo.tableName, predicate, valuesBucket);
