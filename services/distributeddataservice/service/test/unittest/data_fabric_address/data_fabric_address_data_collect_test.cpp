@@ -19,6 +19,7 @@
 #include <string>
 #include <vector>
 
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
 #include "data_fabric_address_errors.h"
@@ -61,7 +62,7 @@ constexpr int64_t STALE_NAVIGATION_SECONDS = 12 * 60 * 60;
 constexpr size_t REPORT_MAX_SIZE = 10240;
 constexpr size_t OVERSIZE_BUNDLE_NAME_LENGTH = 11000;
 constexpr uint32_t UNKNOWN_TRANSACTION_CODE = 100;
-const std::string TARGET_BUNDLE_NAME = "com.amap.hmapp";
+const std::string TARGET_BUNDLE_NAME = "com.example.test";
 const char *GEOFENCE_LIB_NAME = "libgeofence_client.z.so";
 const char *SUBSCRIBE_LIVE_VIEW_SYMBOL = "CSubscribeLiveView";
 const char *UNSUBSCRIBE_LIVE_VIEW_SYMBOL = "CUnsubscribeLiveView";
@@ -75,7 +76,6 @@ int32_t g_fakeDlcloseCount = 0;
 bool g_fakeDlopenFail = false;
 bool g_fakeDlsymFail = false;
 bool g_fakeUnsubscribeSymbolMissing = false;
-int g_fakeHandleStorage = 0;
 // The hook runs inside the fake geofence calls, it lets a test observe the monitor lock while the
 // geofence service is being called.
 std::function<void()> g_fakeGeofenceHook;
@@ -124,30 +124,19 @@ size_t CountOccurrences(const std::string &text, const std::string &pattern)
 }
 } // namespace
 
-// Redirects the geofence live view dynamic library calls of
-// NavigationLiveViewMonitor to the local fakes, the other calls are forwarded
-// to the real dynamic loader. The linker --wrap option requires fixed symbol names with a double
-// underscore prefix, so the functions follow the naming style and the linker names are attached
-// with asm labels.
-extern "C" void *RealDlopen(const char *fileName, int flag) __asm__("__real_dlopen");
-extern "C" void *RealDlsym(void *handle, const char *symbol) __asm__("__real_dlsym");
-extern "C" int RealDlclose(void *handle) __asm__("__real_dlclose");
-extern "C" void *WrapDlopen(const char *fileName, int flag) __asm__("__wrap_dlopen");
-extern "C" void *WrapDlsym(void *handle, const char *symbol) __asm__("__wrap_dlsym");
-extern "C" int WrapDlclose(void *handle) __asm__("__wrap_dlclose");
-
-extern "C" void *WrapDlopen(const char *fileName, int flag)
+extern "C" {
+void *FakeDlopen(const char *fileName, int flag)
 {
     if (fileName == nullptr || std::strstr(fileName, GEOFENCE_LIB_NAME) == nullptr) {
-        return RealDlopen(fileName, flag);
+        return nullptr;
     }
     if (g_fakeDlopenFail) {
         return nullptr;
     }
-    return &g_fakeHandleStorage;
+    return reinterpret_cast<void *>(1);
 }
 
-extern "C" void *WrapDlsym(void *handle, const char *symbol)
+void *FakeDlsym(void *handle, const char *symbol)
 {
     if (g_fakeDlsymFail) {
         return nullptr;
@@ -161,16 +150,17 @@ extern "C" void *WrapDlsym(void *handle, const char *symbol)
         }
         return reinterpret_cast<void *>(&FakeUnsubscribeLiveView);
     }
-    return RealDlsym(handle, symbol);
+    return nullptr;
 }
 
-extern "C" int WrapDlclose(void *handle)
+int FakeDlclose(void *handle)
 {
-    if (handle == &g_fakeHandleStorage) {
+    if (handle != nullptr) {
         g_fakeDlcloseCount++;
         return 0;
     }
-    return RealDlclose(handle);
+    return 0;
+}
 }
 
 class DataCollectTestBase : public testing::Test {

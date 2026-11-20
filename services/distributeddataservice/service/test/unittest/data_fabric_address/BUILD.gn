@@ -164,15 +164,11 @@ ohos_unittest("DataFabricAddressNavigationDataCollectTest") {
   ]
 
   cflags = [
+    "-Ddlopen=FakeDlopen",
+    "-Ddlsym=FakeDlsym",
+    "-Ddlclose=FakeDlclose",
     "-Wno-unused-parameter",
     "-fno-access-control",
-  ]
-
-  # Redirects the geofence live view dynamic library calls to the test fakes.
-  ldflags = [
-    "-Wl,--wrap=dlopen",
-    "-Wl,--wrap=dlsym",
-    "-Wl,--wrap=dlclose",
   ]
 }
 

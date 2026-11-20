@@ -29,7 +29,7 @@ inline bool Marshalling(const DataFabricAddressParams &value, MessageParcel &par
 }
 
 template<>
-inline Unmarshalling(DataFabricAddressParams &value, MessageParcel &parcel)
+inline bool Unmarshalling(DataFabricAddressParams &value, MessageParcel &parcel)
 {
     return value.Unmarshal(parcel);
 }
