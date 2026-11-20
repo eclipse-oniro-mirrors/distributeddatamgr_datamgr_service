@@ -269,6 +269,58 @@ HWTEST_F(DataShareServiceImplMockTest, VerifyColumns001, TestSize.Level1)
 }
 
 /**
+ * @tc.name: VerifyColumns003
+ * @tc.desc: Verify DataShareServiceImpl::VerifyColumns rejects hardening bypass columns
+ * @tc.type: FUNC
+ * @tc.author: agent
+ * @tc.precon: DataShareServiceImpl and MockNativeToken are initialized
+ * @tc.step:
+ *   1. Construct ProviderInfo used for fault report
+ *   2. Call VerifyColumns with empty string columns, expect rejected
+ *   3. Call VerifyColumns with keywords split by empty string columns, expect rejected
+ *   4. Call VerifyColumns with remindTimer invocation columns, expect rejected
+ * @tc.expect:
+ *   1. All verifications return false, so Query callback returns E_ERROR without executing sql
+ */
+HWTEST_F(DataShareServiceImplMockTest, VerifyColumns003, TestSize.Level1)
+{
+    ZLOGI("DataShareServiceImplMockTest VerifyColumns003 start");
+    MockNativeToken mock(STORAGE_MANAGER_PROCE_NAME);
+    DataShareServiceImpl dataShareServiceImpl;
+    DataProviderConfig::ProviderInfo providerInfo;
+    providerInfo.bundleName = "com.acts.ohos.data.datasharetest";
+    providerInfo.moduleName = "entry";
+    providerInfo.storeName = "testStore";
+    // testTokenId just for log
+    uint32_t testTokenId = 0;
+    std::string func = "Query";
+
+    // empty string column is rejected, the sql builder would join neighbors without separator
+    std::vector<std::string> columns = { "", "name" };
+    auto result = dataShareServiceImpl.VerifyColumns(columns, testTokenId, providerInfo, func);
+    EXPECT_FALSE(result);
+    columns = { "name", "" };
+    result = dataShareServiceImpl.VerifyColumns(columns, testTokenId, providerInfo, func);
+    EXPECT_FALSE(result);
+
+    // keywords split by empty string columns reassemble in the final sql
+    columns = { "(SEL", "", "ECT group_concat(name) FR", "", "OM sqlite_master) AS leak" };
+    result = dataShareServiceImpl.VerifyColumns(columns, testTokenId, providerInfo, func);
+    EXPECT_FALSE(result);
+
+    // remindTimer internal scheduler function invoked by query columns
+    columns = { "remindTimer('/data/service/el1/0/db', 123, 'datashare://com.acts.ohos.data.datasharetest/"
+                "test/table', 1, 'com.acts.ohos.data.datasharetest', 100, 'testStore', 0, '/path', 1730000000000)" };
+    result = dataShareServiceImpl.VerifyColumns(columns, testTokenId, providerInfo, func);
+    EXPECT_FALSE(result);
+    // case insensitive function name
+    columns = { "name, REMINDTIMER('/data', 123, 'uri', 1, 'bundle', 0, 'store', 0, '', 1)" };
+    result = dataShareServiceImpl.VerifyColumns(columns, testTokenId, providerInfo, func);
+    EXPECT_FALSE(result);
+    ZLOGI("DataShareServiceImplMockTest VerifyColumns003 end");
+}
+
+/**
  * @tc.name: VerifyColumns002
  * @tc.desc: Verify DataShareServiceImpl::VerifyColumns accepts legitimate query columns
  * @tc.type: FUNC
@@ -276,7 +328,7 @@ HWTEST_F(DataShareServiceImplMockTest, VerifyColumns001, TestSize.Level1)
  * @tc.precon: DataShareServiceImpl and MockNativeToken are initialized
  * @tc.step:
  *   1. Construct ProviderInfo used for fault report
- *   2. Call VerifyColumns with empty column list and empty string, expect accepted
+ *   2. Call VerifyColumns with empty column list, expect accepted
  *   3. Call VerifyColumns with plain and decorated column names, expect accepted
  *   4. Call VerifyColumns with select-list expressions like * and COUNT(1), expect accepted
  *   5. Call VerifyColumns with keyword-like column name, expect accepted
@@ -299,11 +351,6 @@ HWTEST_F(DataShareServiceImplMockTest, VerifyColumns002, TestSize.Level1)
     // empty column list means select all
     std::vector<std::string> columns = {};
     auto result = dataShareServiceImpl.VerifyColumns(columns, testTokenId, providerInfo, func);
-    EXPECT_TRUE(result);
-
-    // empty string is skipped by sql builder, keep compatible
-    columns = { "", "name" };
-    result = dataShareServiceImpl.VerifyColumns(columns, testTokenId, providerInfo, func);
     EXPECT_TRUE(result);
 
     // plain column names with leading and trailing spaces
