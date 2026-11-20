@@ -20,16 +20,8 @@ class DfxCodeConstant {
 public:
     static const int SERVICE_FAULT = 950001100;
     static const int RUNTIME_FAULT = 950001101;
-    static const int DATABASE_FAULT = 950001102;
-    static const int COMMUNICATION_FAULT = 950001103;
     static const int DATABASE_STATISTIC = 950001104;
-    static const int VISIT_STATISTIC = 950001105;
-    static const int TRAFFIC_STATISTIC = 950001106;
     static const int DATABASE_PERFORMANCE_STATISTIC = 950001107;
-    static const int API_PERFORMANCE_STATISTIC = 950001110;
-    static const int API_PERFORMANCE_INTERFACE = 950001111;
-    static const int DATABASE_SYNC_FAILED = 950001112;
-    static const int DATABASE_CORRUPTED_FAILED = 950001113;
     static const int DATABASE_REKEY_FAILED = 950001114;
     static const int DATABASE_BEHAVIOUR = 950001115;
     static const int UDMF_DATA_BEHAVIOR = 950001116;

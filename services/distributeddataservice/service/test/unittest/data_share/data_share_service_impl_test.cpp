@@ -107,7 +107,9 @@ sptr<BundleMgrMock> DataShareServiceImplTest::MockBundleInfo()
             return false;
         }
         mockedBundles_.emplace_back(name, userId);
-        info = {};
+        // BundleInfo is a fresh default-constructed stack local in GetBundleInfoFromBMS;
+        // avoid whole-object assignment (info = {}) which triggers RefBase::operator= on
+        // members whose mRefs is not initialised in this CFI/LTO test binary (SEGV@0x48).
         info.name = name;
         info.applicationInfo.isSystemApp = true;
         return true;
@@ -564,7 +566,8 @@ HWTEST_F(DataShareServiceImplTest, Publish002, TestSize.Level1)
 {
     auto bms = MockBundleInfo();
     ASSERT_NE(bms, nullptr);
-    EXPECT_CALL(*bms, GetBundleInfo("com.acts.ohos.error",
+    // Instantiate the matcher here to retain CFI metadata for its callbacks.
+    EXPECT_CALL(*bms, GetBundleInfo(testing::Eq(std::string("com.acts.ohos.error")),
         testing::TypedEq<AppExecFwk::BundleFlag>(AppExecFwk::BundleFlag::GET_BUNDLE_WITH_EXTENSION_INFO),
         testing::_, testing::_)).Times(testing::AtLeast(1));
     DataShareServiceImpl dataShareServiceImpl;
@@ -985,7 +988,8 @@ HWTEST_F(DataShareServiceImplTest, GetSilentProxyStatus001, TestSize.Level1)
 {
     auto bms = MockBundleInfo();
     ASSERT_NE(bms, nullptr);
-    EXPECT_CALL(*bms, GetBundleInfo("com.acts.ohos.data.datasharetest",
+    // Instantiate the matcher here to retain CFI metadata for its callbacks.
+    EXPECT_CALL(*bms, GetBundleInfo(testing::Eq(std::string("com.acts.ohos.data.datasharetest")),
         testing::TypedEq<AppExecFwk::BundleFlag>(AppExecFwk::BundleFlag::GET_BUNDLE_WITH_EXTENSION_INFO),
         testing::_, testing::_)).Times(testing::AtLeast(1));
     ZLOGI("DataShareServiceImplTest GetSilentProxyStatus001 start");
@@ -1015,6 +1019,8 @@ HWTEST_F(DataShareServiceImplTest, GetSilentProxyStatus001, TestSize.Level1)
 HWTEST_F(DataShareServiceImplTest, GetSilentProxyStatus_SettingsDataUri_ExpectOk, TestSize.Level1)
 {
     ZLOGI("DataShareServiceImplTest GetSilentProxyStatus_SettingsDataUri_ExpectOk start");
+    auto bms = MockBundleInfo();
+    ASSERT_NE(bms, nullptr);
     SetSelfTokenInfo(NATIVE_USER_ID);
     DataShareServiceImpl dataShareServiceImpl;
     std::string uri = "datashare:///com.ohos.settingsdata/entry/settingsdata/SETTINGSDATA?Proxy=true";
@@ -1040,6 +1046,8 @@ HWTEST_F(DataShareServiceImplTest, GetSilentProxyStatus_SettingsDataUri_ExpectOk
 HWTEST_F(DataShareServiceImplTest, GetSilentProxyStatus_SettingsDataUriWithAppIndex_ExpectOk, TestSize.Level1)
 {
     ZLOGI("DataShareServiceImplTest GetSilentProxyStatus_SettingsDataUriWithAppIndex_ExpectOk start");
+    auto bms = MockBundleInfo();
+    ASSERT_NE(bms, nullptr);
     SetSelfTokenInfo(NATIVE_USER_ID);
     DataShareServiceImpl dataShareServiceImpl;
     std::string uri = "datashare:///com.ohos.settingsdata/entry/settingsdata/SETTINGSDATA?appIndex=0";
@@ -1062,6 +1070,8 @@ HWTEST_F(DataShareServiceImplTest, GetSilentProxyStatus_SettingsDataUriWithAppIn
 HWTEST_F(DataShareServiceImplTest, GetSilentProxyStatus_InvalidAppIndex_ExpectAppIndexInvalid, TestSize.Level1)
 {
     ZLOGI("DataShareServiceImplTest GetSilentProxyStatus_InvalidAppIndex_ExpectAppIndexInvalid start");
+    auto bms = MockBundleInfo();
+    ASSERT_NE(bms, nullptr);
     SetSelfTokenInfo(NATIVE_USER_ID);
     DataShareServiceImpl dataShareServiceImpl;
     std::string uri = "datashare:///com.ohos.settingsdata/entry/settingsdata/SETTINGSDATA?appIndex=abc";
@@ -1085,6 +1095,8 @@ HWTEST_F(DataShareServiceImplTest, GetSilentProxyStatus_InvalidAppIndex_ExpectAp
 HWTEST_F(DataShareServiceImplTest, GetSilentProxyStatus_NotInstalledBundleUri_ExpectOk, TestSize.Level1)
 {
     ZLOGI("DataShareServiceImplTest GetSilentProxyStatus_NotInstalledBundleUri_ExpectOk start");
+    auto bms = MockBundleInfo();
+    ASSERT_NE(bms, nullptr);
     SetSelfTokenInfo(NATIVE_USER_ID);
     DataShareServiceImpl dataShareServiceImpl;
     std::string uri = "datashare:///com.datasharetest.notinstalled/module/store/table";
@@ -1216,6 +1228,8 @@ HWTEST_F(DataShareServiceImplTest, BundleMgrProxyTest_ErrorCases, TestSize.Level
 HWTEST_F(DataShareServiceImplTest, BundleMgrProxyTest_BMSNull, TestSize.Level1)
 {
     ZLOGI("DataShareServiceImplTest BundleMgrProxyTest_BMSNull start");
+    auto bms = MockBundleInfo();
+    ASSERT_NE(bms, nullptr);
 
     auto bundleMgr = BundleMgrProxy::GetInstance();
     ASSERT_NE(bundleMgr, nullptr);
@@ -1699,4 +1713,66 @@ HWTEST_F(DataShareServiceImplTest, QueryTemplatesNoDelegate001, TestSize.Level1)
     EXPECT_EQ(results.size(), 0);
 }
 
+/**
+ * @tc.name: VerifyBucketKeys001
+ * @tc.desc: VerifyBucketKeys with legal, illegal, and empty bucket keys
+ * @tc.type: FUNC
+ * @tc.require: None
+ * @tc.author: agent
+ * @tc.precon: DataShareServiceImpl and related configurations initialized
+ * @tc.step:
+ *     1. Create a ValuesBucket with legal identifier keys and call VerifyBucketKeys
+ *     2. Create ValuesBuckets with illegal keys and call VerifyBucketKeys
+ *     3. Create an empty ValuesBucket and call VerifyBucketKeys
+ * @tc.expect:
+ *     1. Return true for legal identifier keys
+ *     2. Return false for subquery-shaped, separator, special-character, or empty keys
+ *     3. Return true for empty bucket
+ */
+HWTEST_F(DataShareServiceImplTest, VerifyBucketKeys001, TestSize.Level1)
+{
+    ZLOGI("DataShareServiceImplTest VerifyBucketKeys001 start");
+    DataShareServiceImpl dataShareServiceImpl;
+    uint32_t tokenId = 0;
+    std::string uri = "test";
+    DataProviderConfig providerConfig(uri, tokenId);
+    std::string func = "func";
+
+    // legal identifier keys pass
+    DataShareValuesBucket bucket1;
+    bucket1.Put("value", "1");
+    bucket1.Put("update_time", "2");
+    bool result = dataShareServiceImpl.VerifyBucketKeys(bucket1, tokenId, providerConfig.providerInfo_, func);
+    EXPECT_TRUE(result);
+
+    // subquery-shaped key is blocked
+    DataShareValuesBucket bucket2;
+    bucket2.Put("value=(SELECT group_concat(name) FROM sqlite_master),name", "1");
+    result = dataShareServiceImpl.VerifyBucketKeys(bucket2, tokenId, providerConfig.providerInfo_, func);
+    EXPECT_FALSE(result);
+
+    // statement separator in key is blocked
+    DataShareValuesBucket bucket3;
+    bucket3.Put("name;DROP TABLE SettingsEntity", "1");
+    result = dataShareServiceImpl.VerifyBucketKeys(bucket3, tokenId, providerConfig.providerInfo_, func);
+    EXPECT_FALSE(result);
+
+    // space and parentheses in key are blocked
+    DataShareValuesBucket bucket4;
+    bucket4.Put("merged_assets(name, ?)", "1");
+    result = dataShareServiceImpl.VerifyBucketKeys(bucket4, tokenId, providerConfig.providerInfo_, func);
+    EXPECT_FALSE(result);
+
+    // empty key is blocked
+    DataShareValuesBucket bucket5;
+    bucket5.Put("", "1");
+    result = dataShareServiceImpl.VerifyBucketKeys(bucket5, tokenId, providerConfig.providerInfo_, func);
+    EXPECT_FALSE(result);
+
+    // empty bucket has no key to validate
+    DataShareValuesBucket bucket6;
+    result = dataShareServiceImpl.VerifyBucketKeys(bucket6, tokenId, providerConfig.providerInfo_, func);
+    EXPECT_TRUE(result);
+    ZLOGI("DataShareServiceImplTest VerifyBucketKeys001 end");
+}
 } // namespace OHOS::Test

@@ -19,7 +19,10 @@
 
 #include "data_share_obs_proxy.h"
 #include "datashare_errno.h"
+#include "iremote_object.h"
 #include "log_print.h"
+#include "message_option.h"
+#include "message_parcel.h"
 
 namespace OHOS::Test {
 using namespace testing::ext;
@@ -50,6 +53,71 @@ RdbChangeNode SampleRdbChangeNode()
     node.size_ = 0;
 
     return node;
+}
+
+class MockObsRemote : public IRemoteObject {
+public:
+    explicit MockObsRemote(std::u16string descriptor) : IRemoteObject(descriptor)
+    {
+    }
+    ~MockObsRemote() override = default;
+
+    int32_t GetObjectRefCount() override
+    {
+        return 0;
+    }
+
+    int SendRequest(uint32_t code, MessageParcel &data, MessageParcel &reply, MessageOption &option) override
+    {
+        (void)reply;
+        receivedOptionFlags = option.GetFlags();
+        requestCount++;
+        receivedCode = code;
+        if (captureToken) {
+            receivedToken = data.ReadInterfaceToken();
+        }
+        return sendRequestResult;
+    }
+
+    bool AddDeathRecipient(const sptr<DeathRecipient> &recipient) override
+    {
+        (void)recipient;
+        return true;
+    }
+
+    bool RemoveDeathRecipient(const sptr<DeathRecipient> &recipient) override
+    {
+        (void)recipient;
+        return true;
+    }
+
+    int Dump(int fd, const std::vector<std::u16string> &args) override
+    {
+        (void)fd;
+        (void)args;
+        return 0;
+    }
+
+    int sendRequestResult = ERR_NONE;
+    bool captureToken = false;
+    uint32_t requestCount = 0;
+    uint32_t receivedCode = 0;
+    int32_t receivedOptionFlags = 0;
+    std::u16string receivedToken;
+};
+
+PublishedDataChangeNode SamplePublishedDataChangeNode()
+{
+    PublishedDataChangeNode node;
+    node.ownerBundleName_ = BUNDLE_NAME;
+    return node;
+}
+
+std::vector<DataProxyChangeInfo> SampleProxyChangeInfo()
+{
+    std::vector<DataProxyChangeInfo> infos;
+    infos.emplace_back();
+    return infos;
 }
 
 /**
@@ -314,5 +382,145 @@ HWTEST_F(DataShareObsProxyTest, PreparationData, TestSize.Level1)
     EXPECT_EQ(ret, E_ERROR);
 
     ZLOGI("PreparationData ends");
+}
+
+/**
+* @tc.name: OnChangeFromRdb_AsyncSend_FlagIsTfAsync
+* @tc.desc: OnChangeFromRdb sends the change notification asynchronously with TF_ASYNC flag.
+* @tc.type: FUNC
+* @tc.author: agent
+*/
+HWTEST_F(DataShareObsProxyTest, OnChangeFromRdb_AsyncSend_FlagIsTfAsync, TestSize.Level0)
+{
+    MockObsRemote *mock = new (std::nothrow) MockObsRemote(u"mock_remote");
+    ASSERT_TRUE(mock != nullptr);
+    sptr<IRemoteObject> remote(mock);
+    RdbObserverProxy proxy(remote);
+    mock->sendRequestResult = ERR_NONE;
+    mock->captureToken = true;
+
+    RdbChangeNode node = SampleRdbChangeNode();
+    proxy.OnChangeFromRdb(node);
+
+    EXPECT_EQ(mock->requestCount, 1u);
+    EXPECT_EQ(mock->receivedCode, 0u);
+    EXPECT_EQ(mock->receivedToken, IDataProxyRdbObserver::GetDescriptor());
+    // Notification-only: send async to avoid a slow client blocking the caller.
+    EXPECT_EQ(mock->receivedOptionFlags, static_cast<int32_t>(MessageOption::TF_ASYNC));
+}
+
+/**
+* @tc.name: OnChangeFromRdb_SendError_NoCrash
+* @tc.desc: OnChangeFromRdb logs and returns early when SendRequest fails; TF_ASYNC flag is still used.
+* @tc.type: FUNC
+* @tc.author: agent
+*/
+HWTEST_F(DataShareObsProxyTest, OnChangeFromRdb_SendError_NoCrash, TestSize.Level0)
+{
+    MockObsRemote *mock = new (std::nothrow) MockObsRemote(u"mock_remote");
+    ASSERT_TRUE(mock != nullptr);
+    sptr<IRemoteObject> remote(mock);
+    RdbObserverProxy proxy(remote);
+    mock->sendRequestResult = -1;
+    mock->captureToken = false;
+
+    RdbChangeNode node = SampleRdbChangeNode();
+    EXPECT_NO_FATAL_FAILURE(proxy.OnChangeFromRdb(node));
+
+    EXPECT_EQ(mock->requestCount, 1u);
+    EXPECT_EQ(mock->receivedOptionFlags, static_cast<int32_t>(MessageOption::TF_ASYNC));
+}
+
+/**
+* @tc.name: OnChangeFromPublishedData_AsyncSend_FlagIsTfAsync
+* @tc.desc: OnChangeFromPublishedData sends the change notification asynchronously with TF_ASYNC flag.
+* @tc.type: FUNC
+* @tc.author: agent
+*/
+HWTEST_F(DataShareObsProxyTest, OnChangeFromPublishedData_AsyncSend_FlagIsTfAsync, TestSize.Level0)
+{
+    MockObsRemote *mock = new (std::nothrow) MockObsRemote(u"mock_remote");
+    ASSERT_TRUE(mock != nullptr);
+    sptr<IRemoteObject> remote(mock);
+    PublishedDataObserverProxy proxy(remote);
+    mock->sendRequestResult = ERR_NONE;
+    mock->captureToken = true;
+
+    PublishedDataChangeNode node = SamplePublishedDataChangeNode();
+    proxy.OnChangeFromPublishedData(node);
+
+    EXPECT_EQ(mock->requestCount, 1u);
+    EXPECT_EQ(mock->receivedCode, 0u);
+    EXPECT_EQ(mock->receivedToken, IDataProxyPublishedDataObserver::GetDescriptor());
+    EXPECT_EQ(mock->receivedOptionFlags, static_cast<int32_t>(MessageOption::TF_ASYNC));
+}
+
+/**
+* @tc.name: OnChangeFromPublishedData_SendError_NoCrash
+* @tc.desc: OnChangeFromPublishedData logs and returns early when SendRequest fails; TF_ASYNC flag is still used.
+* @tc.type: FUNC
+* @tc.author: agent
+*/
+HWTEST_F(DataShareObsProxyTest, OnChangeFromPublishedData_SendError_NoCrash, TestSize.Level0)
+{
+    MockObsRemote *mock = new (std::nothrow) MockObsRemote(u"mock_remote");
+    ASSERT_TRUE(mock != nullptr);
+    sptr<IRemoteObject> remote(mock);
+    PublishedDataObserverProxy proxy(remote);
+    mock->sendRequestResult = -1;
+    mock->captureToken = false;
+
+    PublishedDataChangeNode node = SamplePublishedDataChangeNode();
+    EXPECT_NO_FATAL_FAILURE(proxy.OnChangeFromPublishedData(node));
+
+    EXPECT_EQ(mock->requestCount, 1u);
+    EXPECT_EQ(mock->receivedOptionFlags, static_cast<int32_t>(MessageOption::TF_ASYNC));
+}
+
+/**
+* @tc.name: OnChangeFromProxyData_AsyncSend_FlagIsTfAsync
+* @tc.desc: OnChangeFromProxyData sends the change notification asynchronously with TF_ASYNC flag and the
+*          interface token consistent with the client-side ProxyDataObserverStub.
+* @tc.type: FUNC
+* @tc.author: agent
+*/
+HWTEST_F(DataShareObsProxyTest, OnChangeFromProxyData_AsyncSend_FlagIsTfAsync, TestSize.Level0)
+{
+    MockObsRemote *mock = new (std::nothrow) MockObsRemote(u"mock_remote");
+    ASSERT_TRUE(mock != nullptr);
+    sptr<IRemoteObject> remote(mock);
+    ProxyDataObserverProxy proxy(remote);
+    mock->sendRequestResult = ERR_NONE;
+    mock->captureToken = true;
+
+    std::vector<DataProxyChangeInfo> infos = SampleProxyChangeInfo();
+    proxy.OnChangeFromProxyData(infos);
+
+    EXPECT_EQ(mock->requestCount, 1u);
+    EXPECT_EQ(mock->receivedCode, 0u);
+    EXPECT_EQ(mock->receivedToken, IDataProxyPublishedDataObserver::GetDescriptor());
+    EXPECT_EQ(mock->receivedOptionFlags, static_cast<int32_t>(MessageOption::TF_ASYNC));
+}
+
+/**
+* @tc.name: OnChangeFromProxyData_SendError_NoCrash
+* @tc.desc: OnChangeFromProxyData logs and returns early when SendRequest fails; TF_ASYNC flag is still used.
+* @tc.type: FUNC
+* @tc.author: agent
+*/
+HWTEST_F(DataShareObsProxyTest, OnChangeFromProxyData_SendError_NoCrash, TestSize.Level0)
+{
+    MockObsRemote *mock = new (std::nothrow) MockObsRemote(u"mock_remote");
+    ASSERT_TRUE(mock != nullptr);
+    sptr<IRemoteObject> remote(mock);
+    ProxyDataObserverProxy proxy(remote);
+    mock->sendRequestResult = -1;
+    mock->captureToken = false;
+
+    std::vector<DataProxyChangeInfo> infos = SampleProxyChangeInfo();
+    EXPECT_NO_FATAL_FAILURE(proxy.OnChangeFromProxyData(infos));
+
+    EXPECT_EQ(mock->requestCount, 1u);
+    EXPECT_EQ(mock->receivedOptionFlags, static_cast<int32_t>(MessageOption::TF_ASYNC));
 }
 } // namespace OHOS::Test

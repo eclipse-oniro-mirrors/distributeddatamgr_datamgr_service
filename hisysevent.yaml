@@ -39,59 +39,12 @@
 
 domain: DISTDATAMGR
 
-DATABASE_FAULT:
-  __BASE: {type: FAULT, level: CRITICAL, desc: The event is database fault }
-  APP_ID: {type: STRING, desc: app id }
-  STORE_ID: {type: STRING, desc: store id }
-  MODULE_NAME: {type: STRING, desc: module name }
-  ERROR_TYPE: {type: INT32, desc: fault type }
-
-DATABASE_SYNC_FAILED:
-  __BASE: {type: FAULT, level: CRITICAL, desc: The event is database fault }
-  APP_ID: {type: STRING, desc: app id }
-  STORE_ID: {type: STRING, desc: store id }
-  MODULE_NAME: {type: STRING, desc: module name }
-  ERROR_TYPE: {type: INT32, desc: fault type }
-
-DATABASE_CORRUPTED_FAILED:
-  __BASE: {type: FAULT, level: CRITICAL, desc: The event is database fault }
-  APP_ID: {type: STRING, desc: app id }
-  STORE_ID: {type: STRING, desc: store id }
-  MODULE_NAME: {type: STRING, desc: module name }
-  ERROR_TYPE: {type: INT32, desc: fault type }
-
 DATABASE_REKEY_FAILED:
   __BASE: {type: FAULT, level: CRITICAL, desc: The event is database fault }
   APP_ID: {type: STRING, desc: app id }
   STORE_ID: {type: STRING, desc: store id }
   MODULE_NAME: {type: STRING, desc: module name }
   ERROR_TYPE: {type: INT32, desc: fault type }
-
-COMMUNICATION_FAULT:
-  __BASE: {type: FAULT, level: CRITICAL, desc: The event is communication fault }
-  ANONYMOUS_UID: {type: STRING, desc: uid with anonymous }
-  APP_ID: {type: STRING, desc: app id }
-  STORE_ID: {type: STRING, desc: store id }
-  SYNC_ERROR_INFO: {type: STRING, desc: error info include deviceid and error code}
-
-VISIT_STATISTIC:
-  __BASE: {type: STATISTIC, level: MINOR, desc: The event is api visit statistic }
-  TAG: {type: STRING, desc: tag which value is PowerStats }
-  APP_ID: {type: STRING, desc: app id }
-  INTERFACE_NAME: {type: STRING, desc: interface name }
-  TIMES: {type: INT32, desc: interface visit time at one hour }
-
-TRAFFIC_STATISTIC:
-  __BASE: {type: STATISTIC, level: MINOR, desc: The event is api visit statistic }
-  TAG: {type: STRING, desc: tag which value is PowerStats }
-  APP_ID: {type: STRING, desc: app id }
-  ANONYMOUS_DID: {type: STRING, desc: decice id with anonymous }
-  SEND_SIZE: {type: INT32, desc: send date size at one hour }
-  RECEIVED_SIZE: {type: INT32, desc: received date size at one hour }
-
-API_PERFORMANCE_STATISTIC:
-  __BASE: {type: STATISTIC, level: MINOR, desc: The event is api visit statistic }
-  INTERFACES: {type: STRING, desc: api performanace of one day }
 
 DATABASE_BEHAVIOUR:
   __BASE: {type: BEHAVIOR, level: MINOR, desc: The event is behaviour record }

@@ -178,13 +178,13 @@ void RdbObserverProxy::OnChangeFromRdb(RdbChangeNode &changeNode)
     }
 
     MessageParcel reply;
-    MessageOption option;
+    // Notification-only: send async to avoid a slow client blocking the caller.
+    MessageOption option(MessageOption::TF_ASYNC);
     int32_t result = Remote()->SendRequest(REQUEST_CODE, parcel, reply, option);
     if (result != ERR_NONE) {
         ZLOGE("SendRequest error, result=%{public}d", result);
         return;
     }
-    ZLOGI("SendRequest ok, retval is %{public}d", reply.ReadInt32());
 }
 
 void PublishedDataObserverProxy::OnChangeFromPublishedData(PublishedDataChangeNode &changeNode)
@@ -200,13 +200,13 @@ void PublishedDataObserverProxy::OnChangeFromPublishedData(PublishedDataChangeNo
     }
 
     MessageParcel reply;
-    MessageOption option;
+    // Notification-only: send async to avoid a slow client blocking the caller.
+    MessageOption option(MessageOption::TF_ASYNC);
     int32_t result = Remote()->SendRequest(REQUEST_CODE, parcel, reply, option);
     if (result != ERR_NONE) {
         ZLOGE("SendRequest error, result=%{public}d", result);
         return;
     }
-    ZLOGD("SendRequest ok, retval is %{public}d", reply.ReadInt32());
 }
 
 void ProxyDataObserverProxy::OnChangeFromProxyData(std::vector<DataProxyChangeInfo> &changeInfo)
@@ -222,13 +222,13 @@ void ProxyDataObserverProxy::OnChangeFromProxyData(std::vector<DataProxyChangeIn
     }
 
     MessageParcel reply;
-    MessageOption option;
+    // Notification-only: send async to avoid a slow client blocking the caller.
+    MessageOption option(MessageOption::TF_ASYNC);
     int32_t result = Remote()->SendRequest(REQUEST_CODE, parcel, reply, option);
     if (result != ERR_NONE) {
         ZLOGE("SendRequest error, result=%{public}d", result);
         return;
     }
-    ZLOGI("SendRequest ok, reply is %{public}d", reply.ReadInt32());
 }
 } // namespace DataShare
 } // namespace OHOS

@@ -178,6 +178,8 @@ private:
         DataProviderConfig::ProviderInfo &providerInfo, std::string &func);
     bool VerifyColumns(const std::vector<std::string> &columns, uint32_t callingTokenId,
         DataProviderConfig::ProviderInfo &providerInfo, std::string &func);
+    bool VerifyBucketKeys(const DataShareValuesBucket &valuesBucket, uint32_t callingTokenId,
+        DataProviderConfig::ProviderInfo &providerInfo, std::string &func);
     bool VerifyQueryLanguage(const DataSharePredicates &predicates, uint32_t callingTokenId,
         DataProviderConfig::ProviderInfo &providerInfo, std::string &func);
     std::shared_ptr<DataShareServiceImpl::TimerReceiver> GetTimerReceiver();
