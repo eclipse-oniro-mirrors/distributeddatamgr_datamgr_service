@@ -37,7 +37,6 @@ ohos_unittest("DataFabricAddressServiceTest") {
     "${data_service_path}/service/data_fabric_address/data_fabric_address_callback_proxy.cpp",
     "${data_service_path}/service/data_fabric_address/data_fabric_address_service_impl.cpp",
     "${data_service_path}/service/data_fabric_address/data_fabric_address_service_stub.cpp",
-    "${data_service_path}/service/data_fabric_address/data_fabric_address_types_util.cpp",
     "../../mock/access_token_mock.cpp",
     "data_fabric_address_callback_proxy_test.cpp",
     "data_fabric_address_service_impl_test.cpp",
@@ -165,15 +164,11 @@ ohos_unittest("DataFabricAddressNavigationDataCollectTest") {
   ]
 
   cflags = [
+    "-Ddlopen=FakeDlopen",
+    "-Ddlsym=FakeDlsym",
+    "-Ddlclose=FakeDlclose",
     "-Wno-unused-parameter",
     "-fno-access-control",
-  ]
-
-  # Redirects the geofence live view dynamic library calls to the test fakes.
-  ldflags = [
-    "-Wl,--wrap=dlopen",
-    "-Wl,--wrap=dlsym",
-    "-Wl,--wrap=dlclose",
   ]
 }
 

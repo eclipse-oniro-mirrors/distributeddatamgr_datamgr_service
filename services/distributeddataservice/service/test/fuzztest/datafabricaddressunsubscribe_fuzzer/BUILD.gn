@@ -40,7 +40,6 @@ ohos_fuzztest("DataFabricAddressUnsubscribeFuzzTest") {
   sources = [
     "${data_service_path}/service/data_fabric_address/data_fabric_address_callback_proxy.cpp",
     "${data_service_path}/service/data_fabric_address/data_fabric_address_service_stub.cpp",
-    "${data_service_path}/service/data_fabric_address/data_fabric_address_types_util.cpp",
     "${data_service_path}/service/test/fuzztest/common/datafabricaddresscommon_fuzzer/datafabricaddresscommon_fuzzer.cpp",
     "datafabricaddressunsubscribe_fuzzer.cpp",
   ]
