@@ -1206,6 +1206,7 @@ void RdbServiceImpl::SetReturnParam(const StoreMetaData &metadata, RdbSyncerPara
     param.isSearchable_ = metadata.isSearchable;
     param.haMode_ = metadata.haMode;
     param.replicaPath_ = metadata.replicaPath;
+    param.binlogFileSize_ = metadata.binlogFileSize;
     if (!metadata.replicaPath.empty() &&
         AccessTokenKit::GetTokenTypeFlag(IPCSkeleton::GetCallingTokenID()) == TOKEN_HAP) {
         auto prefix = DirectoryManager::GetInstance().GetStorePathPrefix(metadata);
@@ -1301,9 +1302,10 @@ void RdbServiceImpl::SaveOpenedMeta(const RdbSyncerParam &param, StoreMetaData &
     // Search relies on metadata, which needs to be stored in the database before being used by search.
     MetaDataSaver saver(true);
     if (!isCreated || meta != old) {
-        if (isCreated && meta.replicaPath != old.replicaPath) {
-            // AutoCache delegates keep the replica path used when they were created. Invalidate the old
-            // delegate before saving the new metadata so the next GetStore opens it with the new path.
+        if (isCreated && (meta.replicaPath != old.replicaPath ||
+            (meta.haMode != NativeRdb::HAMode::SINGLE && meta.binlogFileSize != old.binlogFileSize))) {
+            // AutoCache delegates keep the config used when they were created. Invalidate the old
+            // delegate before saving the new metadata so the next GetStore opens it with the new config.
             AutoCache::GetInstance().CloseStore(meta.tokenId, old.dataDir, old.storeId);
         }
         Upgrade(meta, old);
@@ -1511,6 +1513,7 @@ StoreMetaData RdbServiceImpl::GetStoreMetaData(const RdbSyncerParam &param)
     metaData.isSearchable = param.isSearchable_;
     metaData.haMode = param.haMode_;
     metaData.replicaPath = param.replicaPath_;
+    metaData.binlogFileSize = param.binlogFileSize_;
     if (type == TOKEN_HAP) {
         metaData.replicaPath = NormalizeReplicaPath(param.replicaPath_, metaData);
     }

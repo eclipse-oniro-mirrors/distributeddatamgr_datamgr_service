@@ -1801,6 +1801,9 @@ NativeRdb::RdbStoreConfig RdbGeneralStore::GetRdbConfig(const StoreMetaData &met
     RdbStoreConfig config(meta.dataDir);
     config.SetCreateNecessary(createRequired);
     config.SetReplicaPath(meta.replicaPath);
+    if (meta.haMode != HAMode::SINGLE && meta.binlogFileSize != 0) {
+        config.SetBinlogFileSize(meta.binlogFileSize);
+    }
     if (meta.isEncrypt) {
         auto key = RdbGeneralStore::GetDBPassword(meta, createRequired);
         if (key.empty()) {

@@ -73,6 +73,7 @@ private:
     std::string backup_ = "";
     std::string user_ = "";
     std::string replicaPath_ = "";
+    uint32_t binlogFileSize_ = 0;
     std::mutex initMutex_;
     bool isInited_ = false;
 };

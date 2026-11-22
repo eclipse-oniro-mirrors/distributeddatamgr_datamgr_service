@@ -83,6 +83,9 @@ std::pair<int, RdbStoreConfig> RdbDelegate::GetConfig(const DistributedData::Sto
     config.SetCreateNecessary(false);
     config.SetHaMode(meta.haMode);
     config.SetReplicaPath(meta.replicaPath);
+    if (meta.haMode != HAMode::SINGLE && meta.binlogFileSize != 0) {
+        config.SetBinlogFileSize(meta.binlogFileSize);
+    }
     config.SetBundleName(meta.bundleName);
     if (meta.isEncrypt) {
         DistributedData::SecretKeyMetaData secretKeyMeta;
@@ -116,7 +119,7 @@ bool RdbDelegate::Init(const DistributedData::StoreMetaData &meta, int version,
     bool registerFunction, const std::string &extUri, const std::string &backup)
 {
     std::lock_guard<std::mutex> lock(initMutex_);
-    if (isInited_ && replicaPath_ == meta.replicaPath) {
+    if (isInited_ && replicaPath_ == meta.replicaPath && binlogFileSize_ == meta.binlogFileSize) {
         return true;
     }
     if (isInited_) {
@@ -148,6 +151,7 @@ bool RdbDelegate::Init(const DistributedData::StoreMetaData &meta, int version,
         return false;
     }
     replicaPath_ = meta.replicaPath;
+    binlogFileSize_ = meta.binlogFileSize;
     isInited_ = true;
     return true;
 }

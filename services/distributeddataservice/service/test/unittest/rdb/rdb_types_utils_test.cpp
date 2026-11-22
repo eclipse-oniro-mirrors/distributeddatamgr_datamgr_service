@@ -170,6 +170,25 @@ HWTEST_F(RdbTypesUtilsTest, RdbTypesUtil_RdbSyncerParam_ReplicaPath_RoundTrip, T
     EXPECT_EQ(output.replicaPath_, input.replicaPath_);
 }
 
+/**
+ * @tc.name: RdbTypesUtil_RdbSyncerParam_BinlogFileSize_RoundTrip
+ * @tc.desc: Test that the binlog file size survives RDB service IPC serialization
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(RdbTypesUtilsTest, RdbTypesUtil_RdbSyncerParam_BinlogFileSize_RoundTrip, TestSize.Level1)
+{
+    RdbSyncerParam input;
+    input.binlogFileSize_ = 64 * 1024;
+
+    MessageParcel parcel;
+    ASSERT_TRUE(ITypesUtil::Marshalling(input, parcel));
+
+    RdbSyncerParam output;
+    ASSERT_TRUE(ITypesUtil::Unmarshalling(output, parcel));
+    EXPECT_EQ(output.binlogFileSize_, input.binlogFileSize_);
+}
+
 static Reference CreateTestReference(const std::string &source = "source_table",
     const std::string &target = "target_table", const std::vector<std::pair<std::string, std::string>> &fields = {})
 {

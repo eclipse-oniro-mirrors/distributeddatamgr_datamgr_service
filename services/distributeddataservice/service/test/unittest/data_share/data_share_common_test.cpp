@@ -592,6 +592,63 @@ HWTEST_F(DataShareCommonTest, RdbDelegateGetConfigReplicaPath, TestSize.Level1)
 }
 
 /**
+ * @tc.name: RdbDelegateGetConfigSingleModeSkipsBinlogFileSize
+ * @tc.desc: SetBinlogFileSize is not applied when haMode is SINGLE
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(DataShareCommonTest, RdbDelegateGetConfigSingleModeSkipsBinlogFileSize, TestSize.Level1)
+{
+    RdbDelegate delegate;
+    DistributedData::StoreMetaData meta;
+    meta.dataDir = "/data/service/el1/public/database/datashare/config";
+    meta.haMode = NativeRdb::HAMode::SINGLE;
+    meta.binlogFileSize = 64 * 1024;
+
+    auto [result, config] = delegate.GetConfig(meta, false);
+    EXPECT_EQ(result, OHOS::DataShare::E_OK);
+    EXPECT_EQ(config.GetBinlogFileSize(), NativeRdb::RdbStoreConfig::BINLOG_FILE_SIZE_DEFAULT);
+}
+
+/**
+ * @tc.name: RdbDelegateGetConfigDualWriteModeSetsBinlogFileSize
+ * @tc.desc: SetBinlogFileSize is applied when haMode is MAIN_REPLICA
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(DataShareCommonTest, RdbDelegateGetConfigDualWriteModeSetsBinlogFileSize, TestSize.Level1)
+{
+    RdbDelegate delegate;
+    DistributedData::StoreMetaData meta;
+    meta.dataDir = "/data/service/el1/public/database/datashare/config";
+    meta.haMode = NativeRdb::HAMode::MAIN_REPLICA;
+    meta.binlogFileSize = 64 * 1024;
+
+    auto [result, config] = delegate.GetConfig(meta, false);
+    EXPECT_EQ(result, OHOS::DataShare::E_OK);
+    EXPECT_EQ(config.GetBinlogFileSize(), meta.binlogFileSize);
+}
+
+/**
+ * @tc.name: RdbDelegateGetConfigDualWriteModeUnsetBinlogSizeUsesDefault
+ * @tc.desc: Default binlog size is used when binlogFileSize is 0 in dual-write mode
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(DataShareCommonTest, RdbDelegateGetConfigDualWriteModeUnsetBinlogSizeUsesDefault, TestSize.Level1)
+{
+    RdbDelegate delegate;
+    DistributedData::StoreMetaData meta;
+    meta.dataDir = "/data/service/el1/public/database/datashare/config";
+    meta.haMode = NativeRdb::HAMode::MAIN_REPLICA;
+    meta.binlogFileSize = 0;
+
+    auto [result, config] = delegate.GetConfig(meta, false);
+    EXPECT_EQ(result, OHOS::DataShare::E_OK);
+    EXPECT_EQ(config.GetBinlogFileSize(), NativeRdb::RdbStoreConfig::BINLOG_FILE_SIZE_DEFAULT);
+}
+
+/**
  * @tc.name: RdbDelegateInitSameReplicaPathSkipsReopen
  * @tc.desc: Init keeps the current handle when the replica path is unchanged
  * @tc.type: FUNC
@@ -631,6 +688,28 @@ HWTEST_F(DataShareCommonTest, RdbDelegateInitReplicaPathChangeReopens, TestSize.
     EXPECT_FALSE(delegate.Init(meta, 0, false, "", ""));
     EXPECT_FALSE(delegate.isInited_);
     EXPECT_EQ(delegate.replicaPath_, "/data/replica/a");
+}
+
+/**
+ * @tc.name: RdbDelegateInitBinlogFileSizeChangeReopens
+ * @tc.desc: Init releases the old handle when binlogFileSize changes even if replicaPath is unchanged
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(DataShareCommonTest, RdbDelegateInitBinlogFileSizeChangeReopens, TestSize.Level1)
+{
+    RdbDelegate delegate;
+    delegate.isInited_ = true;
+    delegate.replicaPath_ = "/data/replica/a";
+    delegate.binlogFileSize_ = 64 * 1024;
+    delegate.tokenId_ = 7;
+    DistributedData::StoreMetaData meta;
+    meta.tokenId = 1;
+    meta.replicaPath = "/data/replica/a";
+    meta.binlogFileSize = 1024 * 1024;
+
+    EXPECT_FALSE(delegate.Init(meta, 0, false, "", ""));
+    EXPECT_FALSE(delegate.isInited_);
 }
 
 /**

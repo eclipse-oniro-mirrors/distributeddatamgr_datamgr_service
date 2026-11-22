@@ -75,6 +75,7 @@ bool StoreMetaData::Marshal(json &node) const
     SetValue(node[GET_NAME(authType)], authType);
     SetValue(node[GET_NAME(haMode)], haMode);
     SetValue(node[GET_NAME(replicaPath)], replicaPath);
+    SetValue(node[GET_NAME(binlogFileSize)], binlogFileSize);
     return true;
 }
 
@@ -127,6 +128,7 @@ bool StoreMetaData::Unmarshal(const json &node)
     GetValue(node, GET_NAME(haMode), haMode);
     replicaPath.clear();
     GetValue(node, GET_NAME(replicaPath), replicaPath);
+    GetValue(node, GET_NAME(binlogFileSize), binlogFileSize);
     return true;
 }
 
@@ -177,7 +179,7 @@ bool StoreMetaData::operator==(const StoreMetaData &metaData) const
             appType == metaData.appType && bundleName == metaData.bundleName && dataDir == metaData.dataDir &&
             storeId == metaData.storeId && user == metaData.user && deviceId == metaData.deviceId &&
             account == metaData.account && authType == metaData.authType && haMode == metaData.haMode &&
-            replicaPath == metaData.replicaPath);
+            replicaPath == metaData.replicaPath && binlogFileSize == metaData.binlogFileSize);
 }
 
 bool StoreMetaData::operator!=(const StoreMetaData &metaData) const
