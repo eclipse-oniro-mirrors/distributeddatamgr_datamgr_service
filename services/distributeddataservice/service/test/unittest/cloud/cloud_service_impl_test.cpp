@@ -81,6 +81,8 @@ constexpr const int32_t DISCONNECT_TIME = 21;
 constexpr const int32_t MOCK_USER = 200;
 constexpr size_t MAX_EXECUTOR_THREADS = 12;
 constexpr size_t MIN_EXECUTOR_THREADS = 5;
+constexpr int32_t TEARDOWN_WAIT_MS = 200;
+constexpr int32_t MS_TO_US = 1000;
 class CloudServiceImplTest : public testing::Test {
 public:
     static void SetUpTestCase(void);
@@ -260,10 +262,11 @@ void CloudServiceImplTest::SetUp()
 
 void CloudServiceImplTest::TearDown()
 {
+    usleep(TEARDOWN_WAIT_MS * MS_TO_US);
+    cloudServiceImpl_->executor_.reset();
+    cloudServiceImpl_->syncManager_.Bind(nullptr);
     // Cancel pending work and wait for running tasks before the next test changes mock expectations.
     executor_.reset();
-    cloudServiceImpl_->syncManager_.Bind(nullptr);
-    cloudServiceImpl_->executor_.reset();
 }
 
 /**
