@@ -48,6 +48,9 @@ struct TemplateRootNode final: public DistributedData::Serializable {
     bool Marshal(json &node) const override;
     bool Unmarshal(const json &node) override;
     Template ToTemplate() const;
+    const std::string &GetUri() const;
+    const std::string &GetSubscriberId() const;
+    const std::string &GetBundleName() const;
 private:
     std::string uri;
     std::string bundleName;
@@ -60,6 +63,8 @@ struct TemplateData final : public KvData {
     TemplateData(const std::string &uri, const std::string &bundleName, int64_t subscriberId, int32_t userId,
         const Template &tpl);
     static int32_t Query(const std::string &filter, Template &aTemplate);
+    static int32_t QueryTemplates(const std::string &bundleName, const int32_t userId,
+        std::vector<TemplateRootNode> &templates);
     static std::string GenId(const std::string &uri, const std::string &bundleName, int64_t subscriberId);
     static bool Delete(const std::string &bundleName, const int32_t userId);
     static bool Add(const std::string &uri, const int32_t userId, const std::string &bundleName,

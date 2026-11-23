@@ -84,6 +84,8 @@ private:
     ConcurrentMap<uint64_t, CallerTotalInfo> callers_;
     std::map<uint32_t, std::string> funcIdMap_ = {
         {static_cast<uint32_t>(IDataShareService::DATA_SHARE_SERVICE_CMD_QUERY), "OnQuery"},
+        {static_cast<uint32_t>(IDataShareService::DATA_SHARE_SERVICE_CMD_ADD_TEMPLATE), "OnAddTemplate"},
+        {static_cast<uint32_t>(IDataShareService::DATA_SHARE_SERVICE_CMD_DEL_TEMPLATE), "OnDelTemplate"},
         {static_cast<uint32_t>(IDataShareService::DATA_SHARE_SERVICE_CMD_INSERTEX), "OnInsertEx"},
         {static_cast<uint32_t>(IDataShareService::DATA_SHARE_SERVICE_CMD_DELETEEX), "OnDeleteEx"},
         {static_cast<uint32_t>(IDataShareService::DATA_SHARE_SERVICE_CMD_UPDATEEX), "OnUpdateEx"},

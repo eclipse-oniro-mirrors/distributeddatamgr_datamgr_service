@@ -37,6 +37,8 @@
 #include "log_print.h"
 #include "metadata/meta_data_manager.h"
 #include "system_ability_definition.h"
+#include "account/account_delegate.h"
+#include "template_data.h"
 #include "token_setproc.h"
 
 using namespace testing::ext;
@@ -1645,6 +1647,70 @@ HWTEST_F(DataShareServiceImplTest, VerifyPredicates006, TestSize.Level1)
     dp4.NotEqualTo("true as name", "value");
     EXPECT_FALSE(dataShareServiceImpl.VerifyPredicates(dp4, tokenId, providerConfig.providerInfo_, func));
     ZLOGI("DataShareServiceImplTest VerifyPredicates006 end");
+}
+
+namespace {
+// Test fixture URI for the template node tests.
+const std::string CLEAN_TEST_URI = "datashareproxy://clean.invalid.test/tbl00";
+} // namespace
+
+/**
+* @tc.name: CleanInvalidData001
+* @tc.desc: test CleanInvalidData function and abnormal scene
+* @tc.type: FUNC
+* @tc.require: issueIC8OCN
+*/
+HWTEST_F(DataShareServiceImplTest, CleanInvalidData001, TestSize.Level1)
+{
+    DataShareServiceImpl dataShareServiceImpl;
+    std::vector<std::string> validSubscribers = { "1", "2" };
+    auto result = dataShareServiceImpl.CleanInvalidData(validSubscribers);
+    EXPECT_EQ((result == 0 || result == DataShare::E_ERROR || result == DataShareServiceImpl::ERROR), true);
+
+    auto tokenId = AccessTokenKit::GetHapTokenID(USER_TEST, "ohos.datasharetest.demo", 0);
+    AccessTokenKit::DeleteToken(tokenId);
+    result = dataShareServiceImpl.CleanInvalidData(validSubscribers);
+    EXPECT_EQ(result, DataShareServiceImpl::ERROR);
+}
+
+/**
+* @tc.name: TemplateRootNodeAccessors001
+* @tc.desc: test the read accessors of TemplateRootNode for constructed and default nodes
+* @tc.type: FUNC
+* @tc.require: issueIC8OCN
+*/
+HWTEST_F(DataShareServiceImplTest, TemplateRootNodeAccessors001, TestSize.Level1)
+{
+    constexpr int64_t TEST_SUBSCRIBER_ID = 5;
+    constexpr int32_t TEST_USER_ID = 0;
+    std::vector<PredicateTemplateNode> nodes;
+    nodes.emplace_back("p1", "select name0 as name from TBL00");
+    Template tpl(nodes, "select name0 as name from TBL00");
+    TemplateRootNode node(CLEAN_TEST_URI, BUNDLE_NAME, TEST_SUBSCRIBER_ID, TEST_USER_ID, tpl);
+    EXPECT_EQ(node.GetUri(), CLEAN_TEST_URI);
+    EXPECT_EQ(node.GetBundleName(), BUNDLE_NAME);
+    EXPECT_EQ(node.GetSubscriberId(), std::to_string(TEST_SUBSCRIBER_ID));
+
+    TemplateRootNode defaultNode;
+    EXPECT_TRUE(defaultNode.GetUri().empty());
+    EXPECT_TRUE(defaultNode.GetBundleName().empty());
+    EXPECT_TRUE(defaultNode.GetSubscriberId().empty());
+}
+
+/**
+* @tc.name: QueryTemplatesNoDelegate001
+* @tc.desc: test QueryTemplates returns the inner error when the kv delegate singleton
+*           is not initialized
+* @tc.type: FUNC
+* @tc.require: issueIC8OCN
+*/
+HWTEST_F(DataShareServiceImplTest, QueryTemplatesNoDelegate001, TestSize.Level1)
+{
+    ASSERT_EQ(KvDBDelegate::GetInstance(), nullptr);
+    std::vector<TemplateRootNode> results;
+    auto status = TemplateData::QueryTemplates(BUNDLE_NAME, 0, results);
+    EXPECT_EQ(status, DataShare::E_ERROR);
+    EXPECT_EQ(results.size(), 0);
 }
 
 /**
