@@ -326,7 +326,7 @@ void AuditHelper::ReportDragAuditEvent(const UnifiedData &unifiedData, int32_t u
         std::vector<std::shared_ptr<UnifiedRecord>> records = data.GetRecords();
         if (TempUDataLoader::IsTempUData(data)) {
             UnifiedData decoded;
-            if (!TempUDataLoader::Decode(data, decoded)) {
+            if (!TempUDataLoader::Decode(data, decoded, userId)) {
                 ZLOGE("Restore temp unified data failed");
                 return;
             }
