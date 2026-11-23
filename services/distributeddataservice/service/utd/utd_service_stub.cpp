@@ -32,7 +32,7 @@ int UtdServiceStub::OnRemoteRequest(uint32_t code, MessageParcel &data, MessageP
     QosManager qos(false);
 
     ZLOGI("start##code = %{public}u callingPid:%{public}u callingUid:%{public}u.", code, IPCSkeleton::GetCallingPid(),
-        IPCSkeleton::GetCallingUid());
+        IPCSkeleton::GetCallingAppUid());
     std::u16string myDescripter = UtdServiceStub::GetDescriptor();
     std::u16string remoteDescripter = data.ReadInterfaceToken();
     if (myDescripter != remoteDescripter) {

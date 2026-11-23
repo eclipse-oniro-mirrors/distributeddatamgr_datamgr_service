@@ -38,7 +38,7 @@ using namespace OHOS::DistributedData;
 DataProviderConfig::DataProviderConfig(const std::string &uri, uint32_t callerTokenId)
 {
     providerInfo_.uri = uri;
-    auto callingUid = IPCSkeleton::GetCallingUid();
+    auto callingUid = IPCSkeleton::GetCallingAppUid();
     providerInfo_.currentUserId = (callingUid == 0)
         ? AccountDelegate::GetInstance()->GetUserByToken(callerTokenId)
         : callingUid / AppExecFwk::Constants::BASE_USER_RANGE;

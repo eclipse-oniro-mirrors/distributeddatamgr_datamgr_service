@@ -102,7 +102,7 @@ std::pair<int32_t, KVDBServiceStub::StoreInfo> KVDBServiceStub::GetStoreInfo(uin
     appId.appId = Constant::TrimCopy(appId.appId);
     storeId.storeId = Constant::TrimCopy(storeId.storeId);
     StoreInfo info;
-    info.uid = IPCSkeleton::GetCallingUid();
+    info.uid = IPCSkeleton::GetCallingAppUid();
     info.tokenId = IPCSkeleton::GetCallingTokenID();
     info.bundleName = std::move(appId.appId);
     info.storeId = std::move(storeId.storeId);

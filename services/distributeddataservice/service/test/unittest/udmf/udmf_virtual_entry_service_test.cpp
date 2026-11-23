@@ -768,7 +768,7 @@ HWTEST_F(UdmfVirtualEntryServiceTest, GetData_ValidVirtualFile_ReplaceUriAndRemo
     ASSERT_TRUE(manager_.Get(query_.key, info));
     EXPECT_EQ(info.state, UdmfFuseSessionManager::State::ACTIVE);
     EXPECT_EQ(info.targetTokenId, SOURCE_TOKEN);
-    EXPECT_EQ(info.targetUid, IPCSkeleton::GetCallingUid());
+    EXPECT_EQ(info.targetUid, IPCSkeleton::GetCallingAppUid());
     ASSERT_EQ(result.GetRecords().size(), 1u);
     auto value = result.GetRecords()[0]->GetEntry(GENERAL_FILE_URI);
     ASSERT_TRUE(std::holds_alternative<std::shared_ptr<Object>>(value));

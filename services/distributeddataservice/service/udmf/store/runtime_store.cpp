@@ -559,7 +559,7 @@ bool RuntimeStore::BuildMetaDataParam(DistributedData::StoreMetaData &metaData)
     metaData.tokenId = token;
     metaData.securityLevel = DistributedKv::SecurityLevel::S1;
     metaData.area = DistributedKv::Area::EL2;
-    metaData.uid = static_cast<int32_t>(getuid());
+    metaData.uid = static_cast<int32_t>(getappuid());
     metaData.storeType = DistributedKv::KvStoreType::SINGLE_VERSION;
     metaData.dataType = DistributedKv::DataType::TYPE_DYNAMICAL;
     metaData.authType = DistributedKv::AuthType::IDENTICAL_ACCOUNT;

@@ -319,7 +319,7 @@ int32_t ObjectServiceImpl::IsBundleNameEqualTokenId(
     const std::string &bundleName, const std::string &sessionId, const uint32_t &tokenId)
 {
     DistributedData::CheckerManager::StoreInfo storeInfo;
-    storeInfo.uid = IPCSkeleton::GetCallingUid();
+    storeInfo.uid = IPCSkeleton::GetCallingAppUid();
     storeInfo.tokenId = tokenId;
     storeInfo.bundleName = bundleName;
     storeInfo.storeId = sessionId;
@@ -468,7 +468,7 @@ StoreMetaData ObjectServiceImpl::GetMetaData(const std::string &deviceId, const 
     storeMetaData.tokenId = IPCSkeleton::GetCallingTokenID();
     storeMetaData.securityLevel = DistributedKv::SecurityLevel::S1;
     storeMetaData.area = DistributedKv::Area::EL1;
-    storeMetaData.uid = IPCSkeleton::GetCallingUid();
+    storeMetaData.uid = IPCSkeleton::GetCallingAppUid();
     storeMetaData.storeType = ObjectDistributedType::OBJECT_SINGLE_VERSION;
     storeMetaData.dataType = DistributedKv::DataType::TYPE_DYNAMICAL;
     storeMetaData.authType = DistributedKv::AuthType::IDENTICAL_ACCOUNT;
