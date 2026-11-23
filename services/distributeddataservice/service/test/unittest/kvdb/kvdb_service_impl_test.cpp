@@ -16,6 +16,11 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
+#include <cerrno>
 #include <limits>
 #include <vector>
 
@@ -28,6 +33,7 @@
 #include "distributed_kv_data_manager.h"
 #include "eventcenter/event_center.h"
 #include "ipc_skeleton.h"
+#include "kv_hmfs_tag_util.h"
 #include "kvdb_query.h"
 #include "kvdb_service_impl.h"
 #include "kvdb_service_stub.h"
@@ -2690,6 +2696,125 @@ HWTEST_F(KvdbServiceImplTest, AfterCreateWithCustomDirWhitelist, TestSize.Level0
 
     SyncManager::AutoSyncInfo empty;
     SyncManager::GetInstance().SetAutoSyncAppInfo(empty);
+}
+
+/**
+ * @tc.name: DumpStack_AfterCreate_FlagEnabled_Native_ReturnOk
+ * @tc.desc: AC-1.1 - AfterCreate with dumpStackOnFileDeletion keeps the legacy return code for a SA caller
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(KvdbServiceImplTest, DumpStack_AfterCreate_FlagEnabled_Native_ReturnOk, TestSize.Level1)
+{
+    auto tokenMock = std::make_shared<AccessTokenKitMock>();
+    ON_CALL(*tokenMock, GetTokenTypeFlag(_)).WillByDefault(Return(TOKEN_NATIVE));
+    BAccessTokenKit::accessTokenkit = tokenMock;
+
+    Options opts = create;
+    opts.dumpStackOnFileDeletion = true;
+    std::vector<uint8_t> password;
+    auto status = kvdbServiceImpl_->AfterCreate(appId, storeId, opts, password);
+
+    EXPECT_EQ(status, Status::SUCCESS);
+    BAccessTokenKit::accessTokenkit = accTokenMock;
+}
+
+/**
+ * @tc.name: DumpStack_AfterCreate_FlagDisabled_ReturnOk
+ * @tc.desc: AC-1.1 - AfterCreate without the flag keeps the legacy behavior
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(KvdbServiceImplTest, DumpStack_AfterCreate_FlagDisabled_ReturnOk, TestSize.Level1)
+{
+    Options opts = create;
+    opts.dumpStackOnFileDeletion = false;
+    std::vector<uint8_t> password;
+    auto status = kvdbServiceImpl_->AfterCreate(appId, storeId, opts, password);
+
+    EXPECT_EQ(status, Status::SUCCESS);
+}
+
+/**
+ * @tc.name: DumpStack_AfterCreate_NonSystemApp_ReturnOk
+ * @tc.desc: AC-3.1 - A non system application caller skips tagging without changing the return code
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(KvdbServiceImplTest, DumpStack_AfterCreate_NonSystemApp_ReturnOk, TestSize.Level1)
+{
+    auto tokenMock = std::make_shared<AccessTokenKitMock>();
+    ON_CALL(*tokenMock, GetTokenTypeFlag(_)).WillByDefault(Return(TOKEN_HAP));
+    auto tokenIdKitMock = std::make_shared<TokenIdKitMock>();
+    ON_CALL(*tokenIdKitMock, IsSystemAppByFullTokenID(_)).WillByDefault(Return(false));
+    BAccessTokenKit::accessTokenkit = tokenMock;
+    BTokenIdKit::tokenkIdKit = tokenIdKitMock;
+
+    Options opts = create;
+    opts.dumpStackOnFileDeletion = true;
+    std::vector<uint8_t> password;
+    auto status = kvdbServiceImpl_->AfterCreate(appId, storeId, opts, password);
+
+    EXPECT_EQ(status, Status::SUCCESS);
+    BAccessTokenKit::accessTokenkit = accTokenMock;
+    BTokenIdKit::tokenkIdKit = nullptr;
+}
+
+/**
+ * @tc.name: DumpStack_AfterCreate_LocalOnlyType_ReturnOk
+ * @tc.desc: AC-1.3 - A LOCAL_ONLY store has no db/wal/shm layout and skips tagging
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(KvdbServiceImplTest, DumpStack_AfterCreate_LocalOnlyType_ReturnOk, TestSize.Level1)
+{
+    auto tokenMock = std::make_shared<AccessTokenKitMock>();
+    ON_CALL(*tokenMock, GetTokenTypeFlag(_)).WillByDefault(Return(TOKEN_NATIVE));
+    BAccessTokenKit::accessTokenkit = tokenMock;
+
+    Options opts = create;
+    opts.dumpStackOnFileDeletion = true;
+    opts.kvStoreType = OHOS::DistributedKv::LOCAL_ONLY;
+    std::vector<uint8_t> password;
+    auto status = kvdbServiceImpl_->AfterCreate(appId, storeId, opts, password);
+
+    EXPECT_EQ(status, Status::SUCCESS);
+    BAccessTokenKit::accessTokenkit = accTokenMock;
+}
+
+/**
+ * @tc.name: KvHmfsTagUtil_InvalidPath_ReturnsError
+ * @tc.desc: Test the tag utility rejects invalid paths before touching the file system
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(KvdbServiceImplTest, KvHmfsTagUtil_InvalidPath_ReturnsError, TestSize.Level1)
+{
+    EXPECT_EQ(OHOS::DistributedKv::KvHmfsTagUtil::SetKeyFileFlag(""), -EINVAL);
+    EXPECT_EQ(OHOS::DistributedKv::KvHmfsTagUtil::GetKeyFileFlag(""), -EINVAL);
+    EXPECT_EQ(OHOS::DistributedKv::KvHmfsTagUtil::SetKeyFileFlag("/"), -EINVAL);
+    EXPECT_EQ(OHOS::DistributedKv::KvHmfsTagUtil::GetKeyFileFlag("/"), -EINVAL);
+    EXPECT_EQ(OHOS::DistributedKv::KvHmfsTagUtil::SetKeyFileFlag("plainname"), -EINVAL);
+    EXPECT_EQ(OHOS::DistributedKv::KvHmfsTagUtil::SetKeyFileFlag("/nonexistent_kv_hmfs_tag/file.db"), -ENOENT);
+    EXPECT_EQ(OHOS::DistributedKv::KvHmfsTagUtil::GetKeyFileFlag("/nonexistent_kv_hmfs_tag/file.db"), -ENOENT);
+}
+
+/**
+ * @tc.name: KvHmfsTagUtil_ValidPath_DoesNotBreakFile
+ * @tc.desc: Test the tag utility degrades silently and keeps the target file on a normal file system
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(KvdbServiceImplTest, KvHmfsTagUtil_ValidPath_DoesNotBreakFile, TestSize.Level1)
+{
+    std::string path = "/data/local/tmp/kv_hmfs_tag_util_test.db";
+    int fd = open(path.c_str(), O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
+    ASSERT_GE(fd, 0);
+    close(fd);
+    (void)OHOS::DistributedKv::KvHmfsTagUtil::SetKeyFileFlag(path);
+    (void)OHOS::DistributedKv::KvHmfsTagUtil::GetKeyFileFlag(path);
+    EXPECT_EQ(access(path.c_str(), F_OK), 0);
+    (void)remove(path.c_str());
 }
 } // namespace DistributedDataTest
 } // namespace OHOS::Test
