@@ -17,11 +17,16 @@
 #include <gtest/gtest.h>
 
 #include <fcntl.h>
+#include <sys/ioctl.h>
 #include <sys/stat.h>
+#include <sys/syscall.h>
 #include <unistd.h>
 
 #include <cerrno>
+#include <cstdint>
+#include <functional>
 #include <limits>
+#include <string>
 #include <vector>
 
 #include "bootstrap.h"
@@ -82,6 +87,154 @@ using BackupInfo = OHOS::DistributedKv::BackupInfo;
 static OHOS::DistributedKv::StoreId storeId = { "kvdb_test_storeid" };
 static OHOS::DistributedKv::AppId appId = { "ohos.test.kvdb" };
 static constexpr const char *TEST_USER = "0";
+
+namespace {
+constexpr unsigned long HMFS_IOCTL_MAGIC = 0xF5;
+
+struct HmfsKeyFileArgs {
+    char filename[256];
+    uint32_t flags;
+};
+
+constexpr unsigned long HMFS_IOC_KEY_FILE_SETFLAGS = _IOW(HMFS_IOCTL_MAGIC, 72, HmfsKeyFileArgs);
+constexpr unsigned long HMFS_IOC_KEY_FILE_GETFLAGS = _IOWR(HMFS_IOCTL_MAGIC, 73, HmfsKeyFileArgs);
+
+using IoctlHandler = std::function<int(int, unsigned long, void *)>;
+IoctlHandler g_ioctlHandler;
+
+struct IoctlPlan {
+    int getRet = 0;
+    int getErr = 0;
+    int setRet = 0;
+    int setErr = 0;
+    uint32_t getFlags = 0;
+    std::string taggedName;
+    std::string failSetName;
+    int getCalls = 0;
+    int setCalls = 0;
+};
+
+IoctlHandler MakeIoctlHandler(IoctlPlan &plan)
+{
+    return [&plan](int fd, unsigned long request, void *arg) {
+        (void)fd;
+        auto *args = static_cast<HmfsKeyFileArgs *>(arg);
+        std::string name = (args != nullptr) ? std::string(args->filename) : std::string();
+        if (request == HMFS_IOC_KEY_FILE_GETFLAGS) {
+            ++plan.getCalls;
+            if (plan.getRet != 0) {
+                errno = plan.getErr;
+                return plan.getRet;
+            }
+            if (args != nullptr) {
+                bool tagged = !plan.taggedName.empty() && name.find(plan.taggedName) != std::string::npos;
+                args->flags = tagged ? 1u : plan.getFlags;
+            }
+            return 0;
+        }
+        if (request == HMFS_IOC_KEY_FILE_SETFLAGS) {
+            ++plan.setCalls;
+            if (plan.setRet != 0) {
+                errno = plan.setErr;
+                return plan.setRet;
+            }
+            if (!plan.failSetName.empty() && name.find(plan.failSetName) != std::string::npos) {
+                errno = EACCES;
+                return -1;
+            }
+            return 0;
+        }
+        return 0;
+    };
+}
+
+class IoctlHookGuard {
+public:
+    explicit IoctlHookGuard(const IoctlHandler &handler)
+    {
+        g_ioctlHandler = handler;
+    }
+
+    ~IoctlHookGuard()
+    {
+        g_ioctlHandler = nullptr;
+    }
+};
+
+bool MakeDir(const std::string &path)
+{
+    return mkdir(path.c_str(), S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH) == 0 || errno == EEXIST;
+}
+
+bool MakeFile(const std::string &path)
+{
+    int fd = open(path.c_str(), O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
+    if (fd < 0) {
+        return false;
+    }
+    close(fd);
+    return true;
+}
+
+std::string GetDbStoreDir(const std::string &storeId)
+{
+    std::string storeDir;
+    if (DistributedDB::KvStoreDelegateManager::GetDatabaseDir(storeId, storeDir) != DistributedDB::DBStatus::OK) {
+        return "";
+    }
+    return storeDir;
+}
+
+std::string GetDbBase(const std::string &dbRoot, const std::string &storeId)
+{
+    std::string storeDir = GetDbStoreDir(storeId);
+    if (storeDir.empty()) {
+        return "";
+    }
+    return dbRoot + "/" + storeDir + "/single_ver/";
+}
+
+bool CreateDbLayout(const std::string &dbRoot, const std::string &storeId)
+{
+    std::string storeDir = GetDbStoreDir(storeId);
+    if (storeDir.empty()) {
+        return false;
+    }
+    std::string base = dbRoot + "/" + storeDir + "/single_ver/";
+    if (!MakeDir(dbRoot) || !MakeDir(dbRoot + "/" + storeDir) || !MakeDir(base)) {
+        return false;
+    }
+    return MakeDir(base + "main") && MakeDir(base + "meta");
+}
+
+void RemoveDbLayout(const std::string &dbRoot, const std::string &storeId)
+{
+    std::string storeDir = GetDbStoreDir(storeId);
+    if (storeDir.empty()) {
+        return;
+    }
+    std::string base = dbRoot + "/" + storeDir + "/single_ver/";
+    const std::string files[] = { "main/gen_natural_store.db", "main/gen_natural_store.db-wal",
+        "main/gen_natural_store.db-shm", "meta/meta.db", "meta/meta.db-wal", "meta/meta.db-shm" };
+    for (const auto &file : files) {
+        (void)unlink((base + file).c_str());
+    }
+    (void)rmdir((base + "main").c_str());
+    (void)rmdir((base + "meta").c_str());
+    (void)rmdir(base.c_str());
+    (void)rmdir((dbRoot + "/" + storeDir).c_str());
+    (void)rmdir(dbRoot.c_str());
+}
+} // namespace
+
+extern "C" int __wrap_ioctl(int fd, unsigned long request, void *arg)
+{
+    if (g_ioctlHandler != nullptr) {
+        return g_ioctlHandler(fd, request, arg);
+    }
+    return static_cast<int>(syscall(SYS_ioctl, fd, request, arg));
+}
+
 namespace OHOS::Test {
 namespace DistributedDataTest {
 class KvdbServiceImplTest : public testing::Test {
@@ -2795,6 +2948,8 @@ HWTEST_F(KvdbServiceImplTest, KvHmfsTagUtil_InvalidPath_ReturnsError, TestSize.L
     EXPECT_EQ(OHOS::DistributedKv::KvHmfsTagUtil::SetKeyFileFlag("/"), -EINVAL);
     EXPECT_EQ(OHOS::DistributedKv::KvHmfsTagUtil::GetKeyFileFlag("/"), -EINVAL);
     EXPECT_EQ(OHOS::DistributedKv::KvHmfsTagUtil::SetKeyFileFlag("plainname"), -EINVAL);
+    EXPECT_EQ(OHOS::DistributedKv::KvHmfsTagUtil::SetKeyFileFlag("/file.db"), -EINVAL);
+    EXPECT_EQ(OHOS::DistributedKv::KvHmfsTagUtil::GetKeyFileFlag("/dir/"), -EINVAL);
     EXPECT_EQ(OHOS::DistributedKv::KvHmfsTagUtil::SetKeyFileFlag("/nonexistent_kv_hmfs_tag/file.db"), -ENOENT);
     EXPECT_EQ(OHOS::DistributedKv::KvHmfsTagUtil::GetKeyFileFlag("/nonexistent_kv_hmfs_tag/file.db"), -ENOENT);
 }
@@ -2815,6 +2970,316 @@ HWTEST_F(KvdbServiceImplTest, KvHmfsTagUtil_ValidPath_DoesNotBreakFile, TestSize
     (void)OHOS::DistributedKv::KvHmfsTagUtil::GetKeyFileFlag(path);
     EXPECT_EQ(access(path.c_str(), F_OK), 0);
     (void)remove(path.c_str());
+}
+
+/**
+ * @tc.name: DumpStack_AfterCreate_SystemAppFlagEnabled_ReturnOk
+ * @tc.desc: AC-3.1 - A system application caller reaches the tagging flow and keeps the return code
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(KvdbServiceImplTest, DumpStack_AfterCreate_SystemAppFlagEnabled_ReturnOk, TestSize.Level1)
+{
+    auto tokenMock = std::make_shared<AccessTokenKitMock>();
+    ON_CALL(*tokenMock, GetTokenTypeFlag(_)).WillByDefault(Return(TOKEN_HAP));
+    ON_CALL(*tokenMock, GetHapTokenInfo(_, _)).WillByDefault(Return(0));
+    auto tokenIdMock = std::make_shared<TokenIdKitMock>();
+    ON_CALL(*tokenIdMock, IsSystemAppByFullTokenID(_)).WillByDefault(Return(true));
+    BAccessTokenKit::accessTokenkit = tokenMock;
+    BTokenIdKit::tokenkIdKit = tokenIdMock;
+
+    Options opts = create;
+    opts.dumpStackOnFileDeletion = true;
+    std::vector<uint8_t> password;
+    auto status = kvdbServiceImpl_->AfterCreate(appId, storeId, opts, password);
+
+    EXPECT_EQ(status, Status::SUCCESS);
+    BAccessTokenKit::accessTokenkit = accTokenMock;
+    BTokenIdKit::tokenkIdKit = nullptr;
+}
+
+/**
+ * @tc.name: DumpStack_AfterCreate_UpgradeFailed_SkipTagging
+ * @tc.desc: AC-1.1 - A failed store upgrade skips tagging and keeps the upgrade failure code
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(KvdbServiceImplTest, DumpStack_AfterCreate_UpgradeFailed_SkipTagging, TestSize.Level1)
+{
+    auto tokenMock = std::make_shared<AccessTokenKitMock>();
+    ON_CALL(*tokenMock, GetTokenTypeFlag(_)).WillByDefault(Return(TOKEN_NATIVE));
+    BAccessTokenKit::accessTokenkit = tokenMock;
+
+    EXPECT_CALL(*metaDataManagerMock, LoadMeta(testing::_, testing::_, testing::_))
+        .WillOnce(testing::DoAll(testing::Invoke([](const std::string &, Serializable &meta, bool) {
+            auto &oldMeta = static_cast<StoreMetaMapping &>(meta);
+            oldMeta.dataDir = "/data/service/el1/public/database/old_dump_stack_dir";
+        }),
+            testing::Return(true)))
+        .WillRepeatedly(testing::Return(true));
+
+    IoctlPlan plan;
+    IoctlHookGuard guard(MakeIoctlHandler(plan));
+
+    Options opts = create;
+    opts.dumpStackOnFileDeletion = true;
+    std::vector<uint8_t> password;
+    auto status = kvdbServiceImpl_->AfterCreate(appId, storeId, opts, password);
+
+    EXPECT_EQ(status, Status::STORE_UPGRADE_FAILED);
+    EXPECT_EQ(plan.getCalls, 0);
+    EXPECT_EQ(plan.setCalls, 0);
+    BAccessTokenKit::accessTokenkit = accTokenMock;
+}
+
+/**
+ * @tc.name: DumpStack_SetDumpStackTags_DefaultDir_001
+ * @tc.desc: AC-1.1 - Existing db and meta files are tagged once, an already tagged file is skipped
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(KvdbServiceImplTest, DumpStack_SetDumpStackTags_DefaultDir_001, TestSize.Level1)
+{
+    std::string storeIdStr = "dumpStackTagDefault";
+    std::string root = std::string(create.baseDir) + "/dump_stack_ut_default";
+    std::string dataDir = root + "/data";
+    ASSERT_TRUE(MakeDir(root));
+    ASSERT_TRUE(CreateDbLayout(dataDir, storeIdStr));
+    std::string base = GetDbBase(dataDir, storeIdStr);
+    ASSERT_FALSE(base.empty());
+    ASSERT_TRUE(MakeFile(base + "main/gen_natural_store.db"));
+    ASSERT_TRUE(MakeFile(base + "meta/meta.db"));
+
+    auto tokenMock = std::make_shared<AccessTokenKitMock>();
+    ON_CALL(*tokenMock, GetTokenTypeFlag(_)).WillByDefault(Return(TOKEN_NATIVE));
+    BAccessTokenKit::accessTokenkit = tokenMock;
+
+    StoreMetaData meta;
+    meta.storeId = storeIdStr;
+    meta.dataDir = dataDir;
+    meta.storeType = static_cast<int32_t>(OHOS::DistributedKv::SINGLE_VERSION);
+    IoctlPlan plan;
+    plan.taggedName = "gen_natural_store.db";
+    IoctlHookGuard guard(MakeIoctlHandler(plan));
+
+    kvdbServiceImpl_->SetDumpStackTags(meta);
+
+    EXPECT_EQ(plan.getCalls, 2);
+    EXPECT_EQ(plan.setCalls, 1);
+
+    BAccessTokenKit::accessTokenkit = accTokenMock;
+    RemoveDbLayout(dataDir, storeIdStr);
+    (void)rmdir(root.c_str());
+}
+
+/**
+ * @tc.name: DumpStack_SetDumpStackTags_SetFail_001
+ * @tc.desc: AC-1.5 - A failed tag set degrades silently and the remaining files are still processed
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(KvdbServiceImplTest, DumpStack_SetDumpStackTags_SetFail_001, TestSize.Level1)
+{
+    std::string storeIdStr = "dumpStackTagSetFail";
+    std::string root = std::string(create.baseDir) + "/dump_stack_ut_set_fail";
+    std::string dataDir = root + "/data";
+    ASSERT_TRUE(MakeDir(root));
+    ASSERT_TRUE(CreateDbLayout(dataDir, storeIdStr));
+    std::string base = GetDbBase(dataDir, storeIdStr);
+    ASSERT_FALSE(base.empty());
+    ASSERT_TRUE(MakeFile(base + "main/gen_natural_store.db"));
+    ASSERT_TRUE(MakeFile(base + "meta/meta.db"));
+
+    auto tokenMock = std::make_shared<AccessTokenKitMock>();
+    ON_CALL(*tokenMock, GetTokenTypeFlag(_)).WillByDefault(Return(TOKEN_NATIVE));
+    BAccessTokenKit::accessTokenkit = tokenMock;
+
+    StoreMetaData meta;
+    meta.storeId = storeIdStr;
+    meta.dataDir = dataDir;
+    meta.storeType = static_cast<int32_t>(OHOS::DistributedKv::SINGLE_VERSION);
+    IoctlPlan plan;
+    plan.failSetName = "gen_natural_store.db";
+    IoctlHookGuard guard(MakeIoctlHandler(plan));
+
+    kvdbServiceImpl_->SetDumpStackTags(meta);
+
+    EXPECT_EQ(plan.getCalls, 2);
+    EXPECT_EQ(plan.setCalls, 2);
+
+    BAccessTokenKit::accessTokenkit = accTokenMock;
+    RemoveDbLayout(dataDir, storeIdStr);
+    (void)rmdir(root.c_str());
+}
+
+/**
+ * @tc.name: DumpStack_SetDumpStackTags_CustomDir_001
+ * @tc.desc: AC-1.2 - A custom dir store is tagged under the dataDir resolved by AddOptions
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(KvdbServiceImplTest, DumpStack_SetDumpStackTags_CustomDir_001, TestSize.Level1)
+{
+    std::string storeIdStr = "dumpStackTagCustom";
+    std::string root = std::string(create.baseDir) + "/dump_stack_ut_custom";
+    ASSERT_TRUE(MakeDir(root));
+    ASSERT_TRUE(CreateDbLayout(root, storeIdStr));
+    std::string base = GetDbBase(root, storeIdStr);
+    ASSERT_FALSE(base.empty());
+    ASSERT_TRUE(MakeFile(base + "meta/meta.db"));
+
+    auto tokenMock = std::make_shared<AccessTokenKitMock>();
+    ON_CALL(*tokenMock, GetTokenTypeFlag(_)).WillByDefault(Return(TOKEN_NATIVE));
+    BAccessTokenKit::accessTokenkit = tokenMock;
+
+    StoreMetaData meta;
+    meta.storeId = storeIdStr;
+    meta.dataDir = root;
+    meta.storeType = static_cast<int32_t>(OHOS::DistributedKv::SINGLE_VERSION);
+    IoctlPlan plan;
+    IoctlHookGuard guard(MakeIoctlHandler(plan));
+
+    kvdbServiceImpl_->SetDumpStackTags(meta);
+
+    EXPECT_EQ(plan.getCalls, 1);
+    EXPECT_EQ(plan.setCalls, 1);
+
+    BAccessTokenKit::accessTokenkit = accTokenMock;
+    RemoveDbLayout(root, storeIdStr);
+    (void)rmdir(root.c_str());
+}
+
+/**
+ * @tc.name: DumpStack_SetDumpStackTags_CustomDirWhitelist_001
+ * @tc.desc: AC-1.2 - An auto-sync whitelisted HAP custom dir store is tagged under customDir
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(KvdbServiceImplTest, DumpStack_SetDumpStackTags_CustomDirWhitelist_001, TestSize.Level0)
+{
+    std::string storeIdStr = "dumpStackTagCustomWhitelist";
+    std::string root = std::string(create.baseDir) + "/dump_stack_ut_custom_whitelist";
+    std::string customDir = root + "/custom/kvdb";
+    ASSERT_TRUE(MakeDir(root));
+    ASSERT_TRUE(MakeDir(root + "/custom"));
+    ASSERT_TRUE(CreateDbLayout(customDir, storeIdStr));
+    std::string base = GetDbBase(customDir, storeIdStr);
+    ASSERT_FALSE(base.empty());
+    ASSERT_TRUE(MakeFile(base + "meta/meta.db"));
+
+    auto tokenMock = std::make_shared<AccessTokenKitMock>();
+    ON_CALL(*tokenMock, GetTokenTypeFlag(_)).WillByDefault(Return(TOKEN_HAP));
+    BAccessTokenKit::accessTokenkit = tokenMock;
+    auto tokenIdKitMock = std::make_shared<TokenIdKitMock>();
+    ON_CALL(*tokenIdKitMock, IsSystemAppByFullTokenID(_)).WillByDefault(Return(true));
+    BTokenIdKit::tokenkIdKit = tokenIdKitMock;
+
+    StoreMetaData meta;
+    meta.storeId = storeIdStr;
+    meta.dataDir = root;
+    meta.customDir = customDir;
+    meta.storeType = static_cast<int32_t>(OHOS::DistributedKv::SINGLE_VERSION);
+    IoctlPlan plan;
+    IoctlHookGuard guard(MakeIoctlHandler(plan));
+
+    kvdbServiceImpl_->SetDumpStackTags(meta);
+
+    EXPECT_EQ(plan.getCalls, 1);
+    EXPECT_EQ(plan.setCalls, 1);
+
+    BAccessTokenKit::accessTokenkit = accTokenMock;
+    BTokenIdKit::tokenkIdKit = nullptr;
+    RemoveDbLayout(customDir, storeIdStr);
+    (void)rmdir((root + "/custom").c_str());
+    (void)rmdir(root.c_str());
+}
+
+/**
+ * @tc.name: DumpStack_SetDumpStackTags_InvalidStoreId_001
+ * @tc.desc: AC-1.6 - An unsafe store id skips tagging without touching the file system
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(KvdbServiceImplTest, DumpStack_SetDumpStackTags_InvalidStoreId_001, TestSize.Level1)
+{
+    auto tokenMock = std::make_shared<AccessTokenKitMock>();
+    ON_CALL(*tokenMock, GetTokenTypeFlag(_)).WillByDefault(Return(TOKEN_NATIVE));
+    BAccessTokenKit::accessTokenkit = tokenMock;
+
+    StoreMetaData meta;
+    meta.storeId = "bad/store";
+    meta.dataDir = std::string(create.baseDir) + "/dump_stack_ut_invalid";
+    meta.storeType = static_cast<int32_t>(OHOS::DistributedKv::SINGLE_VERSION);
+    IoctlPlan plan;
+    IoctlHookGuard guard(MakeIoctlHandler(plan));
+
+    kvdbServiceImpl_->SetDumpStackTags(meta);
+
+    EXPECT_EQ(plan.getCalls, 0);
+    EXPECT_EQ(plan.setCalls, 0);
+    BAccessTokenKit::accessTokenkit = accTokenMock;
+}
+
+/**
+ * @tc.name: KvHmfsTagUtil_InvalidName_001
+ * @tc.desc: Test the tag utility rejects invalid file names and converts errno to a negative result
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(KvdbServiceImplTest, KvHmfsTagUtil_InvalidName_001, TestSize.Level1)
+{
+    using OHOS::DistributedKv::KvHmfsTagUtil;
+    EXPECT_EQ(KvHmfsTagUtil::ExecuteIoctl(-1, 0, "", nullptr), -EINVAL);
+    EXPECT_EQ(KvHmfsTagUtil::ExecuteIoctl(-1, 0, ".", nullptr), -EINVAL);
+    EXPECT_EQ(KvHmfsTagUtil::ExecuteIoctl(-1, 0, "..", nullptr), -EINVAL);
+    EXPECT_EQ(
+        KvHmfsTagUtil::ExecuteIoctl(-1, 0, std::string(KvHmfsTagUtil::MAX_FILE_NAME_LEN + 1, 'a'), nullptr), -EINVAL);
+    EXPECT_EQ(KvHmfsTagUtil::ExecuteIoctl(-1, 0, "dir/file.db", nullptr), -EINVAL);
+    EXPECT_EQ(KvHmfsTagUtil::NegateErrno(0), -EIO);
+    EXPECT_EQ(KvHmfsTagUtil::NegateErrno(ENOENT), -ENOENT);
+}
+
+/**
+ * @tc.name: KvHmfsTagUtil_IoctlBranches_001
+ * @tc.desc: Test the tag utility ioctl failure and success branches for fd and path based calls
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(KvdbServiceImplTest, KvHmfsTagUtil_IoctlBranches_001, TestSize.Level1)
+{
+    using OHOS::DistributedKv::KvHmfsTagUtil;
+    std::string dir = std::string(create.baseDir) + "/kv_hmfs_tag_util_dir";
+    ASSERT_TRUE(MakeDir(dir));
+    int dirFd = open(dir.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+    ASSERT_GE(dirFd, 0);
+
+    IoctlPlan failPlan;
+    failPlan.getRet = -1;
+    failPlan.getErr = EACCES;
+    failPlan.setRet = -1;
+    failPlan.setErr = EACCES;
+    {
+        IoctlHookGuard guard(MakeIoctlHandler(failPlan));
+        EXPECT_EQ(KvHmfsTagUtil::GetKeyFileFlag(dirFd, "get.db"), -EACCES);
+        EXPECT_EQ(KvHmfsTagUtil::SetKeyFileFlag(dirFd, "set.db"), -EACCES);
+        EXPECT_EQ(KvHmfsTagUtil::GetKeyFileFlag(dir + "/get.db"), -EACCES);
+        EXPECT_EQ(KvHmfsTagUtil::SetKeyFileFlag(dir + "/set.db"), -EACCES);
+    }
+
+    IoctlPlan okPlan;
+    okPlan.taggedName = "get.db";
+    {
+        IoctlHookGuard guard(MakeIoctlHandler(okPlan));
+        EXPECT_EQ(KvHmfsTagUtil::GetKeyFileFlag(dirFd, "get.db"), KvHmfsTagUtil::FLAG_SET);
+        EXPECT_EQ(KvHmfsTagUtil::GetKeyFileFlag(dirFd, "unset.db"), KvHmfsTagUtil::FLAG_UNSET);
+        EXPECT_EQ(KvHmfsTagUtil::SetKeyFileFlag(dirFd, "set.db"), 0);
+        EXPECT_EQ(KvHmfsTagUtil::GetKeyFileFlag(dir + "/get.db"), KvHmfsTagUtil::FLAG_SET);
+        EXPECT_EQ(KvHmfsTagUtil::GetKeyFileFlag(dir + "/unset.db"), KvHmfsTagUtil::FLAG_UNSET);
+        EXPECT_EQ(KvHmfsTagUtil::SetKeyFileFlag(dir + "/set.db"), 0);
+    }
+
+    close(dirFd);
+    (void)rmdir(dir.c_str());
 }
 } // namespace DistributedDataTest
 } // namespace OHOS::Test
