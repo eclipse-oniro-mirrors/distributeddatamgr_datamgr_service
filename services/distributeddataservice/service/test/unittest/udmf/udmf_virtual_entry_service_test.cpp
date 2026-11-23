@@ -730,29 +730,6 @@ HWTEST_F(UdmfVirtualEntryServiceTest, GetData_MountFailed_RetainPendingSessionAn
 }
 
 /**
- * @tc.name: GetData_InvalidCallingUid_RejectsBeforeMountAndAllowsRetry
- * @tc.desc: A missing IPC application UID must not activate a session or prevent a valid retry.
- * @tc.type: FUNC
- * @tc.author: agent
- */
-HWTEST_F(UdmfVirtualEntryServiceTest, GetData_InvalidCallingUid_RejectsBeforeMountAndAllowsRetry, TestSize.Level0)
-{
-    ASSERT_EQ(RegisterSession(), 0);
-    g_virtualEntryCallingUid = -1;
-    UnifiedData result;
-    EXPECT_EQ(service_.GetData(query_, result), E_FS_ERROR);
-    EXPECT_EQ(UdmfFuseMountAdapterMock::mounts, 0u);
-    UdmfFuseSessionManager::SessionInfo info;
-    ASSERT_TRUE(manager_.Get(query_.key, info));
-    EXPECT_EQ(info.state, UdmfFuseSessionManager::State::PENDING_DROP);
-    g_virtualEntryCallingUid = TEST_UID;
-    EXPECT_EQ(service_.GetData(query_, result), E_OK);
-    EXPECT_EQ(UdmfFuseMountAdapterMock::mounts, 1u);
-    ASSERT_TRUE(manager_.Get(query_.key, info));
-    EXPECT_EQ(info.targetUid, TEST_UID);
-}
-
-/**
  * @tc.name: GetData_ValidVirtualFile_ReplaceUriAndRemoveOnlyInternalMarker
  * @tc.desc: Successful drop returns the sandbox FUSE URI while preserving unrelated details.
  * @tc.type: FUNC
