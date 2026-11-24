@@ -13,39 +13,35 @@
  * limitations under the License.
  */
 
-#include <fuzzer/FuzzedDataProvider.h>
-
 #include "datashareserviceimpl5_fuzzer.h"
+
+#include <fuzzer/FuzzedDataProvider.h>
 
 #include <cstddef>
 #include <cstdint>
 #include <string>
 
 #include "data_share_service_impl.h"
-#include "ipc_skeleton.h"
 
 using namespace OHOS::DataShare;
 
 namespace OHOS {
-// Executor pool size for DataShareServiceImpl::OnBind, aligned with the
-// existing datashareservicestub fuzzers.
-constexpr size_t EXECUTOR_NUM_MAX = 12;
-constexpr size_t EXECUTOR_NUM_MIN = 5;
-
 // Upper bound of consumed random-length strings, keeps a single input cheap.
 constexpr size_t MAX_TEXT_LENGTH = 64;
 // AccountStatus enum value count, spans all OnUserChange switch cases.
 constexpr uint8_t ACCOUNT_STATUS_COUNT = 8;
 
 // Dispatch targets of the entry switch, indexed by the first consumed byte.
+// OnBind is intentionally not fuzzed here: it initializes KvDBDelegate in the
+// distributeddata service data directory, which aborts in a fuzz process that
+// lacks the SA process context and directory permission.
 enum FuzzTarget : uint8_t {
     FUZZ_ON_USER_CHANGE = 0,
-    FUZZ_ON_BIND,
     FUZZ_ON_INITIALIZE,
 };
 
 // Target interface count of this fuzzer, used by the entry switch.
-constexpr size_t TARGET_SIZE = 3;
+constexpr size_t TARGET_SIZE = 2;
 
 // code spans the whole AccountStatus enum (uint8_t), covering the
 // DEVICE_ACCOUNT_DELETE / DEVICE_ACCOUNT_STOPPING / DEVICE_ACCOUNT_STOPPED
@@ -57,22 +53,6 @@ void OnUserChangeFuzz(FuzzedDataProvider &fdp)
     std::string user = fdp.ConsumeRandomLengthString(MAX_TEXT_LENGTH);
     std::string account = fdp.ConsumeRandomLengthString(MAX_TEXT_LENGTH);
     dataShareServiceImpl->OnUserChange(code, user, account);
-}
-
-// OnBind initializes the static binderInfo_ (executors) and drives the
-// subscription/registration chain: SubscribeCommonEvent, SubscribeTimeChanged,
-// SubscribeChange, SubscribeListen and SetCriticalTask. OnConnectDone is the
-// natural follow-up notification of the bind lifecycle.
-void OnBindFuzz(FuzzedDataProvider &fdp)
-{
-    std::shared_ptr<DataShareServiceImpl> dataShareServiceImpl = std::make_shared<DataShareServiceImpl>();
-    std::shared_ptr<ExecutorPool> executor = std::make_shared<ExecutorPool>(EXECUTOR_NUM_MAX, EXECUTOR_NUM_MIN);
-    DataShareServiceImpl::BindInfo bindInfo = { "datashareserviceimpl5_fuzzer",
-        static_cast<uint32_t>(IPCSkeleton::GetSelfTokenID()), std::move(executor) };
-    dataShareServiceImpl->OnBind(bindInfo);
-    if (fdp.ConsumeBool()) {
-        dataShareServiceImpl->OnConnectDone();
-    }
 }
 
 // OnInitialize drives RegisterDataShareServiceInfo and RegisterHandler.
@@ -99,9 +79,6 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     switch (target) {
         case OHOS::FUZZ_ON_USER_CHANGE:
             OHOS::OnUserChangeFuzz(fdp);
-            break;
-        case OHOS::FUZZ_ON_BIND:
-            OHOS::OnBindFuzz(fdp);
             break;
         default:
             OHOS::OnInitializeFuzz(fdp);
