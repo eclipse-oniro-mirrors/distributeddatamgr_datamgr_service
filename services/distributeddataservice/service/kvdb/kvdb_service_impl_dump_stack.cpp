@@ -47,9 +47,6 @@ std::string GetDbRoot(const StoreMetaData &metaData)
 
 void KVDBServiceImpl::SetDumpStackTags(const StoreMetaData &metaData)
 {
-    if (metaData.storeType == static_cast<int32_t>(KvStoreType::LOCAL_ONLY)) {
-        return;
-    }
     if (AccessTokenKit::GetTokenTypeFlag(IPCSkeleton::GetCallingTokenID()) != TOKEN_NATIVE &&
         !TokenIdKit::IsSystemAppByFullTokenID(IPCSkeleton::GetCallingFullTokenID())) {
         ZLOGW("dumpStackOnFileDeletion only for system app or SA, bundle:%{public}s", metaData.bundleName.c_str());
