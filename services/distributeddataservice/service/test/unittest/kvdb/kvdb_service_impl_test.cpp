@@ -2857,7 +2857,7 @@ HWTEST_F(KvdbServiceImplTest, AfterCreateWithCustomDirWhitelist, TestSize.Level0
  * @tc.type: FUNC
  * @tc.author: agent
  */
-HWTEST_F(KvdbServiceImplTest, DumpStack_AfterCreate_FlagEnabled_Native_ReturnOk, TestSize.Level1)
+HWTEST_F(KvdbServiceImplTest, DumpStack_AfterCreate_FlagEnabled_Native_ReturnOk, TestSize.Level0)
 {
     auto tokenMock = std::make_shared<AccessTokenKitMock>();
     ON_CALL(*tokenMock, GetTokenTypeFlag(_)).WillByDefault(Return(TOKEN_NATIVE));
@@ -3004,7 +3004,7 @@ HWTEST_F(KvdbServiceImplTest, DumpStack_AfterCreate_SystemAppFlagEnabled_ReturnO
  * @tc.type: FUNC
  * @tc.author: agent
  */
-HWTEST_F(KvdbServiceImplTest, DumpStack_AfterCreate_UpgradeFailed_SkipTagging, TestSize.Level1)
+HWTEST_F(KvdbServiceImplTest, DumpStack_AfterCreate_UpgradeFailed_SkipTagging, TestSize.Level0)
 {
     auto tokenMock = std::make_shared<AccessTokenKitMock>();
     ON_CALL(*tokenMock, GetTokenTypeFlag(_)).WillByDefault(Return(TOKEN_NATIVE));
@@ -3038,7 +3038,7 @@ HWTEST_F(KvdbServiceImplTest, DumpStack_AfterCreate_UpgradeFailed_SkipTagging, T
  * @tc.type: FUNC
  * @tc.author: agent
  */
-HWTEST_F(KvdbServiceImplTest, DumpStack_SetDumpStackTags_DefaultDir_001, TestSize.Level1)
+HWTEST_F(KvdbServiceImplTest, DumpStack_SetDumpStackTags_DefaultDir_001, TestSize.Level0)
 {
     std::string storeIdStr = "dumpStackTagDefault";
     std::string root = std::string(create.baseDir) + "/dump_stack_ut_default";
@@ -3118,7 +3118,7 @@ HWTEST_F(KvdbServiceImplTest, DumpStack_SetDumpStackTags_SetFail_001, TestSize.L
  * @tc.type: FUNC
  * @tc.author: agent
  */
-HWTEST_F(KvdbServiceImplTest, DumpStack_SetDumpStackTags_CustomDir_001, TestSize.Level1)
+HWTEST_F(KvdbServiceImplTest, DumpStack_SetDumpStackTags_CustomDir_001, TestSize.Level0)
 {
     std::string storeIdStr = "dumpStackTagCustom";
     std::string root = std::string(create.baseDir) + "/dump_stack_ut_custom";
