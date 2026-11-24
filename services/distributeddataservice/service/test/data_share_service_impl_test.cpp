@@ -955,4 +955,152 @@ HWTEST_F(DataShareServiceImplTest, SubscribeTimeChanged001, TestSize.Level1)
     EXPECT_NE(dataShareServiceImpl.timerReceiver_, nullptr);
     ZLOGI("DataShareServiceImplTest SubscribeTimeChanged001 end");
 }
+
+/**
+* @tc.name: VerifyColumns001
+* @tc.desc: Verify DataShareServiceImpl::VerifyColumns rejects SQL injection columns before query
+* @tc.type: FUNC
+* @tc.require:SQL
+*/
+HWTEST_F(DataShareServiceImplTest, VerifyColumns001, TestSize.Level1)
+{
+    ZLOGI("DataShareServiceImplTest VerifyColumns001 start");
+    DataShareServiceImpl dataShareServiceImpl;
+    uint32_t tokenId = 0;
+    std::string uri = "test";
+    DataProviderConfig providerConfig(uri, tokenId);
+    std::string func = "func";
+
+    // comment injection closing the rest of the generated select sql
+    std::vector<std::string> columns = { "* FROM sqlite_master --" };
+    auto result = dataShareServiceImpl.VerifyColumns(columns, tokenId, providerConfig.providerInfo_, func);
+    EXPECT_FALSE(result);
+
+    // line comment and block comment suffix
+    columns = { "name --" };
+    result = dataShareServiceImpl.VerifyColumns(columns, tokenId, providerConfig.providerInfo_, func);
+    EXPECT_FALSE(result);
+    columns = { "name/*x*/" };
+    result = dataShareServiceImpl.VerifyColumns(columns, tokenId, providerConfig.providerInfo_, func);
+    EXPECT_FALSE(result);
+
+    // subquery exfiltration
+    columns = { "(SELECT group_concat(name) FROM sqlite_master) AS leak" };
+    result = dataShareServiceImpl.VerifyColumns(columns, tokenId, providerConfig.providerInfo_, func);
+    EXPECT_FALSE(result);
+
+    // stacked statement
+    columns = { "name; DROP TABLE t" };
+    result = dataShareServiceImpl.VerifyColumns(columns, tokenId, providerConfig.providerInfo_, func);
+    EXPECT_FALSE(result);
+
+    // union and lower case keywords
+    columns = { "name UNION SELECT 1" };
+    result = dataShareServiceImpl.VerifyColumns(columns, tokenId, providerConfig.providerInfo_, func);
+    EXPECT_FALSE(result);
+    columns = { "name union select 1" };
+    result = dataShareServiceImpl.VerifyColumns(columns, tokenId, providerConfig.providerInfo_, func);
+    EXPECT_FALSE(result);
+
+    // quote breakout with trailing comment
+    columns = { "\"name\" -- " };
+    result = dataShareServiceImpl.VerifyColumns(columns, tokenId, providerConfig.providerInfo_, func);
+    EXPECT_FALSE(result);
+
+    // one malicious column among normal columns
+    columns = { "name", "age", "* FROM t --" };
+    result = dataShareServiceImpl.VerifyColumns(columns, tokenId, providerConfig.providerInfo_, func);
+    EXPECT_FALSE(result);
+    ZLOGI("DataShareServiceImplTest VerifyColumns001 end");
+}
+
+/**
+* @tc.name: VerifyColumns002
+* @tc.desc: Verify DataShareServiceImpl::VerifyColumns rejects hardening bypass columns
+* @tc.type: FUNC
+* @tc.require:SQL
+*/
+HWTEST_F(DataShareServiceImplTest, VerifyColumns002, TestSize.Level1)
+{
+    ZLOGI("DataShareServiceImplTest VerifyColumns002 start");
+    DataShareServiceImpl dataShareServiceImpl;
+    uint32_t tokenId = 0;
+    std::string uri = "test";
+    DataProviderConfig providerConfig(uri, tokenId);
+    std::string func = "func";
+
+    // empty string column is rejected, the sql builder would join neighbors without separator
+    std::vector<std::string> columns = { "", "name" };
+    auto result = dataShareServiceImpl.VerifyColumns(columns, tokenId, providerConfig.providerInfo_, func);
+    EXPECT_FALSE(result);
+    columns = { "name", "" };
+    result = dataShareServiceImpl.VerifyColumns(columns, tokenId, providerConfig.providerInfo_, func);
+    EXPECT_FALSE(result);
+
+    // keywords split by empty string columns reassemble in the final sql
+    columns = { "(SEL", "", "ECT group_concat(name) FR", "", "OM sqlite_master) AS leak" };
+    result = dataShareServiceImpl.VerifyColumns(columns, tokenId, providerConfig.providerInfo_, func);
+    EXPECT_FALSE(result);
+
+    // remindTimer internal scheduler function invoked by query columns
+    columns = { "remindTimer('/data/service/el1/0/db', 123, 'datashare://com.acts.ohos.data.datasharetest/"
+                "test/table', 1, 'com.acts.ohos.data.datasharetest', 100, 'testStore', 0, '/path', 1730000000000)" };
+    result = dataShareServiceImpl.VerifyColumns(columns, tokenId, providerConfig.providerInfo_, func);
+    EXPECT_FALSE(result);
+    // case insensitive function name
+    columns = { "name, REMINDTIMER('/data', 123, 'uri', 1, 'bundle', 0, 'store', 0, '', 1)" };
+    result = dataShareServiceImpl.VerifyColumns(columns, tokenId, providerConfig.providerInfo_, func);
+    EXPECT_FALSE(result);
+    ZLOGI("DataShareServiceImplTest VerifyColumns002 end");
+}
+
+/**
+* @tc.name: VerifyColumns003
+* @tc.desc: Verify DataShareServiceImpl::VerifyColumns accepts legitimate query columns
+* @tc.type: FUNC
+* @tc.require:SQL
+*/
+HWTEST_F(DataShareServiceImplTest, VerifyColumns003, TestSize.Level1)
+{
+    ZLOGI("DataShareServiceImplTest VerifyColumns003 start");
+    DataShareServiceImpl dataShareServiceImpl;
+    uint32_t tokenId = 0;
+    std::string uri = "test";
+    DataProviderConfig providerConfig(uri, tokenId);
+    std::string func = "func";
+
+    // empty column list means select all
+    std::vector<std::string> columns = {};
+    auto result = dataShareServiceImpl.VerifyColumns(columns, tokenId, providerConfig.providerInfo_, func);
+    EXPECT_TRUE(result);
+
+    // plain column names with leading and trailing spaces
+    columns = { "name", "age_", "col2", "  name  " };
+    result = dataShareServiceImpl.VerifyColumns(columns, tokenId, providerConfig.providerInfo_, func);
+    EXPECT_TRUE(result);
+
+    // tableName.columnName, storeName.tableName.columnName and quoted column names
+    columns = { "t1.name", "store1.t1.name", "\"name\"", "[name]", "(age)" };
+    result = dataShareServiceImpl.VerifyColumns(columns, tokenId, providerConfig.providerInfo_, func);
+    EXPECT_TRUE(result);
+
+    // $.columnName for kv store
+    columns = { "$.field" };
+    result = dataShareServiceImpl.VerifyColumns(columns, tokenId, providerConfig.providerInfo_, func);
+    EXPECT_TRUE(result);
+
+    // star and aggregate select-list expressions
+    columns = { "*" };
+    result = dataShareServiceImpl.VerifyColumns(columns, tokenId, providerConfig.providerInfo_, func);
+    EXPECT_TRUE(result);
+    columns = { "COUNT(1)", "count(*)", "COUNT(id) AS total", "SUM(age)" };
+    result = dataShareServiceImpl.VerifyColumns(columns, tokenId, providerConfig.providerInfo_, func);
+    EXPECT_TRUE(result);
+
+    // keyword-like column names are not matched by word boundary
+    columns = { "update_time", "selection", "a b", "a-b" };
+    result = dataShareServiceImpl.VerifyColumns(columns, tokenId, providerConfig.providerInfo_, func);
+    EXPECT_TRUE(result);
+    ZLOGI("DataShareServiceImplTest VerifyColumns003 end");
+}
 } // namespace OHOS::Test
