@@ -854,7 +854,7 @@ Status KVDBServiceImpl::AfterCreate(
         SaveSecretKeyMeta(metaData, password);
     }
     if (status == SUCCESS && options.dumpStackOnFileDeletion) {
-        SetDumpStackTags(metaData);
+        SetDumpStackTags(metaData, options);
     }
     ZLOGI("appId:%{public}s storeId:%{public}s instanceId:%{public}d type:%{public}d dir:%{public}s "
         "isCreated:%{public}d dataType:%{public}d", appId.appId.c_str(), Anonymous::Change(storeId.storeId).c_str(),

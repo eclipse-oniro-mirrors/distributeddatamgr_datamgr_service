@@ -3062,7 +3062,7 @@ HWTEST_F(KvdbServiceImplTest, DumpStack_SetDumpStackTags_DefaultDir_001, TestSiz
     plan.taggedName = "gen_natural_store.db";
     IoctlHookGuard guard(MakeIoctlHandler(plan));
 
-    kvdbServiceImpl_->SetDumpStackTags(meta);
+    kvdbServiceImpl_->SetDumpStackTags(meta, {});
 
     EXPECT_EQ(plan.getCalls, 2);
     EXPECT_EQ(plan.setCalls, 1);
@@ -3102,7 +3102,7 @@ HWTEST_F(KvdbServiceImplTest, DumpStack_SetDumpStackTags_SetFail_001, TestSize.L
     plan.failSetName = "gen_natural_store.db";
     IoctlHookGuard guard(MakeIoctlHandler(plan));
 
-    kvdbServiceImpl_->SetDumpStackTags(meta);
+    kvdbServiceImpl_->SetDumpStackTags(meta, {});
 
     EXPECT_EQ(plan.getCalls, 2);
     EXPECT_EQ(plan.setCalls, 2);
@@ -3114,7 +3114,7 @@ HWTEST_F(KvdbServiceImplTest, DumpStack_SetDumpStackTags_SetFail_001, TestSize.L
 
 /**
  * @tc.name: DumpStack_SetDumpStackTags_CustomDir_001
- * @tc.desc: AC-1.2 - A custom dir store is tagged under the dataDir resolved by AddOptions
+ * @tc.desc: AC-1.2 - A custom dir store is tagged under options.baseDir/kvdb
  * @tc.type: FUNC
  * @tc.author: agent
  */
@@ -3122,9 +3122,10 @@ HWTEST_F(KvdbServiceImplTest, DumpStack_SetDumpStackTags_CustomDir_001, TestSize
 {
     std::string storeIdStr = "dumpStackTagCustom";
     std::string root = std::string(create.baseDir) + "/dump_stack_ut_custom";
+    std::string dataDir = root + "/kvdb";
     ASSERT_TRUE(MakeDir(root));
-    ASSERT_TRUE(CreateDbLayout(root, storeIdStr));
-    std::string base = GetDbBase(root, storeIdStr);
+    ASSERT_TRUE(CreateDbLayout(dataDir, storeIdStr));
+    std::string base = GetDbBase(dataDir, storeIdStr);
     ASSERT_FALSE(base.empty());
     ASSERT_TRUE(MakeFile(base + "meta/meta.db"));
 
@@ -3136,34 +3137,36 @@ HWTEST_F(KvdbServiceImplTest, DumpStack_SetDumpStackTags_CustomDir_001, TestSize
     meta.storeId = storeIdStr;
     meta.dataDir = root;
     meta.storeType = static_cast<int32_t>(OHOS::DistributedKv::SINGLE_VERSION);
+    Options options;
+    options.isCustomDir = true;
+    options.baseDir = root;
     IoctlPlan plan;
     IoctlHookGuard guard(MakeIoctlHandler(plan));
 
-    kvdbServiceImpl_->SetDumpStackTags(meta);
+    kvdbServiceImpl_->SetDumpStackTags(meta, options);
 
     EXPECT_EQ(plan.getCalls, 1);
     EXPECT_EQ(plan.setCalls, 1);
 
     BAccessTokenKit::accessTokenkit = accTokenMock;
-    RemoveDbLayout(root, storeIdStr);
+    RemoveDbLayout(dataDir, storeIdStr);
     (void)rmdir(root.c_str());
 }
 
 /**
- * @tc.name: DumpStack_SetDumpStackTags_CustomDirWhitelist_001
- * @tc.desc: AC-1.2 - An auto-sync whitelisted HAP custom dir store is tagged under customDir
+ * @tc.name: DumpStack_SetDumpStackTags_CustomDirSyncMeta_001
+ * @tc.desc: AC-1.2 - A HAP custom dir store is tagged under options.baseDir/kvdb instead of meta.customDir
  * @tc.type: FUNC
  * @tc.author: agent
  */
-HWTEST_F(KvdbServiceImplTest, DumpStack_SetDumpStackTags_CustomDirWhitelist_001, TestSize.Level0)
+HWTEST_F(KvdbServiceImplTest, DumpStack_SetDumpStackTags_CustomDirSyncMeta_001, TestSize.Level0)
 {
-    std::string storeIdStr = "dumpStackTagCustomWhitelist";
-    std::string root = std::string(create.baseDir) + "/dump_stack_ut_custom_whitelist";
-    std::string customDir = root + "/custom/kvdb";
+    std::string storeIdStr = "dumpStackTagCustomSyncMeta";
+    std::string root = std::string(create.baseDir) + "/dump_stack_ut_custom_sync_meta";
+    std::string dataDir = root + "/kvdb";
     ASSERT_TRUE(MakeDir(root));
-    ASSERT_TRUE(MakeDir(root + "/custom"));
-    ASSERT_TRUE(CreateDbLayout(customDir, storeIdStr));
-    std::string base = GetDbBase(customDir, storeIdStr);
+    ASSERT_TRUE(CreateDbLayout(dataDir, storeIdStr));
+    std::string base = GetDbBase(dataDir, storeIdStr);
     ASSERT_FALSE(base.empty());
     ASSERT_TRUE(MakeFile(base + "meta/meta.db"));
 
@@ -3177,20 +3180,22 @@ HWTEST_F(KvdbServiceImplTest, DumpStack_SetDumpStackTags_CustomDirWhitelist_001,
     StoreMetaData meta;
     meta.storeId = storeIdStr;
     meta.dataDir = root;
-    meta.customDir = customDir;
+    meta.customDir = root + "/sync/kvdb";
     meta.storeType = static_cast<int32_t>(OHOS::DistributedKv::SINGLE_VERSION);
+    Options options;
+    options.isCustomDir = true;
+    options.baseDir = root;
     IoctlPlan plan;
     IoctlHookGuard guard(MakeIoctlHandler(plan));
 
-    kvdbServiceImpl_->SetDumpStackTags(meta);
+    kvdbServiceImpl_->SetDumpStackTags(meta, options);
 
     EXPECT_EQ(plan.getCalls, 1);
     EXPECT_EQ(plan.setCalls, 1);
 
     BAccessTokenKit::accessTokenkit = accTokenMock;
     BTokenIdKit::tokenkIdKit = nullptr;
-    RemoveDbLayout(customDir, storeIdStr);
-    (void)rmdir((root + "/custom").c_str());
+    RemoveDbLayout(dataDir, storeIdStr);
     (void)rmdir(root.c_str());
 }
 
@@ -3213,7 +3218,7 @@ HWTEST_F(KvdbServiceImplTest, DumpStack_SetDumpStackTags_InvalidStoreId_001, Tes
     IoctlPlan plan;
     IoctlHookGuard guard(MakeIoctlHandler(plan));
 
-    kvdbServiceImpl_->SetDumpStackTags(meta);
+    kvdbServiceImpl_->SetDumpStackTags(meta, {});
 
     EXPECT_EQ(plan.getCalls, 0);
     EXPECT_EQ(plan.setCalls, 0);

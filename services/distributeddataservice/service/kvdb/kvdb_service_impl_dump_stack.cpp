@@ -39,13 +39,13 @@ constexpr const char *KV_META_DB = "meta/meta.db";
 constexpr const char *KV_WAL_SUFFIX = "-wal";
 constexpr const char *KV_SHM_SUFFIX = "-shm";
 
-std::string GetDbRoot(const StoreMetaData &metaData)
+std::string GetDbRoot(const StoreMetaData &metaData, const Options &options)
 {
-    return metaData.customDir.empty() ? metaData.dataDir : metaData.customDir;
+    return options.isCustomDir ? options.baseDir + "/kvdb" : metaData.dataDir;
 }
 } // namespace
 
-void KVDBServiceImpl::SetDumpStackTags(const StoreMetaData &metaData)
+void KVDBServiceImpl::SetDumpStackTags(const StoreMetaData &metaData, const Options &options)
 {
     if (AccessTokenKit::GetTokenTypeFlag(IPCSkeleton::GetCallingTokenID()) != TOKEN_NATIVE &&
         !TokenIdKit::IsSystemAppByFullTokenID(IPCSkeleton::GetCallingFullTokenID())) {
@@ -56,7 +56,7 @@ void KVDBServiceImpl::SetDumpStackTags(const StoreMetaData &metaData)
     if (DBManager::GetDatabaseDir(metaData.storeId, storeDir) != DBStatus::OK) {
         return;
     }
-    std::string base = GetDbRoot(metaData) + "/" + storeDir + KV_DB_SUB_DIR;
+    std::string base = GetDbRoot(metaData, options) + "/" + storeDir + KV_DB_SUB_DIR;
     const std::vector<std::string> files = { base + KV_MAIN_DB, base + KV_MAIN_DB + KV_WAL_SUFFIX,
         base + KV_MAIN_DB + KV_SHM_SUFFIX, base + KV_META_DB, base + KV_META_DB + KV_WAL_SUFFIX,
         base + KV_META_DB + KV_SHM_SUFFIX };
