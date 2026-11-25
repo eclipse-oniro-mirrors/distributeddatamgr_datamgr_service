@@ -20,15 +20,15 @@
 #include "common_event_support.h"
 #include "log_print.h"
 #include "proxy_data_manager.h"
+#include "user_id_cache.h"
 
 namespace OHOS::DataShare {
 SysEventSubscriber::SysEventSubscriber(const EventFwk::CommonEventSubscribeInfo& info,
     std::shared_ptr<ExecutorPool> executors): CommonEventSubscriber(info), executors_(executors)
 {
-    callbacks_ = {
-        { EventFwk::CommonEventSupport::COMMON_EVENT_BUNDLE_SCAN_FINISHED,
-            &SysEventSubscriber::OnBMSReady }
-        };
+    callbacks_ = { { EventFwk::CommonEventSupport::COMMON_EVENT_BUNDLE_SCAN_FINISHED, &SysEventSubscriber::OnBMSReady },
+        { EventFwk::CommonEventSupport::COMMON_EVENT_USER_ADDED, &SysEventSubscriber::OnUserAdded },
+        { EventFwk::CommonEventSupport::COMMON_EVENT_USER_REMOVED, &SysEventSubscriber::OnUserRemoved } };
     installCallbacks_ = {
         { EventFwk::CommonEventSupport::COMMON_EVENT_PACKAGE_ADDED,
             &SysEventSubscriber::OnAppInstall },
@@ -76,6 +76,18 @@ void SysEventSubscriber::OnBMSReady()
     executors->Execute([]() {
         DataShareServiceImpl::UpdateLaunchInfo();
     });
+}
+
+void SysEventSubscriber::OnUserAdded()
+{
+    ZLOGI("user added, refresh user id cache");
+    UserIdCache::GetInstance()->Refresh();
+}
+
+void SysEventSubscriber::OnUserRemoved()
+{
+    ZLOGI("user removed, refresh user id cache");
+    UserIdCache::GetInstance()->Refresh();
 }
 
 void SysEventSubscriber::OnAppInstall(const std::string &bundleName,

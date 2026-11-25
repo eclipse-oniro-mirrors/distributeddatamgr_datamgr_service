@@ -32,6 +32,7 @@ public:
     void UnsubscribeAccountEvent();
     bool QueryUsers(std::vector<int> &users);
     bool QueryForegroundUsers(std::vector<int> &users);
+    bool QueryAllCreatedUsers(std::vector<int> &users);
     bool QueryForegroundUserId(int &foregroundUserId);
     bool IsLoginAccount();
     bool IsLoginAccount(int32_t userId);

@@ -41,6 +41,7 @@ public:
     int32_t GetUserByToken(uint32_t tokenId) const override;
     bool QueryUsers(std::vector<int> &users) override;
     bool QueryForegroundUsers(std::vector<int> &users) override;
+    bool QueryAllCreatedUsers(std::vector<int> &users) override;
     bool IsLoginAccount() override;
     bool IsLoginAccount(int32_t userId) override;
     bool IsVerified(int userId) override;

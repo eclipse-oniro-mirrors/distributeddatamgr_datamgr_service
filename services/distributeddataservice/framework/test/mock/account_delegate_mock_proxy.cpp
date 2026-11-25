@@ -52,6 +52,10 @@ namespace DistributedData {
     {
         return accountDelegate_->QueryForegroundUsers(users);
     }
+    bool AccountDelegateMockProxy::QueryAllCreatedUsers(std::vector<int> &users)
+    {
+        return accountDelegate_->QueryAllCreatedUsers(users);
+    }
     bool AccountDelegateMockProxy::QueryForegroundUserId(int &foregroundUserId)
     {
         return accountDelegate_->QueryForegroundUserId(foregroundUserId);

@@ -125,6 +125,21 @@ bool AccountDelegateNormalImpl::QueryUsers(std::vector<int> &users)
     return AccountSA::OsAccountManager::QueryActiveOsAccountIds(users) == 0;
 }
 
+bool AccountDelegateNormalImpl::QueryAllCreatedUsers(std::vector<int> &users)
+{
+    users.clear();
+    std::vector<AccountSA::OsAccountInfo> osAccountInfos;
+    if (AccountSA::OsAccountManager::QueryAllCreatedOsAccounts(osAccountInfos) != 0) {
+        ZLOGE("QueryAllCreatedOsAccounts failed");
+        return false;
+    }
+    users.reserve(osAccountInfos.size());
+    for (auto &osAccountInfo : osAccountInfos) {
+        users.push_back(osAccountInfo.GetLocalId());
+    }
+    return true;
+}
+
 bool AccountDelegateNormalImpl::QueryForegroundUsers(std::vector<int> &users)
 {
     std::vector<AccountSA::ForegroundOsAccount> accounts;

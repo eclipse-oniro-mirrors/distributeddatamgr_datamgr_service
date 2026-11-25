@@ -32,6 +32,7 @@ public:
     MOCK_METHOD(void, UnsubscribeAccountEvent, ());
     MOCK_METHOD(bool, QueryUsers, (std::vector<int> &));
     MOCK_METHOD(bool, QueryForegroundUsers, (std::vector<int> &));
+    MOCK_METHOD(bool, QueryAllCreatedUsers, (std::vector<int> &));
     MOCK_METHOD(bool, IsLoginAccount, ());
     MOCK_METHOD(bool, IsLoginAccount, (int32_t));
     MOCK_METHOD(bool, QueryForegroundUserId, (int &));

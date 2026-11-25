@@ -242,6 +242,37 @@ std::map<std::string, std::string> URIUtils::GetQueryParams(const std::string& u
     return params;
 }
 
+bool URIUtils::HasUserIdPlaceholder(const std::string &uri)
+{
+    return uri.find(USER_ID_PLACEHOLDER) != std::string::npos;
+}
+
+std::string URIUtils::ReplaceUserIdPlaceholder(const std::string &uri, int32_t userId)
+{
+    std::string result = uri;
+    std::string userIdStr = std::to_string(userId);
+    size_t pos = 0;
+    while ((pos = result.find(USER_ID_PLACEHOLDER, pos)) != std::string::npos) {
+        result.replace(pos, USER_ID_PLACEHOLDER_LEN, userIdStr);
+        pos += userIdStr.length();
+    }
+    return result;
+}
+
+bool URIUtils::MatchProxyUri(
+    const std::string &proxyUri, const std::string &formatUri, const std::vector<int32_t> &userIds)
+{
+    if (!HasUserIdPlaceholder(proxyUri)) {
+        return proxyUri == formatUri;
+    }
+    for (int32_t userId : userIds) {
+        if (ReplaceUserIdPlaceholder(proxyUri, userId) == formatUri) {
+            return true;
+        }
+    }
+    return false;
+}
+
 std::string StringUtils::GeneralAnonymous(const std::string &name)
 {
     // To short to be partial anonymized
