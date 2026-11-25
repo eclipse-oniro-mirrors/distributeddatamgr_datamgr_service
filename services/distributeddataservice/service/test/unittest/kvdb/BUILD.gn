@@ -213,6 +213,7 @@ ohos_unittest("KvdbServiceImplTest") {
     "${data_service_path}/app/src/kvstore_meta_manager.cpp",
     "${data_service_path}/framework/test/mock/account_delegate_mock.cpp",
     "kvdb_service_impl_test.cpp",
+    "kvdb_service_impl_dump_stack_test.cpp",
     "kvdb_observer_cache_test.cpp",
     "kvdb_service_stub_unittest.cpp",
     "kvdb_service_test.cpp",
