@@ -126,7 +126,10 @@ if (datamgr_service_udmf && defined(global_parts_info) &&
   }
 }
 
-if (current_cpu == "arm64" || current_cpu == "x64") {
+# "x86_64" is a valid 64-bit current_cpu (see build/config/ohos/abi.gni) used by
+# x86_64 emulator targets. It was previously missing here, which made the service
+# dlopen /system/lib/... while the 64-bit library is installed in /system/lib64.
+if (current_cpu == "arm64" || current_cpu == "x64" || current_cpu == "x86_64") {
   clone_so_path = "/system/lib64/libdistributeddata_clone.z.so"
 } else {
   clone_so_path = "/system/lib/libdistributeddata_clone.z.so"
