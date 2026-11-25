@@ -14,4 +14,4 @@
  */
 Fuzz seed corpus: tail bytes drive FuzzedDataProvider, head text is
 never consumed.
-A\A\#!
+A\A\#(
