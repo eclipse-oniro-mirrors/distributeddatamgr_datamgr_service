@@ -134,7 +134,7 @@ private:
 
     void Init();
     void AddOptions(const Options &options, StoreMetaData &metaData);
-    void SetDumpStackTags(const StoreMetaData &metaData, const Options &options);
+    void SetDumpStackTags(const StoreMetaData &metaData, const bool &isCustomDir);
     std::string AssembleCustomDir(StoreMetaData &metaData, const std::string &customDir);
     StoreMetaData GetStoreMetaData(const AppId &appId, const StoreId &storeId, int32_t subUser = 0);
     StoreMetaData LoadStoreMetaData(const AppId &appId, const StoreId &storeId, int32_t subUser = 0);
