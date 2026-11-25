@@ -30,21 +30,25 @@ UserIdCache *UserIdCache::GetInstance()
 
 std::vector<int32_t> UserIdCache::GetUserIds()
 {
-    std::lock_guard<std::mutex> lock(mutex_);
-    if (initialized_) {
-        return userIds_;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (initialized_) {
+            return userIds_;
+        }
+        auto now = std::chrono::steady_clock::now();
+        if (lastAttemptTime_.time_since_epoch().count() != 0 && now - lastAttemptTime_ < MIN_REFRESH_INTERVAL) {
+            return userIds_;
+        }
+        lastAttemptTime_ = now;
     }
-    auto now = std::chrono::steady_clock::now();
-    if (lastAttemptTime_.time_since_epoch().count() != 0 &&
-        now - lastAttemptTime_ < MIN_REFRESH_INTERVAL) {
-        return userIds_;
-    }
-    lastAttemptTime_ = now;
+    // query outside the lock to avoid ipc under lock
     std::vector<int32_t> users;
     if (!QueryAllCreatedUsers(users)) {
         ZLOGE("QueryAllCreatedUsers failed, keep empty cache");
+        std::lock_guard<std::mutex> lock(mutex_);
         return userIds_;
     }
+    std::lock_guard<std::mutex> lock(mutex_);
     userIds_ = std::move(users);
     initialized_ = true;
     return userIds_;
@@ -52,19 +56,29 @@ std::vector<int32_t> UserIdCache::GetUserIds()
 
 void UserIdCache::Refresh()
 {
+    // query outside the lock to avoid ipc under lock
+    std::vector<int32_t> users;
+    bool success = QueryAllCreatedUsers(users);
     std::lock_guard<std::mutex> lock(mutex_);
-    DoRefresh();
+    lastAttemptTime_ = std::chrono::steady_clock::now();
+    if (!success) {
+        ZLOGW("QueryAllCreatedUsers failed, keep previous cache, size:%{public}zu", userIds_.size());
+        return;
+    }
+    userIds_ = std::move(users);
+    initialized_ = true;
 }
 
 bool UserIdCache::TryRefresh()
 {
-    std::lock_guard<std::mutex> lock(mutex_);
-    auto now = std::chrono::steady_clock::now();
-    if (lastAttemptTime_.time_since_epoch().count() != 0 &&
-        now - lastAttemptTime_ < MIN_REFRESH_INTERVAL) {
-        return false;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        auto now = std::chrono::steady_clock::now();
+        if (lastAttemptTime_.time_since_epoch().count() != 0 && now - lastAttemptTime_ < MIN_REFRESH_INTERVAL) {
+            return false;
+        }
     }
-    DoRefresh();
+    Refresh();
     return true;
 }
 
@@ -74,18 +88,6 @@ void UserIdCache::Reset()
     userIds_.clear();
     initialized_ = false;
     lastAttemptTime_ = std::chrono::steady_clock::time_point {};
-}
-
-void UserIdCache::DoRefresh()
-{
-    lastAttemptTime_ = std::chrono::steady_clock::now();
-    std::vector<int32_t> users;
-    if (!QueryAllCreatedUsers(users)) {
-        ZLOGW("QueryAllCreatedUsers failed, keep previous cache, size:%{public}zu", userIds_.size());
-        return;
-    }
-    userIds_ = std::move(users);
-    initialized_ = true;
 }
 
 bool UserIdCache::QueryAllCreatedUsers(std::vector<int32_t> &users)

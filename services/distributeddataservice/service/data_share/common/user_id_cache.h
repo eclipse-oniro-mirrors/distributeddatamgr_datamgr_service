@@ -40,7 +40,6 @@ private:
     UserIdCache(const UserIdCache &) = delete;
     UserIdCache &operator=(const UserIdCache &) = delete;
     bool QueryAllCreatedUsers(std::vector<int32_t> &users);
-    void DoRefresh();
 
     std::mutex mutex_;
     std::vector<int32_t> userIds_;
