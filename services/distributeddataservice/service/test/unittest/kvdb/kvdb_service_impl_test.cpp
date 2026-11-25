@@ -2878,7 +2878,7 @@ HWTEST_F(KvdbServiceImplTest, DumpStack_AfterCreate_FlagEnabled_Native_ReturnOk,
  * @tc.type: FUNC
  * @tc.author: agent
  */
-HWTEST_F(KvdbServiceImplTest, DumpStack_AfterCreate_FlagDisabled_ReturnOk, TestSize.Level1)
+HWTEST_F(KvdbServiceImplTest, DumpStack_AfterCreate_FlagDisabled_ReturnOk, TestSize.Level0)
 {
     Options opts = create;
     opts.dumpStackOnFileDeletion = false;
