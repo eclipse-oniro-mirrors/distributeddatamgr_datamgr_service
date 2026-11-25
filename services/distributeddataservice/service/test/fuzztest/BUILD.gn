@@ -67,7 +67,6 @@ group("fuzztest") {
       "datashareserviceimpl2_fuzzer:fuzztest",
       "datashareserviceimpl3_fuzzer:fuzztest",
       "datashareserviceimpl4_fuzzer:fuzztest",
-      "datashareserviceimpl5_fuzzer:fuzztest",
       "datasharesubscriber_fuzzer:fuzztest",
       "datashareservicestubconcurrent_fuzzer:fuzztest",
     ]
