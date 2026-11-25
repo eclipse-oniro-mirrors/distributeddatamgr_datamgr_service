@@ -62,6 +62,11 @@ group("fuzztest") {
       "datashareservicestub2_fuzzer:fuzztest",
       "datashareservicestub3_fuzzer:fuzztest",
       "datashareserviceimpl_fuzzer:fuzztest",
+      #Due to timeout risks from excessive fuzz cases, datashareserviceimpl_fuzzer split into
+      #four additional files by feature domain to improve branch coverage.
+      "datashareserviceimpl2_fuzzer:fuzztest",
+      "datashareserviceimpl3_fuzzer:fuzztest",
+      "datashareserviceimpl4_fuzzer:fuzztest",
       "datasharesubscriber_fuzzer:fuzztest",
       "datashareservicestubconcurrent_fuzzer:fuzztest",
     ]
