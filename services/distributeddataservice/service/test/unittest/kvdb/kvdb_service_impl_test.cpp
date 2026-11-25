@@ -2999,6 +2999,78 @@ HWTEST_F(KvdbServiceImplTest, DumpStack_AfterCreate_SystemAppFlagEnabled_ReturnO
 }
 
 /**
+ * @tc.name: DumpStack_AfterCreate_CustomDirWithoutWhitelist_TagAssembledDir
+ * @tc.desc: AC-1.2 - AfterCreate assembles a HAP custom dir without auto-sync whitelist metadata
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(KvdbServiceImplTest, DumpStack_AfterCreate_CustomDirWithoutWhitelist_TagAssembledDir, TestSize.Level0)
+{
+    auto tokenMock = std::make_shared<AccessTokenKitMock>();
+    ON_CALL(*tokenMock, GetTokenTypeFlag(_)).WillByDefault(Return(TOKEN_HAP));
+    HapTokenInfo hapInfo{};
+    hapInfo.instIndex = 0;
+    ON_CALL(*tokenMock, GetHapTokenInfo(_, _)).WillByDefault(DoAll(SetArgReferee<1>(hapInfo), Return(0)));
+    auto tokenIdKitMock = std::make_shared<TokenIdKitMock>();
+    ON_CALL(*tokenIdKitMock, IsSystemAppByFullTokenID(_)).WillByDefault(Return(true));
+    BAccessTokenKit::accessTokenkit = tokenMock;
+    BTokenIdKit::tokenkIdKit = tokenIdKitMock;
+    SyncManager::AutoSyncInfo empty;
+    SyncManager::GetInstance().SetAutoSyncAppInfo(empty);
+
+    Options opts = create;
+    opts.dumpStackOnFileDeletion = true;
+    opts.isCustomDir = true;
+    std::string customLeaf = "dump_stack_ut_after_create_custom";
+    opts.baseDir = std::string(create.baseDir) + "/" + customLeaf;
+
+    StoreMetaData meta;
+    meta.storeId = storeId.storeId;
+    meta.dataDir = opts.baseDir;
+    meta.storeType = static_cast<int32_t>(opts.kvStoreType);
+    meta.securityLevel = opts.securityLevel;
+    meta.area = opts.area;
+    meta.bundleName = appId.appId;
+    meta.appId = appId.appId;
+    meta.appType = "harmony";
+    meta.hapName = opts.hapName;
+    meta.user = TEST_USER;
+    meta.instanceId = hapInfo.instIndex;
+    std::string customDir = kvdbServiceImpl_->AssembleCustomDir(meta, customLeaf);
+    ASSERT_FALSE(customDir.empty());
+    std::vector<std::string> newDirs;
+    for (size_t pos = 0; pos != std::string::npos;) {
+        pos = customDir.find('/', pos + 1);
+        std::string dir = customDir.substr(0, pos);
+        if (dir.empty() || access(dir.c_str(), F_OK) == 0) {
+            continue;
+        }
+        ASSERT_TRUE(MakeDir(dir));
+        newDirs.push_back(dir);
+    }
+    ASSERT_TRUE(CreateDbLayout(customDir, storeId.storeId));
+    std::string base = GetDbBase(customDir, storeId.storeId);
+    ASSERT_FALSE(base.empty());
+    ASSERT_TRUE(MakeFile(base + "meta/meta.db"));
+
+    IoctlPlan plan;
+    IoctlHookGuard guard(MakeIoctlHandler(plan));
+    std::vector<uint8_t> password;
+    auto status = kvdbServiceImpl_->AfterCreate(appId, storeId, opts, password);
+
+    EXPECT_EQ(status, Status::SUCCESS);
+    EXPECT_EQ(plan.getCalls, 1);
+    EXPECT_EQ(plan.setCalls, 1);
+
+    BAccessTokenKit::accessTokenkit = accTokenMock;
+    BTokenIdKit::tokenkIdKit = nullptr;
+    RemoveDbLayout(customDir, storeId.storeId);
+    for (auto it = newDirs.rbegin(); it != newDirs.rend(); ++it) {
+        (void)rmdir(it->c_str());
+    }
+}
+
+/**
  * @tc.name: DumpStack_AfterCreate_UpgradeFailed_SkipTagging
  * @tc.desc: AC-1.1 - A failed store upgrade skips tagging and keeps the upgrade failure code
  * @tc.type: FUNC
@@ -3155,7 +3227,7 @@ HWTEST_F(KvdbServiceImplTest, DumpStack_SetDumpStackTags_CustomDir_001, TestSize
 
 /**
  * @tc.name: DumpStack_SetDumpStackTags_CustomDirSyncMeta_001
- * @tc.desc: AC-1.2 - A HAP custom dir store is tagged under options.baseDir/kvdb instead of meta.customDir
+ * @tc.desc: AC-1.2 - A HAP custom dir store prefers the existing meta.customDir
  * @tc.type: FUNC
  * @tc.author: agent
  */
@@ -3163,10 +3235,11 @@ HWTEST_F(KvdbServiceImplTest, DumpStack_SetDumpStackTags_CustomDirSyncMeta_001, 
 {
     std::string storeIdStr = "dumpStackTagCustomSyncMeta";
     std::string root = std::string(create.baseDir) + "/dump_stack_ut_custom_sync_meta";
-    std::string dataDir = root + "/kvdb";
+    std::string customDir = root + "/sync/kvdb";
     ASSERT_TRUE(MakeDir(root));
-    ASSERT_TRUE(CreateDbLayout(dataDir, storeIdStr));
-    std::string base = GetDbBase(dataDir, storeIdStr);
+    ASSERT_TRUE(MakeDir(root + "/sync"));
+    ASSERT_TRUE(CreateDbLayout(customDir, storeIdStr));
+    std::string base = GetDbBase(customDir, storeIdStr);
     ASSERT_FALSE(base.empty());
     ASSERT_TRUE(MakeFile(base + "meta/meta.db"));
 
@@ -3180,7 +3253,7 @@ HWTEST_F(KvdbServiceImplTest, DumpStack_SetDumpStackTags_CustomDirSyncMeta_001, 
     StoreMetaData meta;
     meta.storeId = storeIdStr;
     meta.dataDir = root;
-    meta.customDir = root + "/sync/kvdb";
+    meta.customDir = customDir;
     meta.storeType = static_cast<int32_t>(OHOS::DistributedKv::SINGLE_VERSION);
     Options options;
     options.isCustomDir = true;
@@ -3195,7 +3268,8 @@ HWTEST_F(KvdbServiceImplTest, DumpStack_SetDumpStackTags_CustomDirSyncMeta_001, 
 
     BAccessTokenKit::accessTokenkit = accTokenMock;
     BTokenIdKit::tokenkIdKit = nullptr;
-    RemoveDbLayout(dataDir, storeIdStr);
+    RemoveDbLayout(customDir, storeIdStr);
+    (void)rmdir((root + "/sync").c_str());
     (void)rmdir(root.c_str());
 }
 

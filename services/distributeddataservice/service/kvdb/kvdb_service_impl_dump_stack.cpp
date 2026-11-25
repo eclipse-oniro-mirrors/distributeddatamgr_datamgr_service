@@ -41,7 +41,10 @@ constexpr const char *KV_SHM_SUFFIX = "-shm";
 
 std::string GetDbRoot(const StoreMetaData &metaData, const Options &options)
 {
-    return options.isCustomDir ? options.baseDir + "/kvdb" : metaData.dataDir;
+    if (!options.isCustomDir) {
+        return metaData.dataDir;
+    }
+    return metaData.customDir.empty() ? options.baseDir + "/kvdb" : metaData.customDir;
 }
 } // namespace
 
@@ -56,7 +59,17 @@ void KVDBServiceImpl::SetDumpStackTags(const StoreMetaData &metaData, const Opti
     if (DBManager::GetDatabaseDir(metaData.storeId, storeDir) != DBStatus::OK) {
         return;
     }
-    std::string base = GetDbRoot(metaData, options) + "/" + storeDir + KV_DB_SUB_DIR;
+    StoreMetaData dumpMetaData = metaData;
+    if (options.isCustomDir && dumpMetaData.customDir.empty() &&
+        AccessTokenKit::GetTokenTypeFlag(dumpMetaData.tokenId) == TOKEN_HAP) {
+        size_t pos = options.baseDir.find_last_of('/');
+        std::string customDir;
+        if (pos != std::string::npos && pos < options.baseDir.size() - 1) {
+            customDir = options.baseDir.substr(pos + 1);
+        }
+        dumpMetaData.customDir = AssembleCustomDir(dumpMetaData, customDir);
+    }
+    std::string base = GetDbRoot(dumpMetaData, options) + "/" + storeDir + KV_DB_SUB_DIR;
     const std::vector<std::string> files = { base + KV_MAIN_DB, base + KV_MAIN_DB + KV_WAL_SUFFIX,
         base + KV_MAIN_DB + KV_SHM_SUFFIX, base + KV_META_DB, base + KV_META_DB + KV_WAL_SUFFIX,
         base + KV_META_DB + KV_SHM_SUFFIX };
