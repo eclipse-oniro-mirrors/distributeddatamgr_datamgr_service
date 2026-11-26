@@ -388,7 +388,8 @@ int32_t UdmfFuseController::Start(int fuseFd)
     if (fuseFd < 0) {
         return -EBADF;
     }
-    int wakeFd = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
+    constexpr uint32_t wakeFlags = static_cast<uint32_t>(EFD_CLOEXEC) | static_cast<uint32_t>(EFD_NONBLOCK);
+    int wakeFd = eventfd(0, static_cast<int>(wakeFlags));
     if (wakeFd < 0) {
         (void)close(fuseFd);
         return -errno;
@@ -632,17 +633,20 @@ bool UdmfFuseController::IsUidAllowed(uid_t callingUid, const Node &node) const
 
 int32_t UdmfFuseController::CheckAccess(uid_t callingUid, const Node &node, int mask) const
 {
-    constexpr int validMask = R_OK | W_OK | X_OK;
-    if ((mask & ~validMask) != 0) {
+    constexpr uint32_t validMask =
+        static_cast<uint32_t>(R_OK) | static_cast<uint32_t>(W_OK) | static_cast<uint32_t>(X_OK);
+    uint32_t accessMask = static_cast<uint32_t>(mask);
+    if ((accessMask & ~validMask) != 0) {
         return -EINVAL;
     }
     if (!IsUidAllowed(callingUid, node)) {
         return -EACCES;
     }
-    if ((mask & W_OK) != 0) {
+    if ((accessMask & static_cast<uint32_t>(W_OK)) != 0) {
         return -EROFS;
     }
-    if ((mask & X_OK) != 0 && node.entry.type != VirtualEntryType::DIRECTORY && !node.synthetic) {
+    if ((accessMask & static_cast<uint32_t>(X_OK)) != 0 &&
+        node.entry.type != VirtualEntryType::DIRECTORY && !node.synthetic) {
         return -EACCES;
     }
     return 0;
@@ -731,14 +735,15 @@ bool UdmfFuseController::FillAttr(const Node &node, struct stat &attr) const
     if (node.entry.type == VirtualEntryType::DIRECTORY || node.synthetic) {
         // The shared FUSE root must be searchable before low-level lookup can
         // filter aliases by target UID. Per-session directories stay private.
-        attr.st_mode = S_IFDIR | (node.inode == FUSE_ROOT_ID ? ROOT_DIRECTORY_MODE : SESSION_DIRECTORY_MODE);
+        attr.st_mode = static_cast<mode_t>(S_IFDIR) |
+            (node.inode == FUSE_ROOT_ID ? ROOT_DIRECTORY_MODE : SESSION_DIRECTORY_MODE);
         attr.st_nlink = DIRECTORY_LINK_COUNT;
         return true;
     }
     if (node.entry.size < 0) {
         return false;
     }
-    attr.st_mode = S_IFREG | VIRTUAL_FILE_MODE;
+    attr.st_mode = static_cast<mode_t>(S_IFREG) | VIRTUAL_FILE_MODE;
     attr.st_nlink = FILE_LINK_COUNT;
     attr.st_size = node.entry.size;
     attr.st_blksize = PROVIDER_BLOCK_BYTES;
@@ -760,7 +765,7 @@ void UdmfFuseController::Init(void *userdata, struct fuse_conn_info *connection)
         controller->loopState_ = LoopState::INITIALIZED;
     }
     controller->loopCondition_.notify_all();
-    bool readdirPlus = (connection->want & FUSE_CAP_READDIRPLUS) != 0;
+    bool readdirPlus = (connection->want & static_cast<uint32_t>(FUSE_CAP_READDIRPLUS)) != 0;
     ZLOGI("UDMF FUSE initialized, userId:%{public}d protocol:%{public}u.%{public}u readdirPlus:%{public}d",
         controller->userId_, connection->proto_major, connection->proto_minor, readdirPlus);
 }
@@ -1014,7 +1019,7 @@ void UdmfFuseController::Open(fuse_req_t req, fuse_ino_t inode, struct fuse_file
         fuse_reply_err(req, EISDIR);
         return;
     }
-    if ((fileInfo->flags & O_ACCMODE) != O_RDONLY) {
+    if ((static_cast<uint32_t>(fileInfo->flags) & static_cast<uint32_t>(O_ACCMODE)) != O_RDONLY) {
         fuse_reply_err(req, EROFS);
         return;
     }
@@ -1502,11 +1507,15 @@ ssize_t UdmfFuseController::ReadFuseFd(int fd, void *buf, size_t len, void *user
             ZLOGE("Poll FUSE fd failed, userId:%{public}d errno:%{public}d", controller->userId_, errno);
             return -1;
         }
-        if (wakeFd >= 0 && (pollFds[1].revents & POLLIN) != 0) {
+        uint32_t wakeEvents = static_cast<uint32_t>(pollFds[1].revents);
+        if (wakeFd >= 0 && (wakeEvents & static_cast<uint32_t>(POLLIN)) != 0) {
             errno = EINTR;
             return -1;
         }
-        if ((pollFds[0].revents & (POLLERR | POLLHUP | POLLNVAL)) != 0 && (pollFds[0].revents & POLLIN) == 0) {
+        uint32_t fuseEvents = static_cast<uint32_t>(pollFds[0].revents);
+        constexpr uint32_t errorEvents =
+            static_cast<uint32_t>(POLLERR) | static_cast<uint32_t>(POLLHUP) | static_cast<uint32_t>(POLLNVAL);
+        if ((fuseEvents & errorEvents) != 0 && (fuseEvents & static_cast<uint32_t>(POLLIN)) == 0) {
             ZLOGE("Invalid FUSE fd event, userId:%{public}d revents:%{public}d", controller->userId_,
                 pollFds[0].revents);
             errno = EIO;

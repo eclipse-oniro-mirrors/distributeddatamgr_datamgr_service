@@ -366,8 +366,10 @@ void AuditHelper::ReportDragAuditEvent(const UnifiedData &unifiedData, int32_t u
         root["happenTime"] = milliseconds.count();
 
         std::string auditData = root.dump();
-        while (auditData.size() > MAX_DATA_SIZE && root["content"]["entries"].size() > 0) {
-            root["content"]["entries"].erase(root["content"]["entries"].size() - 1);
+        auto &content = root["content"];
+        auto entriesIt = content.find("entries");
+        while (auditData.size() > MAX_DATA_SIZE && entriesIt != content.end() && !entriesIt->empty()) {
+            entriesIt->erase(entriesIt->size() - 1);
             auditData = root.dump();
         }
 
