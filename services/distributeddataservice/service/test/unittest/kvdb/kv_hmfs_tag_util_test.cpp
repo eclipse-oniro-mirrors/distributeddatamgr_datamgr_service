@@ -76,7 +76,7 @@ IoctlHandler MakeIoctlHandler(std::shared_ptr<IoctlPlan> plan)
                 return plan->getRet;
             }
             if (args != nullptr) {
-                bool tagged = !plan->taggedName.empty() && name.find(plan->taggedName) != std::string::npos;
+                bool tagged = !plan->taggedName.empty() && name == plan->taggedName;
                 args->flags = tagged ? 1u : plan->getFlags;
             }
             return 0;
