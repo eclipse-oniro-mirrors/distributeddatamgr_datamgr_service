@@ -369,7 +369,7 @@ void KvdbServiceImplDumpStackTest::TearDown(void)
 
 /**
  * @tc.name: DumpStack_AfterCreate_FlagEnabled_Native_ReturnOk
- * @tc.desc: AC-1.1 - AfterCreate with dumpStackOnFileDeletion keeps the legacy return code for a SA caller
+ * @tc.desc: AC-1.1 - AfterCreate with dumpStackOnFileDeletion keeps the legacy return code and tags the default dir
  * @tc.type: FUNC
  * @tc.author: agent
  */
@@ -379,13 +379,27 @@ HWTEST_F(KvdbServiceImplDumpStackTest, DumpStack_AfterCreate_FlagEnabled_Native_
     ON_CALL(*tokenMock, GetTokenTypeFlag(_)).WillByDefault(Return(TOKEN_NATIVE));
     BAccessTokenKit::accessTokenkit = tokenMock;
 
+    StoreMetaData dirMeta;
+    dirMeta.bundleName = appId.appId;
+    std::string dataDir = DirectoryManager::GetInstance().GetStorePath(dirMeta);
+    ASSERT_FALSE(dataDir.empty());
+    ASSERT_TRUE(CreateDbLayout(dataDir, storeId.storeId));
+    std::string base = GetDbBase(dataDir, storeId.storeId);
+    ASSERT_FALSE(base.empty());
+    ASSERT_TRUE(MakeFile(base + "meta/meta.db"));
+
     Options opts = create;
     opts.dumpStackOnFileDeletion = true;
+    auto plan = std::make_shared<IoctlPlan>();
+    IoctlHookGuard guard(MakeIoctlHandler(plan));
     std::vector<uint8_t> password;
     auto status = kvdbServiceImpl_->AfterCreate(appId, storeId, opts, password);
 
     EXPECT_EQ(status, Status::SUCCESS);
+    EXPECT_EQ(plan->getCalls, 1);
+    EXPECT_EQ(plan->setCalls, 1);
     BAccessTokenKit::accessTokenkit = accTokenMock;
+    RemoveDbLayout(dataDir, storeId.storeId);
 }
 
 /**
@@ -559,6 +573,15 @@ HWTEST_F(KvdbServiceImplDumpStackTest, DumpStack_AfterCreate_UpgradeFailed_SkipT
             testing::Return(true)))
         .WillRepeatedly(testing::Return(true));
 
+    StoreMetaData dirMeta;
+    dirMeta.bundleName = appId.appId;
+    std::string dataDir = DirectoryManager::GetInstance().GetStorePath(dirMeta);
+    ASSERT_FALSE(dataDir.empty());
+    ASSERT_TRUE(CreateDbLayout(dataDir, storeId.storeId));
+    std::string base = GetDbBase(dataDir, storeId.storeId);
+    ASSERT_FALSE(base.empty());
+    ASSERT_TRUE(MakeFile(base + "meta/meta.db"));
+
     auto plan = std::make_shared<IoctlPlan>();
     IoctlHookGuard guard(MakeIoctlHandler(plan));
 
@@ -571,6 +594,7 @@ HWTEST_F(KvdbServiceImplDumpStackTest, DumpStack_AfterCreate_UpgradeFailed_SkipT
     EXPECT_EQ(plan->getCalls, 0);
     EXPECT_EQ(plan->setCalls, 0);
     BAccessTokenKit::accessTokenkit = accTokenMock;
+    RemoveDbLayout(dataDir, storeId.storeId);
 }
 
 /**
@@ -892,6 +916,7 @@ HWTEST_F(KvdbServiceImplDumpStackTest, DumpStack_SetDumpStackTags_InvalidStoreId
     meta.storeId = "bad/store";
     meta.dataDir = std::string(create.baseDir) + "/dump_stack_ut_invalid";
     meta.storeType = static_cast<int32_t>(OHOS::DistributedKv::SINGLE_VERSION);
+    ASSERT_TRUE(GetDbStoreDir(meta.storeId).empty());
     auto plan = std::make_shared<IoctlPlan>();
     IoctlHookGuard guard(MakeIoctlHandler(plan));
 
@@ -900,6 +925,173 @@ HWTEST_F(KvdbServiceImplDumpStackTest, DumpStack_SetDumpStackTags_InvalidStoreId
     EXPECT_EQ(plan->getCalls, 0);
     EXPECT_EQ(plan->setCalls, 0);
     BAccessTokenKit::accessTokenkit = accTokenMock;
+}
+
+/**
+ * @tc.name: DumpStack_SetDumpStackTags_EmptyDataDirResolved_001
+ * @tc.desc: AC-1.1 - A non-custom store with an empty dataDir resolves the DirectoryManager path and tags files
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(KvdbServiceImplDumpStackTest, DumpStack_SetDumpStackTags_EmptyDataDirResolved_001, TestSize.Level0)
+{
+    std::string storeIdStr = "dumpStackTagEmptyDataDir";
+    StoreMetaData meta;
+    meta.storeId = storeIdStr;
+    meta.bundleName = appId.appId;
+    meta.storeType = static_cast<int32_t>(OHOS::DistributedKv::SINGLE_VERSION);
+    std::string dataDir = DirectoryManager::GetInstance().GetStorePath(meta);
+    ASSERT_FALSE(dataDir.empty());
+    std::vector<std::string> newDirs;
+    ASSERT_TRUE(MakeDirs(dataDir, newDirs));
+    ASSERT_TRUE(CreateDbLayout(dataDir, storeIdStr));
+    std::string base = GetDbBase(dataDir, storeIdStr);
+    ASSERT_FALSE(base.empty());
+    ASSERT_TRUE(MakeFile(base + "meta/meta.db"));
+
+    auto tokenMock = std::make_shared<AccessTokenKitMock>();
+    ON_CALL(*tokenMock, GetTokenTypeFlag(_)).WillByDefault(Return(TOKEN_NATIVE));
+    BAccessTokenKit::accessTokenkit = tokenMock;
+
+    meta.dataDir.clear();
+    auto plan = std::make_shared<IoctlPlan>();
+    IoctlHookGuard guard(MakeIoctlHandler(plan));
+    kvdbServiceImpl_->SetDumpStackTags(meta, false);
+
+    EXPECT_EQ(plan->getCalls, 1);
+    EXPECT_EQ(plan->setCalls, 1);
+    BAccessTokenKit::accessTokenkit = accTokenMock;
+    RemoveDbLayout(dataDir, storeIdStr);
+    RemoveDirs(newDirs);
+}
+
+/**
+ * @tc.name: DumpStack_SetDumpStackTags_CustomDirTokenIdNotHap_001
+ * @tc.desc: AC-1.2 - A HAP caller keeps an empty customDir when the store token is not HAP and tags dataDir
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(KvdbServiceImplDumpStackTest, DumpStack_SetDumpStackTags_CustomDirTokenIdNotHap_001, TestSize.Level0)
+{
+    constexpr uint32_t STORE_TOKEN_ID = 0x5A5A;
+    std::string storeIdStr = "dumpStackTagCustomTokenId";
+    std::string dataDir = std::string(create.baseDir) + "/dump_stack_ut_custom_token_id";
+    ASSERT_TRUE(MakeDir(dataDir));
+    ASSERT_TRUE(CreateDbLayout(dataDir, storeIdStr));
+    std::string base = GetDbBase(dataDir, storeIdStr);
+    ASSERT_FALSE(base.empty());
+    ASSERT_TRUE(MakeFile(base + "meta/meta.db"));
+
+    auto tokenMock = std::make_shared<AccessTokenKitMock>();
+    ON_CALL(*tokenMock, GetTokenTypeFlag(_)).WillByDefault(Return(TOKEN_HAP));
+    ON_CALL(*tokenMock, GetTokenTypeFlag(STORE_TOKEN_ID)).WillByDefault(Return(TOKEN_NATIVE));
+    BAccessTokenKit::accessTokenkit = tokenMock;
+    auto tokenIdKitMock = std::make_shared<TokenIdKitMock>();
+    ON_CALL(*tokenIdKitMock, IsSystemAppByFullTokenID(_)).WillByDefault(Return(true));
+    BTokenIdKit::tokenkIdKit = tokenIdKitMock;
+
+    StoreMetaData meta;
+    meta.storeId = storeIdStr;
+    meta.dataDir = dataDir;
+    meta.tokenId = STORE_TOKEN_ID;
+    meta.storeType = static_cast<int32_t>(OHOS::DistributedKv::SINGLE_VERSION);
+    auto plan = std::make_shared<IoctlPlan>();
+    IoctlHookGuard guard(MakeIoctlHandler(plan));
+    kvdbServiceImpl_->SetDumpStackTags(meta, true);
+
+    EXPECT_EQ(plan->getCalls, 1);
+    EXPECT_EQ(plan->setCalls, 1);
+    BAccessTokenKit::accessTokenkit = accTokenMock;
+    BTokenIdKit::tokenkIdKit = nullptr;
+    RemoveDbLayout(dataDir, storeIdStr);
+}
+
+/**
+ * @tc.name: DumpStack_SetDumpStackTags_CustomDirLeafAssembled_001
+ * @tc.desc: AC-1.2 - A HAP caller without a meta customDir assembles the dataDir leaf and tags the custom dir
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(KvdbServiceImplDumpStackTest, DumpStack_SetDumpStackTags_CustomDirLeafAssembled_001, TestSize.Level0)
+{
+    constexpr const char *CUSTOM_LEAF = "dump_stack_ut_custom_leaf";
+    std::string storeIdStr = "dumpStackTagCustomLeaf";
+    auto tokenMock = std::make_shared<AccessTokenKitMock>();
+    ON_CALL(*tokenMock, GetTokenTypeFlag(_)).WillByDefault(Return(TOKEN_HAP));
+    BAccessTokenKit::accessTokenkit = tokenMock;
+    auto tokenIdKitMock = std::make_shared<TokenIdKitMock>();
+    ON_CALL(*tokenIdKitMock, IsSystemAppByFullTokenID(_)).WillByDefault(Return(true));
+    BTokenIdKit::tokenkIdKit = tokenIdKitMock;
+
+    StoreMetaData meta;
+    meta.storeId = storeIdStr;
+    meta.bundleName = appId.appId;
+    meta.dataDir = std::string(create.baseDir) + "/" + CUSTOM_LEAF;
+    meta.securityLevel = OHOS::DistributedKv::S1;
+    meta.area = OHOS::DistributedKv::EL1;
+    meta.user = TEST_USER;
+    meta.storeType = static_cast<int32_t>(OHOS::DistributedKv::SINGLE_VERSION);
+    std::string customDir = kvdbServiceImpl_->AssembleCustomDir(meta, CUSTOM_LEAF);
+    ASSERT_FALSE(customDir.empty());
+    std::vector<std::string> newDirs;
+    ASSERT_TRUE(MakeDirs(customDir, newDirs));
+    ASSERT_TRUE(CreateDbLayout(customDir, storeIdStr));
+    std::string base = GetDbBase(customDir, storeIdStr);
+    ASSERT_FALSE(base.empty());
+    ASSERT_TRUE(MakeFile(base + "meta/meta.db"));
+
+    auto plan = std::make_shared<IoctlPlan>();
+    IoctlHookGuard guard(MakeIoctlHandler(plan));
+    kvdbServiceImpl_->SetDumpStackTags(meta, true);
+
+    EXPECT_EQ(plan->getCalls, 1);
+    EXPECT_EQ(plan->setCalls, 1);
+    BAccessTokenKit::accessTokenkit = accTokenMock;
+    BTokenIdKit::tokenkIdKit = nullptr;
+    RemoveDbLayout(customDir, storeIdStr);
+    RemoveDirs(newDirs);
+}
+
+/**
+ * @tc.name: DumpStack_SetDumpStackTags_AllFilesTaggedAndSetFail_001
+ * @tc.desc: AC-1.5 - Every db file is inspected, tagged files are skipped and set failures degrade silently
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(KvdbServiceImplDumpStackTest, DumpStack_SetDumpStackTags_AllFilesTaggedAndSetFail_001, TestSize.Level0)
+{
+    constexpr int NUM_DB_FILES = 6;
+    constexpr int NUM_SET_FAILED_FILES = 3;
+    std::string storeIdStr = "dumpStackTagAllFiles";
+    std::string dataDir = std::string(create.baseDir) + "/dump_stack_ut_all_files";
+    ASSERT_TRUE(MakeDir(dataDir));
+    ASSERT_TRUE(CreateDbLayout(dataDir, storeIdStr));
+    std::string base = GetDbBase(dataDir, storeIdStr);
+    ASSERT_FALSE(base.empty());
+    const std::string files[NUM_DB_FILES] = { "main/gen_natural_store.db", "main/gen_natural_store.db-wal",
+        "main/gen_natural_store.db-shm", "meta/meta.db", "meta/meta.db-wal", "meta/meta.db-shm" };
+    for (const auto &file : files) {
+        ASSERT_TRUE(MakeFile(base + file));
+    }
+
+    auto tokenMock = std::make_shared<AccessTokenKitMock>();
+    ON_CALL(*tokenMock, GetTokenTypeFlag(_)).WillByDefault(Return(TOKEN_NATIVE));
+    BAccessTokenKit::accessTokenkit = tokenMock;
+
+    StoreMetaData meta;
+    meta.storeId = storeIdStr;
+    meta.dataDir = dataDir;
+    meta.storeType = static_cast<int32_t>(OHOS::DistributedKv::SINGLE_VERSION);
+    auto plan = std::make_shared<IoctlPlan>();
+    plan->taggedName = "gen_natural_store.db";
+    plan->failSetName = "meta.db";
+    IoctlHookGuard guard(MakeIoctlHandler(plan));
+    kvdbServiceImpl_->SetDumpStackTags(meta, false);
+
+    EXPECT_EQ(plan->getCalls, NUM_DB_FILES);
+    EXPECT_EQ(plan->setCalls, NUM_SET_FAILED_FILES);
+    BAccessTokenKit::accessTokenkit = accTokenMock;
+    RemoveDbLayout(dataDir, storeIdStr);
 }
 
 } // namespace DistributedDataTest
