@@ -112,7 +112,7 @@ private:
         {
             size_t inodeHash = std::hash<fuse_ino_t>{}(key.inode);
             size_t indexHash = std::hash<uint64_t>{}(key.index);
-            return inodeHash ^ (indexHash << 1);
+            return inodeHash ^ (indexHash << 1U);
         }
     };
 
