@@ -81,8 +81,8 @@ public:
 
     static constexpr const char *SA_ID = "SAID=";
     static constexpr const char USER_PARAM[] = "user";
-    static constexpr const char *USER_ID_PLACEHOLDER = "{USERID}";
-    static constexpr size_t USER_ID_PLACEHOLDER_LEN = 8; // length of "{USERID}"
+    static constexpr const char *USER_ID_PLACEHOLDER = "{userid}";
+    static constexpr size_t USER_ID_PLACEHOLDER_LEN = 8; // length of "{userid}"
     static constexpr int DATA_PROXY_SCHEMA_LEN = sizeof(DATA_PROXY_SCHEMA) - 1;
     static constexpr int32_t INVALID_SA_ID = 0;
     static constexpr uint32_t PARAM_URI_SEPARATOR_LEN = 4;
