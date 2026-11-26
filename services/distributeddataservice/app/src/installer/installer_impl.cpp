@@ -43,6 +43,7 @@ InstallEventSubscriber::InstallEventSubscriber(const CommonEventSubscribeInfo &i
 {
     callbacks_ = { { CommonEventSupport::COMMON_EVENT_PACKAGE_REMOVED, &InstallEventSubscriber::OnUninstall },
         { OHOS::AppExecFwk::COMMON_EVENT_SANDBOX_PACKAGE_REMOVED, &InstallEventSubscriber::OnUninstall },
+        // for AI app clone uninstall scenario
         { CommonEventSupport::COMMON_EVENT_SANDBOX_BUNDLE_REMOVED, &InstallEventSubscriber::OnUninstall },
         { CommonEventSupport::COMMON_EVENT_PACKAGE_CHANGED, &InstallEventSubscriber::OnUpdate },
         { CommonEventSupport::COMMON_EVENT_PACKAGE_ADDED, &InstallEventSubscriber::OnInstall },
