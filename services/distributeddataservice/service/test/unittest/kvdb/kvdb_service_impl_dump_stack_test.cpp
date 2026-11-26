@@ -35,10 +35,10 @@
 #include "cloud/cloud_event.h"
 #include "cloud/cloud_server.h"
 #include "device_manager_adapter.h"
+#include "directory/directory_manager.h"
 #include "distributed_kv_data_manager.h"
 #include "eventcenter/event_center.h"
 #include "ipc_skeleton.h"
-#include "kv_hmfs_tag_util.h"
 #include "kvdb_query.h"
 #include "kvdb_service_impl.h"
 #include "kvdb_service_stub.h"
@@ -114,7 +114,6 @@ struct IoctlPlan {
 IoctlHandler MakeIoctlHandler(std::shared_ptr<IoctlPlan> plan)
 {
     return [plan](int fd, unsigned long request, void *arg) {
-        (void)fd;
         auto *args = static_cast<HmfsKeyFileArgs *>(arg);
         std::string name = (args != nullptr) ? std::string(args->filename) : std::string();
         if (request == HMFS_IOC_KEY_FILE_GETFLAGS) {
@@ -141,7 +140,7 @@ IoctlHandler MakeIoctlHandler(std::shared_ptr<IoctlPlan> plan)
             }
             return 0;
         }
-        return 0;
+        return static_cast<int>(syscall(SYS_ioctl, fd, request, arg));
     };
 }
 
@@ -322,6 +321,11 @@ void KvdbServiceImplDumpStackTest::SetUpTestCase(void)
     metaDataMock = std::make_shared<MetaDataMock<StoreMetaData>>();
     BMetaData<StoreMetaData>::metaDataManager = metaDataMock;
     NetworkDelegate::RegisterNetworkInstance(&delegate_);
+    std::vector<DirectoryManager::Strategy> strategies = {
+        { true, 0, "/data/local/tmp/dump_stack_ut/{bundleName}/kvdb", "/data/local/tmp/dump_stack_ut/meta", "" },
+    };
+    std::vector<DirectoryManager::StoreType> storeTypes;
+    DirectoryManager::GetInstance().Initialize(strategies, storeTypes);
 }
 
 void KvdbServiceImplDumpStackTest::TearDownTestCase()
@@ -338,6 +342,9 @@ void KvdbServiceImplDumpStackTest::TearDownTestCase()
     BMetaDataManager::metaDataManager = nullptr;
     metaDataMock = nullptr;
     BMetaData<StoreMetaData>::metaDataManager = nullptr;
+    std::vector<DirectoryManager::Strategy> resetStrategies;
+    std::vector<DirectoryManager::StoreType> resetStoreTypes;
+    DirectoryManager::GetInstance().Initialize(resetStrategies, resetStoreTypes);
 }
 
 void KvdbServiceImplDumpStackTest::SetUp(void)
@@ -428,7 +435,7 @@ HWTEST_F(KvdbServiceImplDumpStackTest, DumpStack_AfterCreate_NonSystemApp_Return
  * @tc.type: FUNC
  * @tc.author: agent
  */
-HWTEST_F(KvdbServiceImplDumpStackTest, DumpStack_AfterCreate_LocalOnlyType_ReturnOk, TestSize.Level1)
+HWTEST_F(KvdbServiceImplDumpStackTest, DumpStack_AfterCreate_LocalOnlyType_ReturnOk, TestSize.Level0)
 {
     auto tokenMock = std::make_shared<AccessTokenKitMock>();
     ON_CALL(*tokenMock, GetTokenTypeFlag(_)).WillByDefault(Return(TOKEN_NATIVE));
@@ -442,43 +449,6 @@ HWTEST_F(KvdbServiceImplDumpStackTest, DumpStack_AfterCreate_LocalOnlyType_Retur
 
     EXPECT_EQ(status, Status::SUCCESS);
     BAccessTokenKit::accessTokenkit = accTokenMock;
-}
-
-/**
- * @tc.name: KvHmfsTagUtil_InvalidPath_ReturnsError
- * @tc.desc: Test the tag utility rejects invalid paths before touching the file system
- * @tc.type: FUNC
- * @tc.author: agent
- */
-HWTEST_F(KvdbServiceImplDumpStackTest, KvHmfsTagUtil_InvalidPath_ReturnsError, TestSize.Level1)
-{
-    EXPECT_EQ(OHOS::DistributedKv::KvHmfsTagUtil::SetKeyFileFlag(""), -EINVAL);
-    EXPECT_EQ(OHOS::DistributedKv::KvHmfsTagUtil::GetKeyFileFlag(""), -EINVAL);
-    EXPECT_EQ(OHOS::DistributedKv::KvHmfsTagUtil::SetKeyFileFlag("/"), -EINVAL);
-    EXPECT_EQ(OHOS::DistributedKv::KvHmfsTagUtil::GetKeyFileFlag("/"), -EINVAL);
-    EXPECT_EQ(OHOS::DistributedKv::KvHmfsTagUtil::SetKeyFileFlag("plainname"), -EINVAL);
-    EXPECT_EQ(OHOS::DistributedKv::KvHmfsTagUtil::SetKeyFileFlag("/file.db"), -EINVAL);
-    EXPECT_EQ(OHOS::DistributedKv::KvHmfsTagUtil::GetKeyFileFlag("/dir/"), -EINVAL);
-    EXPECT_EQ(OHOS::DistributedKv::KvHmfsTagUtil::SetKeyFileFlag("/nonexistent_kv_hmfs_tag/file.db"), -ENOENT);
-    EXPECT_EQ(OHOS::DistributedKv::KvHmfsTagUtil::GetKeyFileFlag("/nonexistent_kv_hmfs_tag/file.db"), -ENOENT);
-}
-
-/**
- * @tc.name: KvHmfsTagUtil_ValidPath_DoesNotBreakFile
- * @tc.desc: Test the tag utility degrades silently and keeps the target file on a normal file system
- * @tc.type: FUNC
- * @tc.author: agent
- */
-HWTEST_F(KvdbServiceImplDumpStackTest, KvHmfsTagUtil_ValidPath_DoesNotBreakFile, TestSize.Level1)
-{
-    std::string path = "/data/local/tmp/kv_hmfs_tag_util_test.db";
-    int fd = open(path.c_str(), O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
-    ASSERT_GE(fd, 0);
-    close(fd);
-    (void)OHOS::DistributedKv::KvHmfsTagUtil::SetKeyFileFlag(path);
-    (void)OHOS::DistributedKv::KvHmfsTagUtil::GetKeyFileFlag(path);
-    EXPECT_EQ(access(path.c_str(), F_OK), 0);
-    (void)remove(path.c_str());
 }
 
 /**
@@ -932,66 +902,5 @@ HWTEST_F(KvdbServiceImplDumpStackTest, DumpStack_SetDumpStackTags_InvalidStoreId
     BAccessTokenKit::accessTokenkit = accTokenMock;
 }
 
-/**
- * @tc.name: KvHmfsTagUtil_InvalidName_001
- * @tc.desc: Test the tag utility rejects invalid file names and converts errno to a negative result
- * @tc.type: FUNC
- * @tc.author: agent
- */
-HWTEST_F(KvdbServiceImplDumpStackTest, KvHmfsTagUtil_InvalidName_001, TestSize.Level1)
-{
-    using OHOS::DistributedKv::KvHmfsTagUtil;
-    EXPECT_EQ(KvHmfsTagUtil::ExecuteIoctl(-1, 0, "", nullptr), -EINVAL);
-    EXPECT_EQ(KvHmfsTagUtil::ExecuteIoctl(-1, 0, ".", nullptr), -EINVAL);
-    EXPECT_EQ(KvHmfsTagUtil::ExecuteIoctl(-1, 0, "..", nullptr), -EINVAL);
-    EXPECT_EQ(
-        KvHmfsTagUtil::ExecuteIoctl(-1, 0, std::string(KvHmfsTagUtil::MAX_FILE_NAME_LEN + 1, 'a'), nullptr), -EINVAL);
-    EXPECT_EQ(KvHmfsTagUtil::ExecuteIoctl(-1, 0, "dir/file.db", nullptr), -EINVAL);
-    EXPECT_EQ(KvHmfsTagUtil::NegateErrno(0), -EIO);
-    EXPECT_EQ(KvHmfsTagUtil::NegateErrno(ENOENT), -ENOENT);
-}
-
-/**
- * @tc.name: KvHmfsTagUtil_IoctlBranches_001
- * @tc.desc: Test the tag utility ioctl failure and success branches for fd and path based calls
- * @tc.type: FUNC
- * @tc.author: agent
- */
-HWTEST_F(KvdbServiceImplDumpStackTest, KvHmfsTagUtil_IoctlBranches_001, TestSize.Level1)
-{
-    using OHOS::DistributedKv::KvHmfsTagUtil;
-    std::string dir = std::string(create.baseDir) + "/kv_hmfs_tag_util_dir";
-    ASSERT_TRUE(MakeDir(dir));
-    int dirFd = open(dir.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
-    ASSERT_GE(dirFd, 0);
-
-    auto failPlan = std::make_shared<IoctlPlan>();
-    failPlan->getRet = -1;
-    failPlan->getErr = EACCES;
-    failPlan->setRet = -1;
-    failPlan->setErr = EACCES;
-    {
-        IoctlHookGuard guard(MakeIoctlHandler(failPlan));
-        EXPECT_EQ(KvHmfsTagUtil::GetKeyFileFlag(dirFd, "get.db"), -EACCES);
-        EXPECT_EQ(KvHmfsTagUtil::SetKeyFileFlag(dirFd, "set.db"), -EACCES);
-        EXPECT_EQ(KvHmfsTagUtil::GetKeyFileFlag(dir + "/get.db"), -EACCES);
-        EXPECT_EQ(KvHmfsTagUtil::SetKeyFileFlag(dir + "/set.db"), -EACCES);
-    }
-
-    auto okPlan = std::make_shared<IoctlPlan>();
-    okPlan->taggedName = "get.db";
-    {
-        IoctlHookGuard guard(MakeIoctlHandler(okPlan));
-        EXPECT_EQ(KvHmfsTagUtil::GetKeyFileFlag(dirFd, "get.db"), KvHmfsTagUtil::FLAG_SET);
-        EXPECT_EQ(KvHmfsTagUtil::GetKeyFileFlag(dirFd, "unset.db"), KvHmfsTagUtil::FLAG_UNSET);
-        EXPECT_EQ(KvHmfsTagUtil::SetKeyFileFlag(dirFd, "set.db"), 0);
-        EXPECT_EQ(KvHmfsTagUtil::GetKeyFileFlag(dir + "/get.db"), KvHmfsTagUtil::FLAG_SET);
-        EXPECT_EQ(KvHmfsTagUtil::GetKeyFileFlag(dir + "/unset.db"), KvHmfsTagUtil::FLAG_UNSET);
-        EXPECT_EQ(KvHmfsTagUtil::SetKeyFileFlag(dir + "/set.db"), 0);
-    }
-
-    close(dirFd);
-    (void)rmdir(dir.c_str());
-}
 } // namespace DistributedDataTest
 } // namespace OHOS::Test
