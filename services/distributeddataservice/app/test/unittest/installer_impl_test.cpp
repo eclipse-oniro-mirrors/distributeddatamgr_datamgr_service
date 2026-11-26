@@ -19,7 +19,6 @@
 #include <gtest/gtest.h>
 
 #include "common_event_support.h"
-#include "log_print.h"
 
 using namespace testing::ext;
 using namespace OHOS;
@@ -42,7 +41,6 @@ public:
 */
 HWTEST_F(InstallerImplTest, InstallCallbacksSandboxBundleRemoved001, TestSize.Level1)
 {
-    ZLOGI("InstallerImplTest InstallCallbacksSandboxBundleRemoved001 start");
     MatchingSkills matchingSkills;
     matchingSkills.AddEvent(CommonEventSupport::COMMON_EVENT_PACKAGE_REMOVED);
     matchingSkills.AddEvent(CommonEventSupport::COMMON_EVENT_SANDBOX_BUNDLE_REMOVED);
@@ -57,13 +55,12 @@ HWTEST_F(InstallerImplTest, InstallCallbacksSandboxBundleRemoved001, TestSize.Le
 
     // SANDBOX_PACKAGE_REMOVED and PACKAGE_REMOVED still route to OnUninstall (regression guard).
     auto sandboxPkgIt = subscriber->callbacks_.find(
-        OHOS::AppExecFwk::COMMON_EVENT_SANDBOX_PACKAGE_REMOVED);
+        EventFwk::CommonEventSupport::COMMON_EVENT_SANDBOX_PACKAGE_REMOVED);
     ASSERT_NE(sandboxPkgIt, subscriber->callbacks_.end());
     EXPECT_EQ(sandboxPkgIt->second, &InstallEventSubscriber::OnUninstall);
     auto pkgRemovedIt = subscriber->callbacks_.find(CommonEventSupport::COMMON_EVENT_PACKAGE_REMOVED);
     ASSERT_NE(pkgRemovedIt, subscriber->callbacks_.end());
     EXPECT_EQ(pkgRemovedIt->second, &InstallEventSubscriber::OnUninstall);
-    ZLOGI("InstallerImplTest InstallCallbacksSandboxBundleRemoved001 end");
 }
 
 /**
@@ -74,14 +71,12 @@ HWTEST_F(InstallerImplTest, InstallCallbacksSandboxBundleRemoved001, TestSize.Le
 */
 HWTEST_F(InstallerImplTest, InitNullServiceReturnsInvalidArgument001, TestSize.Level1)
 {
-    ZLOGI("InstallerImplTest InitNullServiceReturnsInvalidArgument001 start");
     InstallerImpl installer;
     auto executors = std::make_shared<ExecutorPool>(1, 0);
     ASSERT_NE(executors, nullptr);
     // Init must short-circuit on null service; no common-event subscription happens.
     Status status = installer.Init(nullptr, executors);
     EXPECT_EQ(status, Status::INVALID_ARGUMENT);
-    ZLOGI("InstallerImplTest InitNullServiceReturnsInvalidArgument001 end");
 }
 
 /**
@@ -92,7 +87,6 @@ HWTEST_F(InstallerImplTest, InitNullServiceReturnsInvalidArgument001, TestSize.L
 */
 HWTEST_F(InstallerImplTest, InstallCallbacksNoUnknownActions001, TestSize.Level1)
 {
-    ZLOGI("InstallerImplTest InstallCallbacksNoUnknownActions001 start");
     MatchingSkills matchingSkills;
     matchingSkills.AddEvent(CommonEventSupport::COMMON_EVENT_PACKAGE_REMOVED);
     matchingSkills.AddEvent(CommonEventSupport::COMMON_EVENT_SANDBOX_BUNDLE_REMOVED);
@@ -110,7 +104,6 @@ HWTEST_F(InstallerImplTest, InstallCallbacksNoUnknownActions001, TestSize.Level1
     // An action that was never registered must not be found in the table.
     EXPECT_EQ(subscriber->callbacks_.find(CommonEventSupport::COMMON_EVENT_PACKAGE_CHANGED),
         subscriber->callbacks_.end());
-    ZLOGI("InstallerImplTest InstallCallbacksNoUnknownActions001 end");
 }
 
 /**
@@ -121,7 +114,6 @@ HWTEST_F(InstallerImplTest, InstallCallbacksNoUnknownActions001, TestSize.Level1
 */
 HWTEST_F(InstallerImplTest, InstallCallbacksAllHandlersRegistered001, TestSize.Level1)
 {
-    ZLOGI("InstallerImplTest InstallCallbacksAllHandlersRegistered001 start");
     MatchingSkills matchingSkills;
     matchingSkills.AddEvent(CommonEventSupport::COMMON_EVENT_PACKAGE_REMOVED);
     matchingSkills.AddEvent(CommonEventSupport::COMMON_EVENT_SANDBOX_BUNDLE_REMOVED);
@@ -132,7 +124,7 @@ HWTEST_F(InstallerImplTest, InstallCallbacksAllHandlersRegistered001, TestSize.L
     // Uninstall handlers: PACKAGE_REMOVED, SANDBOX_PACKAGE_REMOVED, SANDBOX_BUNDLE_REMOVED.
     EXPECT_EQ(subscriber->callbacks_[CommonEventSupport::COMMON_EVENT_PACKAGE_REMOVED],
         &InstallEventSubscriber::OnUninstall);
-    EXPECT_EQ(subscriber->callbacks_[OHOS::AppExecFwk::COMMON_EVENT_SANDBOX_PACKAGE_REMOVED],
+    EXPECT_EQ(subscriber->callbacks_[EventFwk::CommonEventSupport::COMMON_EVENT_SANDBOX_PACKAGE_REMOVED],
         &InstallEventSubscriber::OnUninstall);
     EXPECT_EQ(subscriber->callbacks_[CommonEventSupport::COMMON_EVENT_SANDBOX_BUNDLE_REMOVED],
         &InstallEventSubscriber::OnUninstall);
@@ -141,9 +133,8 @@ HWTEST_F(InstallerImplTest, InstallCallbacksAllHandlersRegistered001, TestSize.L
         &InstallEventSubscriber::OnUpdate);
     EXPECT_EQ(subscriber->callbacks_[CommonEventSupport::COMMON_EVENT_PACKAGE_ADDED],
         &InstallEventSubscriber::OnInstall);
-    EXPECT_EQ(subscriber->callbacks_[OHOS::AppExecFwk::COMMON_EVENT_SANDBOX_PACKAGE_ADDED],
+    EXPECT_EQ(subscriber->callbacks_[EventFwk::CommonEventSupport::COMMON_EVENT_SANDBOX_PACKAGE_ADDED],
         &InstallEventSubscriber::OnInstall);
-    ZLOGI("InstallerImplTest InstallCallbacksAllHandlersRegistered001 end");
 }
 
 /**
@@ -154,7 +145,6 @@ HWTEST_F(InstallerImplTest, InstallCallbacksAllHandlersRegistered001, TestSize.L
 */
 HWTEST_F(InstallerImplTest, OnReceiveEventUnknownAction001, TestSize.Level1)
 {
-    ZLOGI("InstallerImplTest OnReceiveEventUnknownAction001 start");
     MatchingSkills matchingSkills;
     matchingSkills.AddEvent(CommonEventSupport::COMMON_EVENT_PACKAGE_REMOVED);
     CommonEventSubscribeInfo info(matchingSkills);
@@ -170,7 +160,6 @@ HWTEST_F(InstallerImplTest, OnReceiveEventUnknownAction001, TestSize.Level1)
     subscriber->OnReceiveEvent(event);
     // The callback table must remain unchanged after dispatching an unknown action.
     EXPECT_EQ(subscriber->callbacks_.size(), static_cast<size_t>(5));
-    ZLOGI("InstallerImplTest OnReceiveEventUnknownAction001 end");
 }
 
 /**
@@ -181,7 +170,6 @@ HWTEST_F(InstallerImplTest, OnReceiveEventUnknownAction001, TestSize.Level1)
 */
 HWTEST_F(InstallerImplTest, OnReceiveEventSandboxBundleRemovedNoCrash001, TestSize.Level1)
 {
-    ZLOGI("InstallerImplTest OnReceiveEventSandboxBundleRemovedNoCrash001 start");
     MatchingSkills matchingSkills;
     matchingSkills.AddEvent(CommonEventSupport::COMMON_EVENT_SANDBOX_BUNDLE_REMOVED);
     CommonEventSubscribeInfo info(matchingSkills);
@@ -189,10 +177,10 @@ HWTEST_F(InstallerImplTest, OnReceiveEventSandboxBundleRemovedNoCrash001, TestSi
     auto subscriber = std::make_shared<InstallEventSubscriber>(info, nullptr);
     ASSERT_NE(subscriber, nullptr);
 
-    // Build a SANDBOX_BUNDLE_REMOVED event carrying bundle/user/appIndex/tokenId params.
+    // Build a SANDBOX_BUNDLE_REMOVED event; no Element/bundleName is set (OnUninstall short-circuits on
+    // null service before reading them), so the empty want is sufficient to exercise the dispatch path.
     Want want;
     want.SetAction(CommonEventSupport::COMMON_EVENT_SANDBOX_BUNDLE_REMOVED);
-    want.SetElement(AAFwk::ElementName("", "com.test.sandboxbundle", ""));
     want.SetParam(InstallEventSubscriber::USER_ID, 101);
     want.SetParam(InstallEventSubscriber::SANDBOX_APP_INDEX, 2);
     want.SetParam(InstallEventSubscriber::TOKEN_ID, 123456);
@@ -208,7 +196,6 @@ HWTEST_F(InstallerImplTest, OnReceiveEventSandboxBundleRemovedNoCrash001, TestSi
     subscriber->OnReceiveEvent(event);
     // Routing entry must remain intact after dispatch.
     EXPECT_EQ(it->second, &InstallEventSubscriber::OnUninstall);
-    ZLOGI("InstallerImplTest OnReceiveEventSandboxBundleRemovedNoCrash001 end");
 }
 
 /**
@@ -219,7 +206,6 @@ HWTEST_F(InstallerImplTest, OnReceiveEventSandboxBundleRemovedNoCrash001, TestSi
 */
 HWTEST_F(InstallerImplTest, OnUninstallNullServiceNoCrash001, TestSize.Level1)
 {
-    ZLOGI("InstallerImplTest OnUninstallNullServiceNoCrash001 start");
     MatchingSkills matchingSkills;
     matchingSkills.AddEvent(CommonEventSupport::COMMON_EVENT_SANDBOX_BUNDLE_REMOVED);
     CommonEventSubscribeInfo info(matchingSkills);
@@ -236,6 +222,5 @@ HWTEST_F(InstallerImplTest, OnUninstallNullServiceNoCrash001, TestSize.Level1)
     subscriber->OnUninstall(bundleEventInfo);
     // Service pointer must remain null (no side effect changed it).
     EXPECT_EQ(subscriber->kvStoreDataService_, nullptr);
-    ZLOGI("InstallerImplTest OnUninstallNullServiceNoCrash001 end");
 }
 } // namespace OHOS::Test
