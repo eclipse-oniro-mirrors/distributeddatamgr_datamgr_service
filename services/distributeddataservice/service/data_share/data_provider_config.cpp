@@ -102,8 +102,10 @@ int DataProviderConfig::GetFromProxyData()
         providerInfo_.hasExtension = true;
         break;
     }
+    bool hasProxyData = false;
     for (auto &hapModuleInfo : bundleInfo.hapModuleInfos) {
         for (auto &data : hapModuleInfo.proxyDatas) {
+            hasProxyData = true;
             if (!URIUtils::MatchProxyUri(data.uri, uriConfig_.formatUri)) {
                 continue;
             }
@@ -120,6 +122,11 @@ int DataProviderConfig::GetFromProxyData()
             }
             return GetFromDataProperties(profileInfo.profile, hapModuleInfo.moduleName);
         }
+    }
+    // temporary debug log, remove before merge
+    if (hasProxyData) {
+        ZLOGI("TEMP-DEBUG: ProxyData uri not matched, bundleName:%{public}s, formatUri:%{public}s, uri:%{public}s",
+            providerInfo_.bundleName.c_str(), uriConfig_.formatUri.c_str(), providerInfo_.uri.c_str());
     }
     return E_URI_NOT_EXIST;
 }
