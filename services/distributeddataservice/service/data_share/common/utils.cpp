@@ -249,9 +249,10 @@ bool URIUtils::HasUserIdPlaceholder(const std::string &uri)
 
 bool URIUtils::MatchProxyUri(const std::string &proxyUri, const std::string &formatUri)
 {
-    // proxy entry without placeholder only supports exact match, no prefix fallback
+    // proxy entry without placeholder keeps the legacy prefix matching,
+    // compatible with existing providers configuring prefix-style uris
     if (!HasUserIdPlaceholder(proxyUri)) {
-        return proxyUri == formatUri;
+        return proxyUri.length() <= formatUri.length() && formatUri.compare(0, proxyUri.length(), proxyUri) == 0;
     }
     // entry with placeholder: compare as uri objects segment by segment, the placeholder
     // segment matches as literal prefix + digits (>=1) + literal suffix

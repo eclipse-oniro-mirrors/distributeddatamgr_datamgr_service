@@ -167,24 +167,30 @@ HWTEST_F(DatashareURIUtilsTest, HasUserIdPlaceholder_001, TestSize.Level0)
 }
 
 /**
- * @tc.name: MatchProxyUri_LiteralExactMatch_001
- * @tc.desc: Verify MatchProxyUri returns true only for exact literal uri match
+ * @tc.name: MatchProxyUri_LiteralPrefixMatch_001
+ * @tc.desc: Verify MatchProxyUri keeps legacy prefix matching for entries without placeholder
  * @tc.type: FUNC
  * @tc.author: agent
  */
-HWTEST_F(DatashareURIUtilsTest, MatchProxyUri_LiteralExactMatch_001, TestSize.Level0)
+HWTEST_F(DatashareURIUtilsTest, MatchProxyUri_LiteralPrefixMatch_001, TestSize.Level0)
 {
-    ZLOGI("DatashareURIUtilsTest MatchProxyUri_LiteralExactMatch_001 start");
+    ZLOGI("DatashareURIUtilsTest MatchProxyUri_LiteralPrefixMatch_001 start");
     EXPECT_TRUE(URIUtils::MatchProxyUri(
         "datashareproxy://com.ohos.settingsdata/entry/settingsdata/USER_SETTINGSDATA_SECURE_100",
         "datashareproxy://com.ohos.settingsdata/entry/settingsdata/USER_SETTINGSDATA_SECURE_100"));
-    // same prefix but longer request must not match, prefix matching is removed for literal entries
-    EXPECT_FALSE(URIUtils::MatchProxyUri("datashareproxy://com.ohos.settingsdata/entry/settingsdata/USER_SETTINGSDATA",
+    // legacy prefix matching is kept for entries without placeholder
+    EXPECT_TRUE(URIUtils::MatchProxyUri(
+        "datashareproxy://com.ohos.settingsdata/entry/settingsdata/USER_SETTINGSDATA",
         "datashareproxy://com.ohos.settingsdata/entry/settingsdata/USER_SETTINGSDATA_100"));
-    // different table name
-    EXPECT_FALSE(URIUtils::MatchProxyUri("datashareproxy://com.ohos.settingsdata/entry/settingsdata/USER_SETTINGSDATA",
+    // not a prefix
+    EXPECT_FALSE(URIUtils::MatchProxyUri(
+        "datashareproxy://com.ohos.settingsdata/entry/settingsdata/USER_SETTINGSDATA",
         "datashareproxy://com.ohos.settingsdata/entry/settingsdata/SETTINGSDATA"));
-    ZLOGI("DatashareURIUtilsTest MatchProxyUri_LiteralExactMatch_001 end");
+    // entry longer than request is rejected
+    EXPECT_FALSE(URIUtils::MatchProxyUri(
+        "datashareproxy://com.ohos.settingsdata/entry/settingsdata/USER_SETTINGSDATA_100",
+        "datashareproxy://com.ohos.settingsdata/entry/settingsdata/USER_SETTINGSDATA"));
+    ZLOGI("DatashareURIUtilsTest MatchProxyUri_LiteralPrefixMatch_001 end");
 }
 
 /**
