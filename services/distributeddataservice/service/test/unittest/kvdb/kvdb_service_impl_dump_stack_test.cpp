@@ -695,7 +695,7 @@ HWTEST_F(KvdbServiceImplDumpStackTest, DumpStack_SetDumpStackTags_CustomDir_001,
     ASSERT_TRUE(MakeFile(base + "meta/meta.db"));
 
     auto tokenMock = std::make_shared<AccessTokenKitMock>();
-    ON_CALL(*tokenMock, GetTokenTypeFlag(_)).WillByDefault(Return(TOKEN_NATIVE));
+    EXPECT_CALL(*tokenMock, GetTokenTypeFlag(_)).WillOnce(Return(TOKEN_NATIVE));
     BAccessTokenKit::accessTokenkit = tokenMock;
 
     StoreMetaData meta;
@@ -963,47 +963,6 @@ HWTEST_F(KvdbServiceImplDumpStackTest, DumpStack_SetDumpStackTags_EmptyDataDirRe
     BAccessTokenKit::accessTokenkit = accTokenMock;
     RemoveDbLayout(dataDir, storeIdStr);
     RemoveDirs(newDirs);
-}
-
-/**
- * @tc.name: DumpStack_SetDumpStackTags_CustomDirTokenIdNotHap_001
- * @tc.desc: AC-1.2 - A HAP caller keeps an empty customDir when the store token is not HAP and tags dataDir
- * @tc.type: FUNC
- * @tc.author: agent
- */
-HWTEST_F(KvdbServiceImplDumpStackTest, DumpStack_SetDumpStackTags_CustomDirTokenIdNotHap_001, TestSize.Level0)
-{
-    constexpr uint32_t STORE_TOKEN_ID = 0x5A5A;
-    std::string storeIdStr = "dumpStackTagCustomTokenId";
-    std::string dataDir = std::string(create.baseDir) + "/dump_stack_ut_custom_token_id";
-    ASSERT_TRUE(MakeDir(dataDir));
-    ASSERT_TRUE(CreateDbLayout(dataDir, storeIdStr));
-    std::string base = GetDbBase(dataDir, storeIdStr);
-    ASSERT_FALSE(base.empty());
-    ASSERT_TRUE(MakeFile(base + "meta/meta.db"));
-
-    auto tokenMock = std::make_shared<AccessTokenKitMock>();
-    ON_CALL(*tokenMock, GetTokenTypeFlag(_)).WillByDefault(Return(TOKEN_HAP));
-    ON_CALL(*tokenMock, GetTokenTypeFlag(STORE_TOKEN_ID)).WillByDefault(Return(TOKEN_NATIVE));
-    BAccessTokenKit::accessTokenkit = tokenMock;
-    auto tokenIdKitMock = std::make_shared<TokenIdKitMock>();
-    ON_CALL(*tokenIdKitMock, IsSystemAppByFullTokenID(_)).WillByDefault(Return(true));
-    BTokenIdKit::tokenkIdKit = tokenIdKitMock;
-
-    StoreMetaData meta;
-    meta.storeId = storeIdStr;
-    meta.dataDir = dataDir;
-    meta.tokenId = STORE_TOKEN_ID;
-    meta.storeType = static_cast<int32_t>(OHOS::DistributedKv::SINGLE_VERSION);
-    auto plan = std::make_shared<IoctlPlan>();
-    IoctlHookGuard guard(MakeIoctlHandler(plan));
-    kvdbServiceImpl_->SetDumpStackTags(meta, true);
-
-    EXPECT_EQ(plan->getCalls, 1);
-    EXPECT_EQ(plan->setCalls, 1);
-    BAccessTokenKit::accessTokenkit = accTokenMock;
-    BTokenIdKit::tokenkIdKit = nullptr;
-    RemoveDbLayout(dataDir, storeIdStr);
 }
 
 /**

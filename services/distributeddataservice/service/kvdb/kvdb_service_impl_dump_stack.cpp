@@ -39,11 +39,6 @@ constexpr const char *KV_META_DB = "meta/meta.db";
 constexpr const char *KV_WAL_SUFFIX = "-wal";
 constexpr const char *KV_SHM_SUFFIX = "-shm";
 constexpr const char *PATH_SEPARATOR = "/";
-
-std::string GetDbRoot(const StoreMetaData &metaData)
-{
-    return metaData.customDir.empty() ? metaData.dataDir : metaData.customDir;
-}
 } // namespace
 
 void KVDBServiceImpl::SetDumpStackTags(const StoreMetaData &metaData, const bool &isCustomDir)
@@ -55,8 +50,9 @@ void KVDBServiceImpl::SetDumpStackTags(const StoreMetaData &metaData, const bool
         return;
     }
     StoreMetaData meta = metaData;
+    std::string dir = meta.dataDir;
     if (isCustomDir) {
-        if (meta.customDir.empty() && AccessTokenKit::GetTokenTypeFlag(meta.tokenId) == TOKEN_HAP) {
+        if (meta.customDir.empty() && tokenType == TOKEN_HAP) {
             size_t pos = meta.dataDir.find_last_of(PATH_SEPARATOR);
             std::string customDir;
             if (pos != std::string::npos && pos < meta.dataDir.size() - 1) {
@@ -64,16 +60,18 @@ void KVDBServiceImpl::SetDumpStackTags(const StoreMetaData &metaData, const bool
             }
             meta.customDir = AssembleCustomDir(meta, customDir);
         }
-        meta.dataDir = metaData.dataDir;
-    } else if (meta.dataDir.empty()) {
-        meta.dataDir = DirectoryManager::GetInstance().GetStorePath(meta);
+        if (!meta.customDir.empty()) {
+            dir = meta.customDir;
+        }
+    } else if (dir.empty()) {
+        dir = DirectoryManager::GetInstance().GetStorePath(meta);
     }
     std::string storeDir;
     auto dbStatus = DBManager::GetDatabaseDir(meta.storeId, storeDir);
     if (dbStatus != DBStatus::OK) {
         return;
     }
-    std::string base = GetDbRoot(meta) + "/" + storeDir + KV_DB_SUB_DIR;
+    std::string base = dir + "/" + storeDir + KV_DB_SUB_DIR;
     const std::vector<std::string> files = { base + KV_MAIN_DB, base + KV_MAIN_DB + KV_WAL_SUFFIX,
         base + KV_MAIN_DB + KV_SHM_SUFFIX, base + KV_META_DB, base + KV_META_DB + KV_WAL_SUFFIX,
         base + KV_META_DB + KV_SHM_SUFFIX };
