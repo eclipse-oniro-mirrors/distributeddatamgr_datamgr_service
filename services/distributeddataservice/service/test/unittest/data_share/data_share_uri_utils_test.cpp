@@ -14,11 +14,10 @@
  */
 #define LOG_TAG "DatashareURIUtilsTest"
 #include <gtest/gtest.h>
-
 #include <string>
 
-#include "log_print.h"
 #include "utils.h"
+#include "log_print.h"
 
 namespace OHOS {
 namespace DataShare {
@@ -127,10 +126,10 @@ HWTEST_F(DatashareURIUtilsTest, GetSystemAbilityId002, TestSize.Level0)
     ZLOGI("DatashareURIUtilsTest GetSystemAbilityId002 start");
     int32_t saId = URIUtils::GetSystemAbilityId("datashareproxy://bundleName/xxxSAID=123/xx?SAID=456&user=123");
     EXPECT_EQ(saId, URIUtils::INVALID_SA_ID);
-
+    
     saId = URIUtils::GetSystemAbilityId("datashareproxy://bundleName/SAID=/xx");
     EXPECT_EQ(saId, URIUtils::INVALID_SA_ID);
-
+    
     saId = URIUtils::GetSystemAbilityId("datashareproxy://bundleName/SAID=-123/xx");
     EXPECT_EQ(saId, URIUtils::INVALID_SA_ID);
 
