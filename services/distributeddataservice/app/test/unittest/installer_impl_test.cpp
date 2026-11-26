@@ -12,12 +12,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#define LOG_TAG "InstallerImplTest"
 
 #include "installer_impl.h"
-
 #include <gtest/gtest.h>
-
 #include "common_event_support.h"
 
 using namespace testing::ext;
