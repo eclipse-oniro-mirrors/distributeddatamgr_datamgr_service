@@ -67,7 +67,6 @@ public:
     API_EXPORT virtual void UnsubscribeAccountEvent() = 0;
     API_EXPORT virtual bool QueryUsers(std::vector<int> &users) = 0;
     API_EXPORT virtual bool QueryForegroundUsers(std::vector<int> &users) = 0;
-    API_EXPORT virtual bool QueryAllCreatedUsers(std::vector<int> &users) = 0;
     API_EXPORT virtual bool QueryForegroundUserId(int &foregroundUserId) = 0;
     API_EXPORT virtual bool IsLoginAccount() = 0;
     API_EXPORT virtual bool IsLoginAccount(int32_t userId) = 0;

@@ -57,13 +57,6 @@ bool AccountDelegateDefaultImpl::QueryForegroundUsers(std::vector<int> &users)
     return true;
 }
 
-bool AccountDelegateDefaultImpl::QueryAllCreatedUsers(std::vector<int> &users)
-{
-    ZLOGD("no account part.");
-    users = { 0 }; // default user
-    return true;
-}
-
 bool AccountDelegateDefaultImpl::IsLoginAccount()
 {
     ZLOGD("no account login.");

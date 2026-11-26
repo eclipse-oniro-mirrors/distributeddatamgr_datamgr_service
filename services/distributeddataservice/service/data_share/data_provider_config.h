@@ -65,8 +65,6 @@ public:
 private:
     bool GetFromUriPath();
     int GetFromProxyData();
-    int MatchProxyDatas(BundleConfig &bundleInfo);
-    bool HasUserIdPlaceholderEntry(const BundleConfig &bundleInfo);
     int GetFromExtension();
     int GetFromDataProperties(const ProfileInfo &profileInfo, const std::string &moduleName);
     int GetFromExtensionProperties(const ProfileInfo &profileInfo, const std::string &moduleName);

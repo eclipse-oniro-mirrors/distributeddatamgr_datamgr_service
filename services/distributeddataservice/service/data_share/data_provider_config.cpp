@@ -30,7 +30,6 @@
 #include "log_print.h"
 #include "strategies/general/load_config_common_strategy.h"
 #include "tokenid_kit.h"
-#include "user_id_cache.h"
 #include "utils.h"
 #include "utils/anonymous.h"
 
@@ -103,25 +102,9 @@ int DataProviderConfig::GetFromProxyData()
         providerInfo_.hasExtension = true;
         break;
     }
-    int ret = MatchProxyDatas(bundleInfo);
-    if (ret != E_URI_NOT_EXIST) {
-        return ret;
-    }
-    // miss fallback: a user may have been added while the cache update event is delayed
-    if (HasUserIdPlaceholderEntry(bundleInfo) && UserIdCache::GetInstance()->TryRefresh()) {
-        ZLOGI("Retry matching after user id cache refreshed, uri:%{public}s",
-            URIUtils::Anonymous(providerInfo_.uri).c_str());
-        return MatchProxyDatas(bundleInfo);
-    }
-    return E_URI_NOT_EXIST;
-}
-
-int DataProviderConfig::MatchProxyDatas(BundleConfig &bundleInfo)
-{
-    std::vector<int32_t> userIds = UserIdCache::GetInstance()->GetUserIds();
     for (auto &hapModuleInfo : bundleInfo.hapModuleInfos) {
         for (auto &data : hapModuleInfo.proxyDatas) {
-            if (!URIUtils::MatchProxyUri(data.uri, uriConfig_.formatUri, userIds)) {
+            if (!URIUtils::MatchProxyUri(data.uri, uriConfig_.formatUri)) {
                 continue;
             }
             providerInfo_.readPermission = std::move(data.requiredReadPermission);
@@ -139,18 +122,6 @@ int DataProviderConfig::MatchProxyDatas(BundleConfig &bundleInfo)
         }
     }
     return E_URI_NOT_EXIST;
-}
-
-bool DataProviderConfig::HasUserIdPlaceholderEntry(const BundleConfig &bundleInfo)
-{
-    for (auto &hapModuleInfo : bundleInfo.hapModuleInfos) {
-        for (auto &data : hapModuleInfo.proxyDatas) {
-            if (URIUtils::HasUserIdPlaceholder(data.uri)) {
-                return true;
-            }
-        }
-    }
-    return false;
 }
 
 int DataProviderConfig::GetFromDataProperties(const ProfileInfo &profileInfo,

@@ -247,30 +247,72 @@ bool URIUtils::HasUserIdPlaceholder(const std::string &uri)
     return uri.find(USER_ID_PLACEHOLDER) != std::string::npos;
 }
 
-std::string URIUtils::ReplaceUserIdPlaceholder(const std::string &uri, int32_t userId)
+bool URIUtils::MatchProxyUri(const std::string &proxyUri, const std::string &formatUri)
 {
-    std::string result = uri;
-    std::string userIdStr = std::to_string(userId);
-    size_t pos = 0;
-    while ((pos = result.find(USER_ID_PLACEHOLDER, pos)) != std::string::npos) {
-        result.replace(pos, USER_ID_PLACEHOLDER_LEN, userIdStr);
-        pos += userIdStr.length();
-    }
-    return result;
-}
-
-bool URIUtils::MatchProxyUri(
-    const std::string &proxyUri, const std::string &formatUri, const std::vector<int32_t> &userIds)
-{
+    // proxy entry without placeholder only supports exact match, no prefix fallback
     if (!HasUserIdPlaceholder(proxyUri)) {
         return proxyUri == formatUri;
     }
-    for (int32_t userId : userIds) {
-        if (ReplaceUserIdPlaceholder(proxyUri, userId) == formatUri) {
-            return true;
+    // entry with placeholder: compare as uri objects segment by segment, the placeholder
+    // segment matches as literal prefix + digits (>=1) + literal suffix
+    Uri entryUri(proxyUri);
+    Uri requestUri(formatUri);
+    if (entryUri.GetScheme() != requestUri.GetScheme() || entryUri.GetAuthority() != requestUri.GetAuthority()) {
+        return false;
+    }
+    std::vector<std::string> entrySegments;
+    std::vector<std::string> requestSegments;
+    entryUri.GetPathSegments(entrySegments);
+    requestUri.GetPathSegments(requestSegments);
+    if (entrySegments.size() != requestSegments.size()) {
+        return false;
+    }
+    for (size_t i = 0; i < entrySegments.size(); ++i) {
+        if (!HasUserIdPlaceholder(entrySegments[i])) {
+            if (entrySegments[i] != requestSegments[i]) {
+                return false;
+            }
+            continue;
+        }
+        if (!MatchUserIdPlaceholderSegment(entrySegments[i], requestSegments[i])) {
+            return false;
         }
     }
-    return false;
+    return true;
+}
+
+bool URIUtils::MatchUserIdPlaceholderSegment(const std::string &entrySegment, const std::string &requestSegment)
+{
+    size_t placeholderPos = entrySegment.find(USER_ID_PLACEHOLDER);
+    if (placeholderPos == std::string::npos) {
+        return entrySegment == requestSegment;
+    }
+    // only a single placeholder inside one segment is supported
+    if (entrySegment.find(USER_ID_PLACEHOLDER, placeholderPos + USER_ID_PLACEHOLDER_LEN) != std::string::npos) {
+        return false;
+    }
+    std::string prefix = entrySegment.substr(0, placeholderPos);
+    std::string suffix = entrySegment.substr(placeholderPos + USER_ID_PLACEHOLDER_LEN);
+    // at least one digit is required between the literal prefix and suffix,
+    // letters are rejected so case-variated table names can never fall through
+    // to a shorter permissive entry while sqlite still resolves them to the
+    // case-insensitively same secure table
+    if (requestSegment.size() < prefix.size() + suffix.size() + 1) {
+        return false;
+    }
+    if (requestSegment.compare(0, prefix.size(), prefix) != 0) {
+        return false;
+    }
+    if (requestSegment.compare(requestSegment.size() - suffix.size(), suffix.size(), suffix) != 0) {
+        return false;
+    }
+    size_t digitEnd = requestSegment.size() - suffix.size();
+    for (size_t i = prefix.size(); i < digitEnd; ++i) {
+        if (requestSegment[i] < '0' || requestSegment[i] > '9') {
+            return false;
+        }
+    }
+    return true;
 }
 
 std::string StringUtils::GeneralAnonymous(const std::string &name)

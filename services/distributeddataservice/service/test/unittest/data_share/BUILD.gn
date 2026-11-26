@@ -61,7 +61,6 @@ ohos_unittest("DataShareServiceImplTest") {
     "${data_service_path}/service/data_share/data/resultset_json_formatter.cpp",
     "${data_service_path}/service/data_share/data/template_data.cpp",
     "${data_service_path}/service/data_share/data_provider_config.cpp",
-    "${data_service_path}/service/data_share/common/user_id_cache.cpp",
     "${data_service_path}/service/data_share/data_share_db_config.cpp",
     "${data_service_path}/service/data_share/data_share_obs_proxy.cpp",
     "${data_service_path}/service/data_share/data_share_profile_config.cpp",
@@ -109,7 +108,6 @@ ohos_unittest("DataShareServiceImplTest") {
     "freq_log_manager_test.cpp",
     "kv_dalegate_test.cpp",
     "data_share_proxy_data_manager_test.cpp",
-    "user_id_cache_test.cpp",
   ]
 
   configs = [ "//foundation/distributeddatamgr/datamgr_service/services/distributeddataservice/service/test:module_private_config" ]
@@ -223,7 +221,6 @@ ohos_unittest("DataShareServiceImplMockTest") {
     "${data_service_path}/service/data_share/data/resultset_json_formatter.cpp",
     "${data_service_path}/service/data_share/data/template_data.cpp",
     "${data_service_path}/service/data_share/data_provider_config.cpp",
-    "${data_service_path}/service/data_share/common/user_id_cache.cpp",
     "${data_service_path}/service/data_share/data_share_db_config.cpp",
     "${data_service_path}/service/data_share/data_share_obs_proxy.cpp",
     "${data_service_path}/service/data_share/data_share_profile_config.cpp",
@@ -374,7 +371,6 @@ ohos_unittest("DataShareAccountIsolationMockTest") {
     "${data_service_path}/service/data_share/data/resultset_json_formatter.cpp",
     "${data_service_path}/service/data_share/data/template_data.cpp",
     "${data_service_path}/service/data_share/data_provider_config.cpp",
-    "${data_service_path}/service/data_share/common/user_id_cache.cpp",
     "${data_service_path}/service/data_share/data_share_db_config.cpp",
     "${data_service_path}/service/data_share/data_share_obs_proxy.cpp",
     "${data_service_path}/service/data_share/data_share_profile_config.cpp",

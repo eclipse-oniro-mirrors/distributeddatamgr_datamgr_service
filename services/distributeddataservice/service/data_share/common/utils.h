@@ -69,9 +69,8 @@ public:
     static std::map<std::string, std::string> GetQueryParams(const std::string &uri);
     static std::pair<bool, uint32_t> Strtoul(const std::string &str);
     static bool HasUserIdPlaceholder(const std::string &uri);
-    static std::string ReplaceUserIdPlaceholder(const std::string &uri, int32_t userId);
-    static bool MatchProxyUri(
-        const std::string &proxyUri, const std::string &formatUri, const std::vector<int32_t> &userIds);
+    static bool MatchProxyUri(const std::string &proxyUri, const std::string &formatUri);
+    static bool MatchUserIdPlaceholderSegment(const std::string &entrySegment, const std::string &requestSegment);
     static constexpr const char *DATA_SHARE_SCHEMA = "datashare:///";;
     static constexpr const char DATA_PROXY_SCHEMA[] = "datashareproxy://";
     static constexpr const char *PARAM_URI_SEPARATOR = ":///";

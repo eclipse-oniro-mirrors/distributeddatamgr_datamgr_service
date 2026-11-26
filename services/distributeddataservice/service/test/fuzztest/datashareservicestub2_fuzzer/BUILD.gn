@@ -71,7 +71,6 @@ ohos_fuzztest("DataShareServiceStub2FuzzTest") {
     "${data_service_path}/service/data_share/data/resultset_json_formatter.cpp",
     "${data_service_path}/service/data_share/data/template_data.cpp",
     "${data_service_path}/service/data_share/data_provider_config.cpp",
-    "${data_service_path}/service/data_share/common/user_id_cache.cpp",
     "${data_service_path}/service/data_share/data_share_db_config.cpp",
     "${data_service_path}/service/data_share/data_share_obs_proxy.cpp",
     "${data_service_path}/service/data_share/data_share_profile_config.cpp",
