@@ -2730,12 +2730,12 @@ HWTEST_F(KvdbServiceImplTest, DumpStack_AfterCreate_FlagDisabled_ReturnOk, TestS
 }
 
 /**
- * @tc.name: DumpStack_AfterCreate_UpgradeFailed_SkipTagging
- * @tc.desc: A failed store upgrade skips tagging and keeps the upgrade failure code
+ * @tc.name: DumpStack_AfterCreate_UpgradeFailed_StillTags
+ * @tc.desc: A failed store upgrade still tags files and keeps the upgrade failure code
  * @tc.type: FUNC
  * @tc.author: agent
  */
-HWTEST_F(KvdbServiceImplTest, DumpStack_AfterCreate_UpgradeFailed_SkipTagging, TestSize.Level0)
+HWTEST_F(KvdbServiceImplTest, DumpStack_AfterCreate_UpgradeFailed_StillTags, TestSize.Level0)
 {
     auto tokenMock = std::make_shared<AccessTokenKitMock>();
     ON_CALL(*tokenMock, GetTokenTypeFlag(_)).WillByDefault(Return(TOKEN_NATIVE));

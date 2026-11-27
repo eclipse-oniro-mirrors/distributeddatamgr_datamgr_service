@@ -853,7 +853,7 @@ Status KVDBServiceImpl::AfterCreate(
     if (metaData.isEncrypt && !password.empty()) {
         SaveSecretKeyMeta(metaData, password);
     }
-    if (status == SUCCESS && options.dumpStackOnFileDeletion) {
+    if (options.dumpStackOnFileDeletion) {
         SetDumpStackTags(metaData, options.isCustomDir);
     }
     ZLOGI("appId:%{public}s storeId:%{public}s instanceId:%{public}d type:%{public}d dir:%{public}s "

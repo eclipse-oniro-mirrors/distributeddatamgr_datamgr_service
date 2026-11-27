@@ -554,12 +554,12 @@ HWTEST_F(KvdbServiceImplDumpStackTest, DumpStack_AfterCreate_CustomDirWithoutWhi
 }
 
 /**
- * @tc.name: DumpStack_AfterCreate_UpgradeFailed_SkipTagging
- * @tc.desc: AC-1.1 - A failed store upgrade skips tagging and keeps the upgrade failure code
+ * @tc.name: DumpStack_AfterCreate_UpgradeFailed_StillTags
+ * @tc.desc: AC-1.1 - A failed store upgrade still tags files and keeps the upgrade failure code
  * @tc.type: FUNC
  * @tc.author: agent
  */
-HWTEST_F(KvdbServiceImplDumpStackTest, DumpStack_AfterCreate_UpgradeFailed_SkipTagging, TestSize.Level0)
+HWTEST_F(KvdbServiceImplDumpStackTest, DumpStack_AfterCreate_UpgradeFailed_StillTags, TestSize.Level0)
 {
     auto tokenMock = std::make_shared<AccessTokenKitMock>();
     ON_CALL(*tokenMock, GetTokenTypeFlag(_)).WillByDefault(Return(TOKEN_NATIVE));
@@ -591,8 +591,8 @@ HWTEST_F(KvdbServiceImplDumpStackTest, DumpStack_AfterCreate_UpgradeFailed_SkipT
     auto status = kvdbServiceImpl_->AfterCreate(appId, storeId, opts, password);
 
     EXPECT_EQ(status, Status::STORE_UPGRADE_FAILED);
-    EXPECT_EQ(plan->getCalls, 0);
-    EXPECT_EQ(plan->setCalls, 0);
+    EXPECT_EQ(plan->getCalls, 1);
+    EXPECT_EQ(plan->setCalls, 1);
     BAccessTokenKit::accessTokenkit = accTokenMock;
     RemoveDbLayout(dataDir, storeId.storeId);
 }
