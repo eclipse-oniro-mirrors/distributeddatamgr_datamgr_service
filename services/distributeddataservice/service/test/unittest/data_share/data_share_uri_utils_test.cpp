@@ -179,17 +179,15 @@ HWTEST_F(DatashareURIUtilsTest, MatchProxyUri_LiteralPrefixMatch_001, TestSize.L
         "datashareproxy://com.ohos.settingsdata/entry/settingsdata/USER_SETTINGSDATA_SECURE_100",
         "datashareproxy://com.ohos.settingsdata/entry/settingsdata/USER_SETTINGSDATA_SECURE_100"));
     // legacy prefix matching is kept for entries without placeholder
-    EXPECT_TRUE(URIUtils::MatchProxyUri(
-        "datashareproxy://com.ohos.settingsdata/entry/settingsdata/USER_SETTINGSDATA",
+    EXPECT_TRUE(URIUtils::MatchProxyUri("datashareproxy://com.ohos.settingsdata/entry/settingsdata/USER_SETTINGSDATA",
         "datashareproxy://com.ohos.settingsdata/entry/settingsdata/USER_SETTINGSDATA_100"));
     // not a prefix
-    EXPECT_FALSE(URIUtils::MatchProxyUri(
-        "datashareproxy://com.ohos.settingsdata/entry/settingsdata/USER_SETTINGSDATA",
+    EXPECT_FALSE(URIUtils::MatchProxyUri("datashareproxy://com.ohos.settingsdata/entry/settingsdata/USER_SETTINGSDATA",
         "datashareproxy://com.ohos.settingsdata/entry/settingsdata/SETTINGSDATA"));
     // entry longer than request is rejected
-    EXPECT_FALSE(URIUtils::MatchProxyUri(
-        "datashareproxy://com.ohos.settingsdata/entry/settingsdata/USER_SETTINGSDATA_100",
-        "datashareproxy://com.ohos.settingsdata/entry/settingsdata/USER_SETTINGSDATA"));
+    EXPECT_FALSE(
+        URIUtils::MatchProxyUri("datashareproxy://com.ohos.settingsdata/entry/settingsdata/USER_SETTINGSDATA_100",
+            "datashareproxy://com.ohos.settingsdata/entry/settingsdata/USER_SETTINGSDATA"));
     ZLOGI("DatashareURIUtilsTest MatchProxyUri_LiteralPrefixMatch_001 end");
 }
 
@@ -289,6 +287,10 @@ HWTEST_F(DatashareURIUtilsTest, MatchProxyUri_SegmentStructure_001, TestSize.Lev
     EXPECT_FALSE(
         URIUtils::MatchProxyUri("datashareproxy://com.ohos.settingsdata/entry/settingsdata/TBL_{userid}_{userid}",
             "datashareproxy://com.ohos.settingsdata/entry/settingsdata/TBL_100_101"));
+    // different scheme is rejected
+    EXPECT_FALSE(
+        URIUtils::MatchProxyUri("datashare://com.ohos.settingsdata/entry/settingsdata/USER_SETTINGSDATA_{userid}",
+            "datashareproxy://com.ohos.settingsdata/entry/settingsdata/USER_SETTINGSDATA_100"));
     ZLOGI("DatashareURIUtilsTest MatchProxyUri_SegmentStructure_001 end");
 }
 
@@ -314,6 +316,10 @@ HWTEST_F(DatashareURIUtilsTest, MatchUserIdPlaceholderSegment_001, TestSize.Leve
     // no placeholder in entry segment falls back to exact comparison
     EXPECT_TRUE(URIUtils::MatchUserIdPlaceholderSegment("USER_SETTINGSDATA", "USER_SETTINGSDATA"));
     EXPECT_FALSE(URIUtils::MatchUserIdPlaceholderSegment("USER_SETTINGSDATA", "USER_SETTINGSDATA_100"));
+    // literal suffix mismatch
+    EXPECT_FALSE(URIUtils::MatchUserIdPlaceholderSegment("{userid}_TBL", "100_TBK"));
+    // literal prefix mismatch
+    EXPECT_FALSE(URIUtils::MatchUserIdPlaceholderSegment("USER_SETTINGSDATA_{userid}", "USER_SETTINGSXATA_100"));
     ZLOGI("DatashareURIUtilsTest MatchUserIdPlaceholderSegment_001 end");
 }
 } // namespace DataShare

@@ -66,7 +66,7 @@ public:
     static UriConfig GetUriConfig(const std::string &uri);
     static int32_t GetSystemAbilityId(const std::string &uri);
     static std::string Anonymous(const std::string &uri);
-    static std::map<std::string, std::string> GetQueryParams(const std::string &uri);
+    static std::map<std::string, std::string> GetQueryParams(const std::string& uri);
     static std::pair<bool, uint32_t> Strtoul(const std::string &str);
     static bool HasUserIdPlaceholder(const std::string &uri);
     static bool MatchProxyUri(const std::string &proxyUri, const std::string &formatUri);
