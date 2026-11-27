@@ -118,9 +118,7 @@ HWTEST_F(DataShareSysEventSubscriberTest, OnReceiveEventSandboxBundleRemoved001,
     auto sysEventSubscriber = std::make_shared<SysEventSubscriber>(subscribeInfo, executors);
     ASSERT_NE(sysEventSubscriber, nullptr);
 
-    // Build a sandbox-bundle-removed event and verify OnReceiveEvent finds a matching install callback.
-    // OnAppUninstall touches BundleMgrProxy / ProxyDataManager singletons; this case only asserts routing
-    // (the action is in installCallbacks_), not the side effects of those singletons.
+    // Build a sandbox-bundle-removed event; only routing is asserted (singletons are not mocked).
     AAFwk::Want want;
     want.SetAction(EventFwk::CommonEventSupport::COMMON_EVENT_SANDBOX_BUNDLE_REMOVED);
     want.SetParam(SysEventSubscriber::USER_ID, 100);
@@ -131,7 +129,6 @@ HWTEST_F(DataShareSysEventSubscriberTest, OnReceiveEventSandboxBundleRemoved001,
     auto it = sysEventSubscriber->installCallbacks_.find(
         EventFwk::CommonEventSupport::COMMON_EVENT_SANDBOX_BUNDLE_REMOVED);
     ASSERT_NE(it, sysEventSubscriber->installCallbacks_.end());
-    // The action carried by the event must resolve to the registered uninstall handler.
     EXPECT_EQ(it->second, &SysEventSubscriber::OnAppUninstall);
 
     // Drive OnReceiveEvent; it is void-typed and must not crash for this action.

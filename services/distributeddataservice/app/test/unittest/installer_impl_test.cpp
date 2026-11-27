@@ -174,8 +174,7 @@ HWTEST_F(InstallerImplTest, OnReceiveEventSandboxBundleRemovedNoCrash001, TestSi
     auto subscriber = std::make_shared<InstallEventSubscriber>(info, nullptr);
     ASSERT_NE(subscriber, nullptr);
 
-    // Build a SANDBOX_BUNDLE_REMOVED event; no Element/bundleName is set (OnUninstall short-circuits on
-    // null service before reading them), so the empty want is sufficient to exercise the dispatch path.
+    // Build a SANDBOX_BUNDLE_REMOVED event; empty want is enough (null service short-circuits OnUninstall).
     Want want;
     want.SetAction(CommonEventSupport::COMMON_EVENT_SANDBOX_BUNDLE_REMOVED);
     want.SetParam(InstallEventSubscriber::USER_ID, 101);
