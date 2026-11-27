@@ -40,7 +40,6 @@ ohos_source_set("distributeddata_kvdb") {
 
   sources = [
     "auth_delegate.cpp",
-    "kv_hmfs_tag_util.cpp",
     "kvdb_exporter.cpp",
     "kvdb_general_store.cpp",
     "kvdb_notifier_proxy.cpp",

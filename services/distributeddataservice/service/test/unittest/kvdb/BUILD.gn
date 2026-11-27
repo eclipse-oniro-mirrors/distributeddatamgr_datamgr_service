@@ -334,72 +334,6 @@ ohos_unittest("KvdbServiceImplDumpStackTest") {
   ]
 }
 
-ohos_unittest("KvHmfsTagUtilTest") {
-  module_out_path = module_output_path
-  sanitize = {
-    cfi = true
-    cfi_cross_dso = true
-    debug = false
-    blocklist = "${datamgr_service_path}/cfi_blocklist.txt"
-  }
-  sources = [
-    "${data_service_path}/app/src/kvstore_meta_manager.cpp",
-    "${data_service_path}/framework/test/mock/account_delegate_mock.cpp",
-    "kv_hmfs_tag_util_test.cpp",
-    "../../mock/access_token_mock.cpp",
-    "../../mock/checker_mock.cpp",
-    "../../mock/meta_data_manager_mock.cpp",
-    "${data_service_path}/framework/cloud/cloud_server.cpp",
-    "${data_service_path}/framework/network/network_delegate.cpp",
-  ]
-
-  include_dirs = [
-    "${data_service_path}/app/src",
-    "${data_service_path}/service/kvdb",
-    "${data_service_path}/adapter/include/account",
-    "${data_service_path}/framework/include",
-    "${data_service_path}/service/test",
-    "${data_service_path}/service/test/mock",
-    "${data_service_path}/framework/test",
-    "${data_service_path}/adapter/include/communicator",
-  ]
-
-  configs = [ "//foundation/distributeddatamgr/datamgr_service/services/distributeddataservice/service/test:module_private_config" ]
-
-  cflags = [
-    "-fno-access-control",
-  ]
-
-  ldflags = [ "-Wl,--wrap=ioctl" ]
-
-  external_deps = [
-    "access_token:libaccesstoken_sdk",
-    "access_token:libnativetoken_shared",
-    "access_token:libtoken_setproc",
-    "c_utils:utils",
-    "device_auth:deviceauth_sdk",
-    "googletest:gmock_main",
-    "googletest:gtest_main",
-    "hilog:libhilog",
-    "hisysevent:libhisysevent",
-    "ipc:ipc_core",
-    "json:nlohmann_json_static",
-    "kv_store:distributeddata_inner",
-    "kv_store:distributeddata_mgr",
-    "kv_store:distributeddb",
-    "kv_store:kvdb_inner_lite",
-    "relational_store:native_rdb",
-    "safwk:system_ability_fwk",
-  ]
-
-  deps = [
-    "${data_service_path}/adapter/communicator:distributeddata_communicator",
-    "${data_service_path}/framework:distributeddatasvcfwk",
-    "${data_service_path}/service/kvdb:distributeddata_kvdb",
-    "${data_service_path}/service/test/mock:distributeddata_mock_static",
-  ]
-}
-
 ohos_unittest("AuthDelegateMockTest") {
   module_out_path = module_output_path
 
@@ -492,7 +426,6 @@ group("unittests") {
     ":AuthDelegateMockTest",
     ":KVDBGeneralStoreAbnormalTest",
     ":KVDBGeneralStoreTest",
-    ":KvHmfsTagUtilTest",
     ":KvdbServiceImplDumpStackTest",
     ":KvdbServiceImplTest",
     ":KvdbServicePasswordTest",
