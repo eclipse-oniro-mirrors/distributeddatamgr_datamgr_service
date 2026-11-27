@@ -99,8 +99,7 @@ HWTEST_F(InstallerImplTest, InstallCallbacksNoUnknownActions001, TestSize.Level1
     EXPECT_NE(it->second, &InstallEventSubscriber::OnInstall);
     EXPECT_NE(it->second, &InstallEventSubscriber::OnUpdate);
     // An action that was never registered must not be found in the table.
-    EXPECT_EQ(subscriber->callbacks_.find("usual.event.NOT_REGISTERED"),
-        subscriber->callbacks_.end());
+    EXPECT_EQ(subscriber->callbacks_.find("usual.event.NOT_REGISTERED"), subscriber->callbacks_.end());
 }
 
 /**
