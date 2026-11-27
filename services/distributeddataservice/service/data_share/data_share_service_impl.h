@@ -160,6 +160,8 @@ private:
     void SetCriticalTask();
     bool VerifyPredicates(const DataSharePredicates &predicates, uint32_t callingTokenId,
         DataProviderConfig::ProviderInfo &providerInfo, std::string &func);
+    bool VerifyColumns(const std::vector<std::string> &columns, uint32_t callingTokenId,
+        DataProviderConfig::ProviderInfo &providerInfo, std::string &func);
     std::shared_ptr<DataShareServiceImpl::TimerReceiver> GetTimerReceiver();
     static Factory factory_;
     static constexpr int32_t ERROR = -1;
