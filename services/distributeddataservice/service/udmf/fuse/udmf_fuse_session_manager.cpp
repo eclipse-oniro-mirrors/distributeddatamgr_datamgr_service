@@ -180,7 +180,7 @@ int32_t UdmfFuseSessionManager::Activate(
         if (it->second.targetTokenId != targetTokenId || it->second.targetUid != targetUid) {
             return -EACCES;
         }
-        uri = "file://" + GetAppMountPoint(it->second.userId) + "/" + it->second.alias + "/" + it->second.root.name;
+        uri = "file://" + GetAppMountPoint() + "/" + it->second.alias + "/" + it->second.root.name;
         return 0;
     }
     if (it->second.state != State::PENDING_DROP) {
@@ -209,7 +209,7 @@ int32_t UdmfFuseSessionManager::Activate(
     ++activeSourceSessionCounts_[it->second.sourceTokenId];
     ++activeSessionCounts_[it->second.userId];
     ScheduleActiveSessionLocked(sessionId, it->second);
-    uri = "file://" + GetAppMountPoint(it->second.userId) + "/" + relativePath;
+    uri = "file://" + GetAppMountPoint() + "/" + relativePath;
     return 0;
 }
 
@@ -352,7 +352,7 @@ std::string UdmfFuseSessionManager::GetMountPoint(int32_t userId)
     return std::string(UDMF_FUSE_MOUNT_PREFIX) + std::to_string(userId) + UDMF_FUSE_MOUNT_SUFFIX;
 }
 
-std::string UdmfFuseSessionManager::GetAppMountPoint(int32_t)
+std::string UdmfFuseSessionManager::GetAppMountPoint()
 {
     return UDMF_FUSE_APP_MOUNT_POINT;
 }

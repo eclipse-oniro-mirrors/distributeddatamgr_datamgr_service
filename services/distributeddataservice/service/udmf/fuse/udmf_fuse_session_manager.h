@@ -74,7 +74,7 @@ public:
     void Remove(const std::string &sessionId);
 
     static std::string GetMountPoint(int32_t userId);
-    static std::string GetAppMountPoint(int32_t userId);
+    static std::string GetAppMountPoint();
     static bool IsValid(const VirtualEntry &entry);
 
 private:
