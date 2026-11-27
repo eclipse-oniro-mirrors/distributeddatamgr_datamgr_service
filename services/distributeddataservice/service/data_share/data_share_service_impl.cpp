@@ -83,8 +83,10 @@ static constexpr int DECIMAL_BASE = 10;
 static constexpr std::chrono::milliseconds SET_CRITICAL_WAIT_TIME(10000); // 10s
 // SQL keywords indicating cross-table operations (subquery/join/union) or DDL/DML.
 // \b word boundary keeps legal column names like update_time from false positives.
+// remindTimer is the internal scheduler scalar function registered by RdbDelegate, it is only
+// allowed to be invoked by the template scheduler path, not by query callers.
 static const std::regex DANGEROUS_SQL_KEYWORDS(R"(\b(SELECT|FROM|JOIN|UNION|INTO|EXISTS|DROP|DELETE|INSERT|)"
-                                               R"(UPDATE|CREATE|ALTER|TRUNCATE|EXEC|EXECUTE)\b)",
+                                               R"(UPDATE|CREATE|ALTER|TRUNCATE|EXEC|EXECUTE|remindTimer)\b)",
     std::regex::icase | std::regex::optimize);
 // Statement separator and comment markers, blocks keyword-splitting like SEL/**/ECT
 static const std::regex DANGEROUS_SQL_PATTERNS(R"(;|--|/\*)", std::regex::optimize);
@@ -196,6 +198,28 @@ bool DataShareServiceImpl::VerifyPredicates(const DataSharePredicates &predicate
     return false;
 }
 
+bool DataShareServiceImpl::VerifyColumns(const std::vector<std::string> &columns, uint32_t callingTokenId,
+    DataProviderConfig::ProviderInfo &providerInfo, std::string &func)
+{
+    for (const auto &column : columns) {
+        // Empty column is rejected: the sql builder skips empty elements and joins the neighbors
+        // without separator, so keywords split by empty strings reassemble in the final sql.
+        if (!column.empty() && !std::regex_search(column, DANGEROUS_SQL_KEYWORDS) &&
+            !std::regex_search(column, DANGEROUS_SQL_PATTERNS)) {
+            continue;
+        }
+        std::string callingName = HiViewFaultAdapter::GetCallingName(callingTokenId).first;
+        std::string appendix = "callingName:" + callingName + " columns:" + std::to_string(columns.size());
+        DataShareFaultInfo faultInfo = { HiViewFaultAdapter::invalidColumns, providerInfo.bundleName,
+            providerInfo.moduleName, providerInfo.storeName, func, E_FIELD_ILLEGAL, appendix };
+        HiViewFaultAdapter::ReportDataFault(faultInfo);
+        ZLOGW("callingName:%{public}s %{public}s columns:%{public}zu invalid, bundle:%{public}s", callingName.c_str(),
+            func.c_str(), columns.size(), providerInfo.bundleName.c_str());
+        return false;
+    }
+    return true;
+}
+
 bool DataShareServiceImpl::VerifyQueryLanguage(const DataSharePredicates &predicates, uint32_t callingTokenId,
     DataProviderConfig::ProviderInfo &providerInfo, std::string &func)
 {
@@ -302,6 +326,9 @@ std::shared_ptr<DataShareResultSet> DataShareServiceImpl::Query(const std::strin
         TimeoutReport timeoutReport({providerInfo.bundleName, providerInfo.moduleName, providerInfo.storeName, func,
             callingTokenId}, true);
         if (!VerifyPredicates(predicates, callingTokenId, providerInfo, func)) {
+            return std::make_pair(E_ERROR, 0);
+        }
+        if (!VerifyColumns(columns, callingTokenId, providerInfo, func)) {
             return std::make_pair(E_ERROR, 0);
         }
         auto [err, result] = dbDelegate->Query(providerInfo.tableName,

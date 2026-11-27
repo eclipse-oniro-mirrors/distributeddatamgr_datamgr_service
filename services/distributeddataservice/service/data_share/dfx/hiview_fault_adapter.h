@@ -44,6 +44,7 @@ public:
     static constexpr const char* kvDBCorrupt = "KVDB_CORRUPT";
     static constexpr const char* unapprovedProvider = "UNAPPROVED_PROVIDER";
     static constexpr const char* invalidPredicates = "INVALID_PREDICATES";
+    static constexpr const char* invalidColumns = "INVALID_COLUMNS";
     static void ReportDataFault(const DataShareFaultInfo &faultInfo);
     static std::pair<std::string, int> GetCallingName(uint32_t callingTokenid);
 };
