@@ -91,15 +91,15 @@ HWTEST_F(InstallerImplTest, InstallCallbacksNoUnknownActions001, TestSize.Level1
     auto subscriber = std::make_shared<InstallEventSubscriber>(info, nullptr);
     ASSERT_NE(subscriber, nullptr);
 
-    // The callback table must contain the five documented events, including SANDBOX_BUNDLE_REMOVED.
-    EXPECT_EQ(subscriber->callbacks_.size(), static_cast<size_t>(5));
+    // The callback table must contain the six documented events, including SANDBOX_BUNDLE_REMOVED.
+    EXPECT_EQ(subscriber->callbacks_.size(), static_cast<size_t>(6));
     // SANDBOX_BUNDLE_REMOVED must NOT map to OnInstall/OnUpdate (it is an uninstall event).
     auto it = subscriber->callbacks_.find(CommonEventSupport::COMMON_EVENT_SANDBOX_BUNDLE_REMOVED);
     ASSERT_NE(it, subscriber->callbacks_.end());
     EXPECT_NE(it->second, &InstallEventSubscriber::OnInstall);
     EXPECT_NE(it->second, &InstallEventSubscriber::OnUpdate);
     // An action that was never registered must not be found in the table.
-    EXPECT_EQ(subscriber->callbacks_.find(CommonEventSupport::COMMON_EVENT_PACKAGE_CHANGED),
+    EXPECT_EQ(subscriber->callbacks_.find("usual.event.NOT_REGISTERED"),
         subscriber->callbacks_.end());
 }
 
@@ -156,7 +156,7 @@ HWTEST_F(InstallerImplTest, OnReceiveEventUnknownAction001, TestSize.Level1)
     // Drive OnReceiveEvent; it is void-typed and must not crash for an unknown action.
     subscriber->OnReceiveEvent(event);
     // The callback table must remain unchanged after dispatching an unknown action.
-    EXPECT_EQ(subscriber->callbacks_.size(), static_cast<size_t>(5));
+    EXPECT_EQ(subscriber->callbacks_.size(), static_cast<size_t>(6));
 }
 
 /**
