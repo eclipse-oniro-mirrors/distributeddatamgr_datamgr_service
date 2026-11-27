@@ -974,7 +974,7 @@ HWTEST_F(KvdbServiceImplDumpStackTest, DumpStack_SetDumpStackTags_EmptyDataDirRe
  */
 HWTEST_F(KvdbServiceImplDumpStackTest, DumpStack_SetDumpStackTags_CustomDirTokenIdNotHap_001, TestSize.Level0)
 {
-    constexpr uint32_t STORE_TOKEN_ID = 0x5A5A;
+    constexpr uint32_t storeTokenId = 0x5A5A;
     std::string storeIdStr = "dumpStackTagCustomTokenId";
     std::string dataDir = std::string(create.baseDir) + "/dump_stack_ut_custom_token_id";
     ASSERT_TRUE(MakeDir(dataDir));
@@ -985,7 +985,7 @@ HWTEST_F(KvdbServiceImplDumpStackTest, DumpStack_SetDumpStackTags_CustomDirToken
 
     auto tokenMock = std::make_shared<AccessTokenKitMock>();
     ON_CALL(*tokenMock, GetTokenTypeFlag(_)).WillByDefault(Return(TOKEN_HAP));
-    ON_CALL(*tokenMock, GetTokenTypeFlag(STORE_TOKEN_ID)).WillByDefault(Return(TOKEN_NATIVE));
+    ON_CALL(*tokenMock, GetTokenTypeFlag(storeTokenId)).WillByDefault(Return(TOKEN_NATIVE));
     BAccessTokenKit::accessTokenkit = tokenMock;
     auto tokenIdKitMock = std::make_shared<TokenIdKitMock>();
     ON_CALL(*tokenIdKitMock, IsSystemAppByFullTokenID(_)).WillByDefault(Return(true));
@@ -994,7 +994,7 @@ HWTEST_F(KvdbServiceImplDumpStackTest, DumpStack_SetDumpStackTags_CustomDirToken
     StoreMetaData meta;
     meta.storeId = storeIdStr;
     meta.dataDir = dataDir;
-    meta.tokenId = STORE_TOKEN_ID;
+    meta.tokenId = storeTokenId;
     meta.storeType = static_cast<int32_t>(OHOS::DistributedKv::SINGLE_VERSION);
     auto plan = std::make_shared<IoctlPlan>();
     IoctlHookGuard guard(MakeIoctlHandler(plan));
@@ -1015,12 +1015,12 @@ HWTEST_F(KvdbServiceImplDumpStackTest, DumpStack_SetDumpStackTags_CustomDirToken
  */
 HWTEST_F(KvdbServiceImplDumpStackTest, DumpStack_SetDumpStackTags_CustomDirLeafAssembled_001, TestSize.Level0)
 {
-    constexpr const char *CUSTOM_LEAF = "dump_stack_ut_custom_leaf";
-    constexpr uint32_t STORE_TOKEN_ID = 0x5A5A;
+    constexpr const char *customLeaf = "dump_stack_ut_custom_leaf";
+    constexpr uint32_t storeTokenId = 0x5A5A;
     std::string storeIdStr = "dumpStackTagCustomLeaf";
     auto tokenMock = std::make_shared<AccessTokenKitMock>();
     ON_CALL(*tokenMock, GetTokenTypeFlag(_)).WillByDefault(Return(TOKEN_NATIVE));
-    ON_CALL(*tokenMock, GetTokenTypeFlag(STORE_TOKEN_ID)).WillByDefault(Return(TOKEN_HAP));
+    ON_CALL(*tokenMock, GetTokenTypeFlag(storeTokenId)).WillByDefault(Return(TOKEN_HAP));
     BAccessTokenKit::accessTokenkit = tokenMock;
     auto tokenIdKitMock = std::make_shared<TokenIdKitMock>();
     ON_CALL(*tokenIdKitMock, IsSystemAppByFullTokenID(_)).WillByDefault(Return(true));
@@ -1029,13 +1029,13 @@ HWTEST_F(KvdbServiceImplDumpStackTest, DumpStack_SetDumpStackTags_CustomDirLeafA
     StoreMetaData meta;
     meta.storeId = storeIdStr;
     meta.bundleName = appId.appId;
-    meta.dataDir = std::string(create.baseDir) + "/" + CUSTOM_LEAF;
+    meta.dataDir = std::string(create.baseDir) + "/" + customLeaf;
     meta.securityLevel = OHOS::DistributedKv::S1;
     meta.area = OHOS::DistributedKv::EL1;
     meta.user = TEST_USER;
-    meta.tokenId = STORE_TOKEN_ID;
+    meta.tokenId = storeTokenId;
     meta.storeType = static_cast<int32_t>(OHOS::DistributedKv::SINGLE_VERSION);
-    std::string customDir = kvdbServiceImpl_->AssembleCustomDir(meta, CUSTOM_LEAF);
+    std::string customDir = kvdbServiceImpl_->AssembleCustomDir(meta, customLeaf);
     ASSERT_FALSE(customDir.empty());
     std::vector<std::string> newDirs;
     ASSERT_TRUE(MakeDirs(customDir, newDirs));
@@ -1064,15 +1064,15 @@ HWTEST_F(KvdbServiceImplDumpStackTest, DumpStack_SetDumpStackTags_CustomDirLeafA
  */
 HWTEST_F(KvdbServiceImplDumpStackTest, DumpStack_SetDumpStackTags_AllFilesTaggedAndSetFail_001, TestSize.Level0)
 {
-    constexpr int NUM_DB_FILES = 6;
-    constexpr int NUM_SET_FAILED_FILES = 3;
+    constexpr int numDbFiles = 6;
+    constexpr int numSetFailedFiles = 3;
     std::string storeIdStr = "dumpStackTagAllFiles";
     std::string dataDir = std::string(create.baseDir) + "/dump_stack_ut_all_files";
     ASSERT_TRUE(MakeDir(dataDir));
     ASSERT_TRUE(CreateDbLayout(dataDir, storeIdStr));
     std::string base = GetDbBase(dataDir, storeIdStr);
     ASSERT_FALSE(base.empty());
-    const std::string files[NUM_DB_FILES] = { "main/gen_natural_store.db", "main/gen_natural_store.db-wal",
+    const std::string files[numDbFiles] = { "main/gen_natural_store.db", "main/gen_natural_store.db-wal",
         "main/gen_natural_store.db-shm", "meta/meta.db", "meta/meta.db-wal", "meta/meta.db-shm" };
     for (const auto &file : files) {
         ASSERT_TRUE(MakeFile(base + file));
@@ -1092,8 +1092,8 @@ HWTEST_F(KvdbServiceImplDumpStackTest, DumpStack_SetDumpStackTags_AllFilesTagged
     IoctlHookGuard guard(MakeIoctlHandler(plan));
     kvdbServiceImpl_->SetDumpStackTags(meta, false);
 
-    EXPECT_EQ(plan->getCalls, NUM_DB_FILES);
-    EXPECT_EQ(plan->setCalls, NUM_SET_FAILED_FILES);
+    EXPECT_EQ(plan->getCalls, numDbFiles);
+    EXPECT_EQ(plan->setCalls, numSetFailedFiles);
     BAccessTokenKit::accessTokenkit = accTokenMock;
     RemoveDbLayout(dataDir, storeIdStr);
 }
