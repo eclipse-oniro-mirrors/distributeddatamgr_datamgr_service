@@ -242,6 +242,80 @@ std::map<std::string, std::string> URIUtils::GetQueryParams(const std::string& u
     return params;
 }
 
+bool URIUtils::HasUserIdPlaceholder(const std::string &uri)
+{
+    return uri.find(USER_ID_PLACEHOLDER) != std::string::npos;
+}
+
+bool URIUtils::MatchProxyUri(const std::string &proxyUri, const std::string &formatUri)
+{
+    // proxy entry without placeholder keeps the legacy prefix matching,
+    // compatible with existing providers configuring prefix-style uris
+    if (!HasUserIdPlaceholder(proxyUri)) {
+        return proxyUri.length() <= formatUri.length() && formatUri.compare(0, proxyUri.length(), proxyUri) == 0;
+    }
+    // entry with placeholder: compare as uri objects segment by segment, the placeholder
+    // segment matches as literal prefix + digits (>=1) + literal suffix
+    Uri entryUri(proxyUri);
+    Uri requestUri(formatUri);
+    if (entryUri.GetScheme() != requestUri.GetScheme() || entryUri.GetAuthority() != requestUri.GetAuthority()) {
+        return false;
+    }
+    std::vector<std::string> entrySegments;
+    std::vector<std::string> requestSegments;
+    entryUri.GetPathSegments(entrySegments);
+    requestUri.GetPathSegments(requestSegments);
+    if (entrySegments.size() != requestSegments.size()) {
+        return false;
+    }
+    for (size_t i = 0; i < entrySegments.size(); ++i) {
+        if (!HasUserIdPlaceholder(entrySegments[i])) {
+            if (entrySegments[i] != requestSegments[i]) {
+                return false;
+            }
+            continue;
+        }
+        if (!MatchUserIdPlaceholderSegment(entrySegments[i], requestSegments[i])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool URIUtils::MatchUserIdPlaceholderSegment(const std::string &entrySegment, const std::string &requestSegment)
+{
+    size_t placeholderPos = entrySegment.find(USER_ID_PLACEHOLDER);
+    if (placeholderPos == std::string::npos) {
+        return entrySegment == requestSegment;
+    }
+    // only a single placeholder inside one segment is supported
+    if (entrySegment.find(USER_ID_PLACEHOLDER, placeholderPos + USER_ID_PLACEHOLDER_LEN) != std::string::npos) {
+        return false;
+    }
+    std::string prefix = entrySegment.substr(0, placeholderPos);
+    std::string suffix = entrySegment.substr(placeholderPos + USER_ID_PLACEHOLDER_LEN);
+    // at least one digit is required between the literal prefix and suffix,
+    // letters are rejected so case-variated table names can never fall through
+    // to a shorter permissive entry while sqlite still resolves them to the
+    // case-insensitively same secure table
+    if (requestSegment.size() < prefix.size() + suffix.size() + 1) {
+        return false;
+    }
+    if (requestSegment.compare(0, prefix.size(), prefix) != 0) {
+        return false;
+    }
+    if (requestSegment.compare(requestSegment.size() - suffix.size(), suffix.size(), suffix) != 0) {
+        return false;
+    }
+    size_t digitEnd = requestSegment.size() - suffix.size();
+    for (size_t i = prefix.size(); i < digitEnd; ++i) {
+        if (requestSegment[i] < '0' || requestSegment[i] > '9') {
+            return false;
+        }
+    }
+    return true;
+}
+
 std::string StringUtils::GeneralAnonymous(const std::string &name)
 {
     // To short to be partial anonymized

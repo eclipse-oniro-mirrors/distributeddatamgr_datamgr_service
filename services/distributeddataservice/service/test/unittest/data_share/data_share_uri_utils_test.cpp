@@ -146,5 +146,181 @@ HWTEST_F(DatashareURIUtilsTest, GetSystemAbilityId002, TestSize.Level0)
     EXPECT_EQ(saId, URIUtils::INVALID_SA_ID);
     ZLOGI("DatashareURIUtilsTest GetSystemAbilityId002 end");
 }
+/**
+ * @tc.name: HasUserIdPlaceholder_001
+ * @tc.desc: Verify HasUserIdPlaceholder detects the {userid} placeholder in uri
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(DatashareURIUtilsTest, HasUserIdPlaceholder_001, TestSize.Level0)
+{
+    ZLOGI("DatashareURIUtilsTest HasUserIdPlaceholder_001 start");
+    EXPECT_TRUE(URIUtils::HasUserIdPlaceholder(
+        "datashareproxy://com.ohos.settingsdata/entry/settingsdata/USER_SETTINGSDATA_{userid}"));
+    EXPECT_FALSE(URIUtils::HasUserIdPlaceholder(
+        "datashareproxy://com.ohos.settingsdata/entry/settingsdata/USER_SETTINGSDATA_100"));
+    EXPECT_FALSE(URIUtils::HasUserIdPlaceholder(""));
+    // placeholder token is case-sensitive
+    EXPECT_FALSE(URIUtils::HasUserIdPlaceholder(
+        "datashareproxy://com.ohos.settingsdata/entry/settingsdata/USER_SETTINGSDATA_{USERID}"));
+    ZLOGI("DatashareURIUtilsTest HasUserIdPlaceholder_001 end");
+}
+
+/**
+ * @tc.name: MatchProxyUri_LiteralPrefixMatch_001
+ * @tc.desc: Verify MatchProxyUri keeps legacy prefix matching for entries without placeholder
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(DatashareURIUtilsTest, MatchProxyUri_LiteralPrefixMatch_001, TestSize.Level0)
+{
+    ZLOGI("DatashareURIUtilsTest MatchProxyUri_LiteralPrefixMatch_001 start");
+    EXPECT_TRUE(URIUtils::MatchProxyUri(
+        "datashareproxy://com.ohos.settingsdata/entry/settingsdata/USER_SETTINGSDATA_SECURE_100",
+        "datashareproxy://com.ohos.settingsdata/entry/settingsdata/USER_SETTINGSDATA_SECURE_100"));
+    // legacy prefix matching is kept for entries without placeholder
+    EXPECT_TRUE(URIUtils::MatchProxyUri("datashareproxy://com.ohos.settingsdata/entry/settingsdata/USER_SETTINGSDATA",
+        "datashareproxy://com.ohos.settingsdata/entry/settingsdata/USER_SETTINGSDATA_100"));
+    // not a prefix
+    EXPECT_FALSE(URIUtils::MatchProxyUri("datashareproxy://com.ohos.settingsdata/entry/settingsdata/USER_SETTINGSDATA",
+        "datashareproxy://com.ohos.settingsdata/entry/settingsdata/SETTINGSDATA"));
+    // entry longer than request is rejected
+    EXPECT_FALSE(
+        URIUtils::MatchProxyUri("datashareproxy://com.ohos.settingsdata/entry/settingsdata/USER_SETTINGSDATA_100",
+            "datashareproxy://com.ohos.settingsdata/entry/settingsdata/USER_SETTINGSDATA"));
+    ZLOGI("DatashareURIUtilsTest MatchProxyUri_LiteralPrefixMatch_001 end");
+}
+
+/**
+ * @tc.name: MatchProxyUri_CaseVariationNotMatch_001
+ * @tc.desc: Verify MatchProxyUri rejects case-variated uri, closing the privilege escalation bypass
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(DatashareURIUtilsTest, MatchProxyUri_CaseVariationNotMatch_001, TestSize.Level0)
+{
+    ZLOGI("DatashareURIUtilsTest MatchProxyUri_CaseVariationNotMatch_001 start");
+    std::string attack = "datashareproxy://com.ohos.settingsdata/entry/settingsdata/USER_SETTINGSDATA_secure_100";
+    // literal secure entry must not match case-variated request
+    EXPECT_FALSE(URIUtils::MatchProxyUri(
+        "datashareproxy://com.ohos.settingsdata/entry/settingsdata/USER_SETTINGSDATA_SECURE_100", attack));
+    // template secure entry must not match case-variated request either
+    EXPECT_FALSE(URIUtils::MatchProxyUri(
+        "datashareproxy://com.ohos.settingsdata/entry/settingsdata/USER_SETTINGSDATA_SECURE_{userid}", attack));
+    // permissive entry must not match case-variated request: letters in the placeholder part are
+    // rejected, so the request can never fall through to a permissive prefix entry
+    EXPECT_FALSE(URIUtils::MatchProxyUri(
+        "datashareproxy://com.ohos.settingsdata/entry/settingsdata/USER_SETTINGSDATA_{userid}", attack));
+    ZLOGI("DatashareURIUtilsTest MatchProxyUri_CaseVariationNotMatch_001 end");
+}
+
+/**
+ * @tc.name: MatchProxyUri_PlaceholderDigitsMatch_001
+ * @tc.desc: Verify MatchProxyUri matches template uri whose placeholder stands for pure digits
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(DatashareURIUtilsTest, MatchProxyUri_PlaceholderDigitsMatch_001, TestSize.Level0)
+{
+    ZLOGI("DatashareURIUtilsTest MatchProxyUri_PlaceholderDigitsMatch_001 start");
+    EXPECT_TRUE(URIUtils::MatchProxyUri(
+        "datashareproxy://com.ohos.settingsdata/entry/settingsdata/USER_SETTINGSDATA_SECURE_{userid}",
+        "datashareproxy://com.ohos.settingsdata/entry/settingsdata/USER_SETTINGSDATA_SECURE_100"));
+    EXPECT_TRUE(URIUtils::MatchProxyUri(
+        "datashareproxy://com.ohos.settingsdata/entry/settingsdata/USER_SETTINGSDATA_SECURE_{userid}",
+        "datashareproxy://com.ohos.settingsdata/entry/settingsdata/USER_SETTINGSDATA_SECURE_101"));
+    // user 0 is a valid digit suffix
+    EXPECT_TRUE(
+        URIUtils::MatchProxyUri("datashareproxy://com.ohos.settingsdata/entry/settingsdata/USER_SETTINGSDATA_{userid}",
+            "datashareproxy://com.ohos.settingsdata/entry/settingsdata/USER_SETTINGSDATA_0"));
+    // whole segment placeholder
+    EXPECT_TRUE(URIUtils::MatchProxyUri("datashareproxy://com.ohos.settingsdata/entry/settingsdata/{userid}",
+        "datashareproxy://com.ohos.settingsdata/entry/settingsdata/100"));
+    ZLOGI("DatashareURIUtilsTest MatchProxyUri_PlaceholderDigitsMatch_001 end");
+}
+
+/**
+ * @tc.name: MatchProxyUri_PlaceholderNonDigitsReject_001
+ * @tc.desc: Verify MatchProxyUri rejects placeholder part containing non-digit characters
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(DatashareURIUtilsTest, MatchProxyUri_PlaceholderNonDigitsReject_001, TestSize.Level0)
+{
+    ZLOGI("DatashareURIUtilsTest MatchProxyUri_PlaceholderNonDigitsReject_001 start");
+    std::string entry = "datashareproxy://com.ohos.settingsdata/entry/settingsdata/USER_SETTINGSDATA_{userid}";
+    // underscore in the placeholder part
+    EXPECT_FALSE(URIUtils::MatchProxyUri(
+        entry, "datashareproxy://com.ohos.settingsdata/entry/settingsdata/USER_SETTINGSDATA_100_101"));
+    // letter in the placeholder part
+    EXPECT_FALSE(URIUtils::MatchProxyUri(
+        entry, "datashareproxy://com.ohos.settingsdata/entry/settingsdata/USER_SETTINGSDATA_100a"));
+    // empty placeholder part
+    EXPECT_FALSE(
+        URIUtils::MatchProxyUri(entry, "datashareproxy://com.ohos.settingsdata/entry/settingsdata/USER_SETTINGSDATA_"));
+    // secure prefix abuse: permissive entry can not swallow SECURE_xxx
+    EXPECT_FALSE(URIUtils::MatchProxyUri(
+        entry, "datashareproxy://com.ohos.settingsdata/entry/settingsdata/USER_SETTINGSDATA_SECURE_100"));
+    ZLOGI("DatashareURIUtilsTest MatchProxyUri_PlaceholderNonDigitsReject_001 end");
+}
+
+/**
+ * @tc.name: MatchProxyUri_SegmentStructure_001
+ * @tc.desc: Verify MatchProxyUri compares uri structure, segment count and literal segments must equal
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(DatashareURIUtilsTest, MatchProxyUri_SegmentStructure_001, TestSize.Level0)
+{
+    ZLOGI("DatashareURIUtilsTest MatchProxyUri_SegmentStructure_001 start");
+    std::string entry = "datashareproxy://com.ohos.settingsdata/entry/settingsdata/USER_SETTINGSDATA_{userid}";
+    // extra path segment in request is rejected
+    EXPECT_FALSE(URIUtils::MatchProxyUri(
+        entry, "datashareproxy://com.ohos.settingsdata/entry/settingsdata/USER_SETTINGSDATA_100/extra"));
+    // different module segment is rejected
+    EXPECT_FALSE(
+        URIUtils::MatchProxyUri(entry, "datashareproxy://com.ohos.settingsdata/entry/settings/USER_SETTINGSDATA_100"));
+    // different authority is rejected
+    EXPECT_FALSE(
+        URIUtils::MatchProxyUri(entry, "datashareproxy://com.ohos.otherdata/entry/settingsdata/USER_SETTINGSDATA_100"));
+    // two placeholders inside one segment are not supported
+    EXPECT_FALSE(
+        URIUtils::MatchProxyUri("datashareproxy://com.ohos.settingsdata/entry/settingsdata/TBL_{userid}_{userid}",
+            "datashareproxy://com.ohos.settingsdata/entry/settingsdata/TBL_100_101"));
+    // different scheme is rejected
+    EXPECT_FALSE(
+        URIUtils::MatchProxyUri("datashare://com.ohos.settingsdata/entry/settingsdata/USER_SETTINGSDATA_{userid}",
+            "datashareproxy://com.ohos.settingsdata/entry/settingsdata/USER_SETTINGSDATA_100"));
+    ZLOGI("DatashareURIUtilsTest MatchProxyUri_SegmentStructure_001 end");
+}
+
+/**
+ * @tc.name: MatchUserIdPlaceholderSegment_001
+ * @tc.desc: Verify segment matcher requires literal prefix, digits and literal suffix
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(DatashareURIUtilsTest, MatchUserIdPlaceholderSegment_001, TestSize.Level0)
+{
+    ZLOGI("DatashareURIUtilsTest MatchUserIdPlaceholderSegment_001 start");
+    EXPECT_TRUE(URIUtils::MatchUserIdPlaceholderSegment("USER_SETTINGSDATA_{userid}", "USER_SETTINGSDATA_100"));
+    EXPECT_TRUE(URIUtils::MatchUserIdPlaceholderSegment("{userid}", "100"));
+    // digits with literal suffix
+    EXPECT_TRUE(URIUtils::MatchUserIdPlaceholderSegment("{userid}_TBL", "100_TBL"));
+    // non-digit or empty placeholder part
+    EXPECT_FALSE(URIUtils::MatchUserIdPlaceholderSegment("USER_SETTINGSDATA_{userid}", "USER_SETTINGSDATA_10a0"));
+    EXPECT_FALSE(URIUtils::MatchUserIdPlaceholderSegment("USER_SETTINGSDATA_{userid}", "USER_SETTINGSDATA_"));
+    EXPECT_FALSE(URIUtils::MatchUserIdPlaceholderSegment("USER_SETTINGSDATA_{userid}", "USER_SETTINGSDATA_100_"));
+    // non-digit remainder after the literal prefix
+    EXPECT_FALSE(URIUtils::MatchUserIdPlaceholderSegment("USER_SETTINGSDATA_{userid}", "USER_SETTINGSDATA2_100"));
+    // no placeholder in entry segment falls back to exact comparison
+    EXPECT_TRUE(URIUtils::MatchUserIdPlaceholderSegment("USER_SETTINGSDATA", "USER_SETTINGSDATA"));
+    EXPECT_FALSE(URIUtils::MatchUserIdPlaceholderSegment("USER_SETTINGSDATA", "USER_SETTINGSDATA_100"));
+    // literal suffix mismatch
+    EXPECT_FALSE(URIUtils::MatchUserIdPlaceholderSegment("{userid}_TBL", "100_TBK"));
+    // literal prefix mismatch
+    EXPECT_FALSE(URIUtils::MatchUserIdPlaceholderSegment("USER_SETTINGSDATA_{userid}", "USER_SETTINGSXATA_100"));
+    ZLOGI("DatashareURIUtilsTest MatchUserIdPlaceholderSegment_001 end");
+}
 } // namespace DataShare
 } // namespace OHOS

@@ -68,6 +68,9 @@ public:
     static std::string Anonymous(const std::string &uri);
     static std::map<std::string, std::string> GetQueryParams(const std::string& uri);
     static std::pair<bool, uint32_t> Strtoul(const std::string &str);
+    static bool HasUserIdPlaceholder(const std::string &uri);
+    static bool MatchProxyUri(const std::string &proxyUri, const std::string &formatUri);
+    static bool MatchUserIdPlaceholderSegment(const std::string &entrySegment, const std::string &requestSegment);
     static constexpr const char *DATA_SHARE_SCHEMA = "datashare:///";;
     static constexpr const char DATA_PROXY_SCHEMA[] = "datashareproxy://";
     static constexpr const char *PARAM_URI_SEPARATOR = ":///";
@@ -78,6 +81,8 @@ public:
 
     static constexpr const char *SA_ID = "SAID=";
     static constexpr const char USER_PARAM[] = "user";
+    static constexpr const char *USER_ID_PLACEHOLDER = "{userid}";
+    static constexpr size_t USER_ID_PLACEHOLDER_LEN = 8; // length of "{userid}"
     static constexpr int DATA_PROXY_SCHEMA_LEN = sizeof(DATA_PROXY_SCHEMA) - 1;
     static constexpr int32_t INVALID_SA_ID = 0;
     static constexpr uint32_t PARAM_URI_SEPARATOR_LEN = 4;
