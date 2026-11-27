@@ -19,8 +19,9 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <utility>
 
-#include "kvstore_data_service.h"
+#include "kvstore_data_service_stub.h"
 #include "message_parcel.h"
 #include "securec.h"
 
@@ -30,6 +31,48 @@ namespace OHOS {
 const std::u16string INTERFACE_TOKEN = u"OHOS.DistributedKv.IKvStoreDataService";
 const uint32_t CODE_MIN = 0;
 const uint32_t CODE_MAX = 10;
+
+namespace {
+/*
+ * Minimal concrete stub. The fuzz target is the parsing layer of KvStoreDataServiceStub
+ * (interface token check, command code dispatch, parcel unmarshalling/marshalling).
+ * Do NOT instantiate the full KvStoreDataService SA here: it drags in the whole service
+ * runtime (PowerManagerImpl static singleton, DataShareServiceImpl samgr listeners, etc.)
+ * whose exit-time static destruction races with live IPC threads and causes deterministic
+ * heap-use-after-free reported by ASan when the fuzz process exits.
+ * Deeper feature logic is already covered by dedicated fuzz cases such as
+ * kvdbservicestub_fuzzer / rdbservicestub_fuzzer / objectservicestub_fuzzer.
+ */
+class FuzzDataServiceStub : public KvStoreDataServiceStub {
+public:
+    sptr<IRemoteObject> GetFeatureInterface(const std::string &name) override
+    {
+        return nullptr;
+    }
+
+    Status RegisterClientDeathObserver(const AppId &appId, sptr<IRemoteObject> observer,
+        const std::string &featureName) override
+    {
+        return Status::SUCCESS;
+    }
+
+    int32_t ClearAppStorage(const std::string &bundleName, int32_t userId, int32_t appIndex,
+        int32_t tokenId) override
+    {
+        return 0;
+    }
+
+    int32_t Exit(const std::string &featureName) override
+    {
+        return 0;
+    }
+
+    std::pair<int32_t, std::string> GetSelfBundleName() override
+    {
+        return { 0, "" };
+    }
+};
+} // namespace
 
 bool OnRemoteRequestFuzz(FuzzedDataProvider &provider)
 {
@@ -41,7 +84,7 @@ bool OnRemoteRequestFuzz(FuzzedDataProvider &provider)
     request.RewindRead(0);
     MessageParcel reply;
     MessageOption option;
-    std::shared_ptr<KvStoreDataServiceStub> kvStoreDataServiceStub = std::make_shared<KvStoreDataService>();
+    std::shared_ptr<KvStoreDataServiceStub> kvStoreDataServiceStub = std::make_shared<FuzzDataServiceStub>();
     kvStoreDataServiceStub->OnRemoteRequest(code, request, reply, option);
     return true;
 }
