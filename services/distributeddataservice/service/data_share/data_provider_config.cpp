@@ -102,8 +102,6 @@ int DataProviderConfig::GetFromProxyData()
         providerInfo_.hasExtension = true;
         break;
     }
-    bool hasProxyData = false;
-    std::string unmatchedUris;
     for (auto &hapModuleInfo : bundleInfo.hapModuleInfos) {
         auto &proxyDatas = hapModuleInfo.proxyDatas;
         std::sort(proxyDatas.begin(), proxyDatas.end(), [](const ProxyData &curr,
@@ -111,12 +109,7 @@ int DataProviderConfig::GetFromProxyData()
             return curr.uri.length() > prev.uri.length();
         });
         for (auto &data : proxyDatas) {
-            hasProxyData = true;
             if (!URIUtils::MatchProxyUri(data.uri, uriConfig_.formatUri)) {
-                if (!unmatchedUris.empty()) {
-                    unmatchedUris.append(";");
-                }
-                unmatchedUris.append(data.uri);
                 continue;
             }
             providerInfo_.readPermission = std::move(data.requiredReadPermission);
@@ -132,12 +125,6 @@ int DataProviderConfig::GetFromProxyData()
             }
             return GetFromDataProperties(profileInfo.profile, hapModuleInfo.moduleName);
         }
-    }
-    // temporary debug log, remove before merge
-    if (hasProxyData) {
-        ZLOGI("TEMP-DEBUG: ProxyData uri not matched, bundleName:%{public}s, formatUri:%{public}s, "
-              "unmatchedUris:%{public}s",
-            providerInfo_.bundleName.c_str(), uriConfig_.formatUri.c_str(), unmatchedUris.c_str());
     }
     return E_URI_NOT_EXIST;
 }
