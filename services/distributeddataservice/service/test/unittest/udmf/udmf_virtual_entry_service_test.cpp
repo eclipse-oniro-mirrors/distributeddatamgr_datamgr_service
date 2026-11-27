@@ -753,7 +753,7 @@ HWTEST_F(UdmfVirtualEntryServiceTest, GetData_ValidVirtualFile_ReplaceUriAndRemo
     ASSERT_NE(object, nullptr);
     std::string uri;
     ASSERT_TRUE(object->GetValue(ORI_URI, uri));
-    EXPECT_NE(uri.find(UdmfFuseSessionManager::GetAppMountPoint(TEST_USER)), std::string::npos);
+    EXPECT_NE(uri.find(UdmfFuseSessionManager::GetAppMountPoint()), std::string::npos);
     EXPECT_NE(uri.find(info.alias), std::string::npos);
     EXPECT_NE(uri.find("example.bin"), std::string::npos);
     std::shared_ptr<Object> details;
