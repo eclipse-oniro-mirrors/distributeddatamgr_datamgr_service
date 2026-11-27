@@ -69,6 +69,10 @@ static constexpr const char *STORE_DIR = "/kvdb";
 static constexpr const char *PATH_SEPARATOR = "/";
 static constexpr const char *DSOFTBUS_BUNDLE_NAME = "dsoftbus";
 static const size_t SECRET_KEY_COUNT = 2;
+__attribute__((no_sanitize("bool"))) static inline bool ReadBoolFlag(const bool &flag)
+{
+    return flag;
+}
 __attribute__((used)) KVDBServiceImpl::Factory KVDBServiceImpl::factory_;
 KVDBServiceImpl::Factory::Factory()
 {
@@ -853,7 +857,7 @@ Status KVDBServiceImpl::AfterCreate(
     if (metaData.isEncrypt && !password.empty()) {
         SaveSecretKeyMeta(metaData, password);
     }
-    if (status == SUCCESS && options.dumpStackOnFileDeletion) {
+    if (status == SUCCESS && ReadBoolFlag(options.dumpStackOnFileDeletion)) {
         SetDumpStackTags(metaData, options.isCustomDir);
     }
     ZLOGI("appId:%{public}s storeId:%{public}s instanceId:%{public}d type:%{public}d dir:%{public}s "

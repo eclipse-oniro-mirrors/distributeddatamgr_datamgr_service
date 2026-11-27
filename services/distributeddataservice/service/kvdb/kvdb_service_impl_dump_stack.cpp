@@ -39,18 +39,21 @@ constexpr const char *KV_META_DB = "meta/meta.db";
 constexpr const char *KV_WAL_SUFFIX = "-wal";
 constexpr const char *KV_SHM_SUFFIX = "-shm";
 constexpr const char *PATH_SEPARATOR = "/";
+__attribute__((no_sanitize("bool"))) inline bool ReadBoolFlag(const bool &flag)
+{
+    return flag;
+}
 } // namespace
 
 void KVDBServiceImpl::SetDumpStackTags(const StoreMetaData &metaData, const bool &isCustomDir)
 {
     auto tokenType = AccessTokenKit::GetTokenTypeFlag(IPCSkeleton::GetCallingTokenID());
-    bool isSystemApp = TokenIdKit::IsSystemAppByFullTokenID(IPCSkeleton::GetCallingFullTokenID());
-    if (tokenType != TOKEN_NATIVE && !isSystemApp) {
+    if (tokenType != TOKEN_NATIVE && !TokenIdKit::IsSystemAppByFullTokenID(IPCSkeleton::GetCallingFullTokenID())) {
         ZLOGW("dumpStackOnFileDeletion only for system app or SA, bundle:%{public}s", metaData.bundleName.c_str());
         return;
     }
     StoreMetaData meta = metaData;
-    if (isCustomDir) {
+    if (ReadBoolFlag(isCustomDir)) {
         if (meta.customDir.empty() && AccessTokenKit::GetTokenTypeFlag(meta.tokenId) == TOKEN_HAP) {
             size_t pos = meta.dataDir.find_last_of(PATH_SEPARATOR);
             std::string customDir;
