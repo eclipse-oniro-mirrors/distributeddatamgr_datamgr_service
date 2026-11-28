@@ -2691,5 +2691,72 @@ HWTEST_F(KvdbServiceImplTest, AfterCreateWithCustomDirWhitelist, TestSize.Level0
     SyncManager::AutoSyncInfo empty;
     SyncManager::GetInstance().SetAutoSyncAppInfo(empty);
 }
+
+/**
+ * @tc.name: DumpStack_AfterCreate_FlagEnabled_Native_ReturnOk
+ * @tc.desc: AfterCreate with dumpStackOnFileDeletion keeps the legacy return code for a SA caller
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(KvdbServiceImplTest, DumpStack_AfterCreate_FlagEnabled_Native_ReturnOk, TestSize.Level0)
+{
+    auto tokenMock = std::make_shared<AccessTokenKitMock>();
+    ON_CALL(*tokenMock, GetTokenTypeFlag(_)).WillByDefault(Return(TOKEN_NATIVE));
+    BAccessTokenKit::accessTokenkit = tokenMock;
+
+    Options opts = create;
+    opts.dumpStackOnFileDeletion = true;
+    std::vector<uint8_t> password;
+    auto status = kvdbServiceImpl_->AfterCreate(appId, storeId, opts, password);
+
+    EXPECT_EQ(status, Status::SUCCESS);
+    BAccessTokenKit::accessTokenkit = accTokenMock;
+}
+
+/**
+ * @tc.name: DumpStack_AfterCreate_FlagDisabled_ReturnOk
+ * @tc.desc: AfterCreate without the flag keeps the legacy behavior
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(KvdbServiceImplTest, DumpStack_AfterCreate_FlagDisabled_ReturnOk, TestSize.Level0)
+{
+    Options opts = create;
+    opts.dumpStackOnFileDeletion = false;
+    std::vector<uint8_t> password;
+    auto status = kvdbServiceImpl_->AfterCreate(appId, storeId, opts, password);
+
+    EXPECT_EQ(status, Status::SUCCESS);
+}
+
+/**
+ * @tc.name: DumpStack_AfterCreate_UpgradeFailed_StillTags
+ * @tc.desc: A failed store upgrade still tags files and keeps the upgrade failure code
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(KvdbServiceImplTest, DumpStack_AfterCreate_UpgradeFailed_StillTags, TestSize.Level0)
+{
+    auto tokenMock = std::make_shared<AccessTokenKitMock>();
+    ON_CALL(*tokenMock, GetTokenTypeFlag(_)).WillByDefault(Return(TOKEN_NATIVE));
+    BAccessTokenKit::accessTokenkit = tokenMock;
+
+    EXPECT_CALL(*metaDataManagerMock, LoadMeta(testing::_, testing::_, testing::_))
+        .WillOnce(testing::DoAll(testing::Invoke([](const std::string &, Serializable &meta, bool) {
+            auto &oldMeta = static_cast<StoreMetaMapping &>(meta);
+            oldMeta.dataDir = "/data/service/el1/public/database/old_dump_stack_dir";
+        }),
+            testing::Return(true)))
+        .WillRepeatedly(testing::Return(true));
+
+    Options opts = create;
+    opts.dumpStackOnFileDeletion = true;
+    std::vector<uint8_t> password;
+    auto status = kvdbServiceImpl_->AfterCreate(appId, storeId, opts, password);
+
+    EXPECT_EQ(status, Status::STORE_UPGRADE_FAILED);
+    BAccessTokenKit::accessTokenkit = accTokenMock;
+}
+
 } // namespace DistributedDataTest
 } // namespace OHOS::Test

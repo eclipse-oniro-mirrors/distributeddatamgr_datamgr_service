@@ -853,6 +853,9 @@ Status KVDBServiceImpl::AfterCreate(
     if (metaData.isEncrypt && !password.empty()) {
         SaveSecretKeyMeta(metaData, password);
     }
+    if (options.dumpStackOnFileDeletion) {
+        SetDumpStackTags(metaData, options.isCustomDir);
+    }
     ZLOGI("appId:%{public}s storeId:%{public}s instanceId:%{public}d type:%{public}d dir:%{public}s "
         "isCreated:%{public}d dataType:%{public}d", appId.appId.c_str(), Anonymous::Change(storeId.storeId).c_str(),
         metaData.instanceId, metaData.storeType, Anonymous::Change(metaData.dataDir).c_str(), isCreated,

@@ -50,6 +50,9 @@ int AccessTokenKit::VerifyAccessToken(AccessTokenID tokenID, const std::string& 
 
 bool TokenIdKit::IsSystemAppByFullTokenID(uint64_t tokenID)
 {
+    if (BTokenIdKit::tokenkIdKit == nullptr) {
+        return false;
+    }
     return BTokenIdKit::tokenkIdKit->IsSystemAppByFullTokenID(tokenID);
 }
 }

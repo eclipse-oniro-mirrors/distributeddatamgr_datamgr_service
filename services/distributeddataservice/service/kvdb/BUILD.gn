@@ -45,6 +45,7 @@ ohos_source_set("distributeddata_kvdb") {
     "kvdb_notifier_proxy.cpp",
     "kvdb_observer_proxy.cpp",
     "kvdb_service_impl.cpp",
+    "kvdb_service_impl_dump_stack.cpp",
     "kvdb_service_stub.cpp",
     "kvdb_watcher.cpp",
     "kvstore_sync_manager.cpp",

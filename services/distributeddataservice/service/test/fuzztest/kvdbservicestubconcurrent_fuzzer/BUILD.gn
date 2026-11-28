@@ -76,6 +76,7 @@ ohos_fuzztest("KvdbServiceStubConcurrentFuzzTest") {
     "${data_service_path}/service/kvdb/kvdb_general_store.cpp",
     "${data_service_path}/service/kvdb/kvdb_notifier_proxy.cpp",
     "${data_service_path}/service/kvdb/kvdb_service_impl.cpp",
+    "${data_service_path}/service/kvdb/kvdb_service_impl_dump_stack.cpp",
     "${data_service_path}/service/kvdb/kvdb_service_stub.cpp",
     "${data_service_path}/service/kvdb/kvdb_watcher.cpp",
     "${data_service_path}/service/kvdb/kvstore_sync_manager.cpp",
