@@ -35,6 +35,9 @@ SysEventSubscriber::SysEventSubscriber(const EventFwk::CommonEventSubscribeInfo&
         { EventFwk::CommonEventSupport::COMMON_EVENT_PACKAGE_CHANGED,
             &SysEventSubscriber::OnAppUpdate },
         { EventFwk::CommonEventSupport::COMMON_EVENT_PACKAGE_REMOVED,
+            &SysEventSubscriber::OnAppUninstall },
+        // for AI app clone uninstall scenario
+        { EventFwk::CommonEventSupport::COMMON_EVENT_SANDBOX_BUNDLE_REMOVED,
             &SysEventSubscriber::OnAppUninstall }
     };
 }
