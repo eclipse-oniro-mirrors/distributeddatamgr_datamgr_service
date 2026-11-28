@@ -57,17 +57,13 @@ ohos_fuzztest("DataServiceStubFuzzTest") {
     "-Werror=vla",
   ]
 
-  defines = [ "CLONE_SO_PATH=\"${clone_so_path}\"" ]
-
   sources = [
     "${data_service_path}/app/src/kvstore_data_service_stub.cpp",
-    "${data_service_path}/adapter/dfx/src/xcollie_impl.cpp",
     "dataservicestub_fuzzer.cpp",
   ]
 
   deps = [
     "${data_service_path}/adapter/qos:distributeddata_qos",
-    "${data_service_path}/adapter/utils:distributeddata_utils",
     "${data_service_path}/framework:distributeddatasvcfwk",
   ]
 

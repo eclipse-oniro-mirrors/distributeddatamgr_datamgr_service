@@ -21,6 +21,7 @@
 #include <cstdint>
 #include <utility>
 
+#include "ipc_object_stub.h"
 #include "kvstore_data_service_stub.h"
 #include "message_parcel.h"
 #include "securec.h"
@@ -33,20 +34,14 @@ const uint32_t CODE_MIN = 0;
 const uint32_t CODE_MAX = 10;
 
 namespace {
-/*
- * Minimal concrete stub. The fuzz target is the parsing layer of KvStoreDataServiceStub
- * (interface token check, command code dispatch, parcel unmarshalling/marshalling).
- * Do NOT instantiate the full KvStoreDataService SA here: it drags in the whole service
- * runtime (PowerManagerImpl static singleton, DataShareServiceImpl samgr listeners, etc.)
- * whose exit-time static destruction races with live IPC threads and causes deterministic
- * heap-use-after-free reported by ASan when the fuzz process exits.
- * Deeper feature logic is already covered by dedicated fuzz cases such as
- * kvdbservicestub_fuzzer / rdbservicestub_fuzzer / objectservicestub_fuzzer.
- */
+/* Minimal stub: verify IPC parcel parsing and isolate the listeners of the real SA. */
 class FuzzDataServiceStub : public KvStoreDataServiceStub {
 public:
     sptr<IRemoteObject> GetFeatureInterface(const std::string &name) override
     {
+        if (name == "FuzzLocalFeature") {
+            return sptr<IRemoteObject>(new IPCObjectStub(u"FuzzLocalFeature"));
+        }
         return nullptr;
     }
 
