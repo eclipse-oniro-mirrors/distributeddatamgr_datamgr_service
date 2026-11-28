@@ -57,38 +57,14 @@ ohos_fuzztest("DataServiceStubFuzzTest") {
     "-Werror=vla",
   ]
 
-  defines = [ "CLONE_SO_PATH=\"${clone_so_path}\"" ]
-
   sources = [
-    "${data_service_path}/app/src/db_info_handle_impl.cpp",
-    "${data_service_path}/app/src/feature_stub_impl.cpp",
-    "${data_service_path}/app/src/kvstore_account_observer.cpp",
-    "${data_service_path}/app/src/kvstore_data_service.cpp",
     "${data_service_path}/app/src/kvstore_data_service_stub.cpp",
-    "${data_service_path}/app/src/kvstore_device_listener.cpp",
-    "${data_service_path}/app/src/kvstore_meta_manager.cpp",
-    "${data_service_path}/app/src/kvstore_screen_observer.cpp",
-    "${data_service_path}/app/src/security/security.cpp",
-    "${data_service_path}/app/src/security/sensitive.cpp",
-    "${data_service_path}/app/src/session_manager/route_head_handler_impl.cpp",
-    "${data_service_path}/app/src/session_manager/session_manager.cpp",
-    "${data_service_path}/app/src/session_manager/upgrade_manager.cpp",
-    "${data_service_path}/app/src/task_manager.cpp",
-    "${data_service_path}/service/clone/clone_backup_info.cpp",
-    "${data_service_path}/service/clone/clone_manager.cpp",
-    "${data_service_path}/service/clone/secret_key_backup_data.cpp",
-    "${data_service_path}/adapter/dfx/src/xcollie_impl.cpp",
     "dataservicestub_fuzzer.cpp",
   ]
 
   deps = [
-    "${data_service_path}/adapter/account:distributeddata_account",
     "${data_service_path}/adapter/qos:distributeddata_qos",
-    "${data_service_path}/adapter/utils:distributeddata_utils",
-    "${data_service_path}/app/src/checker:distributeddata_checker",
-    "${data_service_path}/app/src/installer:distributeddata_installer",
     "${data_service_path}/framework:distributeddatasvcfwk",
-    "${data_service_path}/service:distributeddatasvc",
   ]
 
   external_deps = [
