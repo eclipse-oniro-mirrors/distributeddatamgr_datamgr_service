@@ -109,6 +109,8 @@ struct IoctlPlan {
     std::string failSetName;
     int getCalls = 0;
     int setCalls = 0;
+    std::vector<std::string> getNames;
+    std::vector<std::string> setNames;
 };
 
 IoctlHandler MakeIoctlHandler(std::shared_ptr<IoctlPlan> plan)
@@ -118,6 +120,7 @@ IoctlHandler MakeIoctlHandler(std::shared_ptr<IoctlPlan> plan)
         std::string name = (args != nullptr) ? std::string(args->filename) : std::string();
         if (request == HMFS_IOC_KEY_FILE_GETFLAGS) {
             ++plan->getCalls;
+            plan->getNames.push_back(name);
             if (plan->getRet != 0) {
                 errno = plan->getErr;
                 return plan->getRet;
@@ -130,6 +133,7 @@ IoctlHandler MakeIoctlHandler(std::shared_ptr<IoctlPlan> plan)
         }
         if (request == HMFS_IOC_KEY_FILE_SETFLAGS) {
             ++plan->setCalls;
+            plan->setNames.push_back(name);
             if (plan->setRet != 0) {
                 errno = plan->setErr;
                 return plan->setRet;
@@ -1095,6 +1099,57 @@ HWTEST_F(KvdbServiceImplDumpStackTest, DumpStack_SetDumpStackTags_AllFilesTagged
     EXPECT_EQ(plan->getCalls, numDbFiles);
     EXPECT_EQ(plan->setCalls, numSetFailedFiles);
     BAccessTokenKit::accessTokenkit = accTokenMock;
+    RemoveDbLayout(dataDir, storeIdStr);
+}
+
+/**
+ * @tc.name: DumpStack_SetDumpStackTags_AuxiliaryFilesIgnored_001
+ * @tc.desc: AC-1.2 - Only main and meta db/wal/shm files are tagged; auxiliary files are ignored
+ * @tc.type: FUNC
+ * @tc.author: agent
+ */
+HWTEST_F(KvdbServiceImplDumpStackTest, DumpStack_SetDumpStackTags_AuxiliaryFilesIgnored_001, TestSize.Level0)
+{
+    constexpr int numTargetFiles = 6;
+    std::string storeIdStr = "dumpStackTagAuxIgnore";
+    std::string dataDir = std::string(create.baseDir) + "/dump_stack_ut_aux_ignore";
+    ASSERT_TRUE(MakeDir(dataDir));
+    ASSERT_TRUE(CreateDbLayout(dataDir, storeIdStr));
+    std::string base = GetDbBase(dataDir, storeIdStr);
+    ASSERT_FALSE(base.empty());
+    const std::vector<std::string> targetFiles = { "main/gen_natural_store.db", "main/gen_natural_store.db-wal",
+        "main/gen_natural_store.db-shm", "meta/meta.db", "meta/meta.db-wal", "meta/meta.db-shm" };
+    const std::vector<std::string> auxFiles = { "main/gen_natural_store.db-journal",
+        "main/gen_natural_store.db.binlog", "main/gen_natural_store.db.dwr", "meta/meta.db-journal" };
+    for (const auto &file : targetFiles) {
+        ASSERT_TRUE(MakeFile(base + file));
+    }
+    for (const auto &file : auxFiles) {
+        ASSERT_TRUE(MakeFile(base + file));
+    }
+
+    auto tokenMock = std::make_shared<AccessTokenKitMock>();
+    ON_CALL(*tokenMock, GetTokenTypeFlag(_)).WillByDefault(Return(TOKEN_NATIVE));
+    BAccessTokenKit::accessTokenkit = tokenMock;
+
+    StoreMetaData meta;
+    meta.storeId = storeIdStr;
+    meta.dataDir = dataDir;
+    meta.storeType = static_cast<int32_t>(OHOS::DistributedKv::SINGLE_VERSION);
+    auto plan = std::make_shared<IoctlPlan>();
+    IoctlHookGuard guard(MakeIoctlHandler(plan));
+    kvdbServiceImpl_->SetDumpStackTags(meta, false);
+
+    const std::vector<std::string> expectedNames = { "gen_natural_store.db", "gen_natural_store.db-wal",
+        "gen_natural_store.db-shm", "meta.db", "meta.db-wal", "meta.db-shm" };
+    EXPECT_EQ(plan->getCalls, numTargetFiles);
+    EXPECT_EQ(plan->setCalls, numTargetFiles);
+    EXPECT_EQ(plan->getNames, expectedNames);
+    EXPECT_EQ(plan->setNames, expectedNames);
+    BAccessTokenKit::accessTokenkit = accTokenMock;
+    for (const auto &file : auxFiles) {
+        (void)unlink((base + file).c_str());
+    }
     RemoveDbLayout(dataDir, storeIdStr);
 }
 
